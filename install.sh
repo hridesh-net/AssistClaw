@@ -132,9 +132,14 @@ build_binary_from_source() {
 }
 
 # ─────────────────────────────────────────────
-# Node.js + pnpm check (for TS layer)
+# Node.js + pnpm check (for TS layer - optional if running from source)
 # ─────────────────────────────────────────────
 setup_node() {
+  if [[ ! -f "$REPO_ROOT/package.json" ]]; then
+    # We are downloading pre-compiled binaries via curl | bash, skip TS layer build
+    return
+  fi
+
   if command -v node >/dev/null 2>&1; then
     local node_ver
     node_ver="$(node --version | tr -d 'v')"
