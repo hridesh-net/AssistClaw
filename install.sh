@@ -91,13 +91,20 @@ install_binary() {
   local tmp_bin="/tmp/assistclaw_bin_$$"
 
   log "Downloading pre-built binary for ${PLATFORM}..."
-  if curl -fsSL -o "$tmp_bin" "$download_url"; then
+  
+  # Ensure the directory exists and is writable
+  if [[ ! -w "$INSTALL_DIR" && ! -w "$(dirname "$INSTALL_DIR")" ]]; then
+    warn "Cannot write to $INSTALL_DIR. Changing INSTALL_DIR to $HOME/.local/bin"
+    INSTALL_DIR="$HOME/.local/bin"
+  fi
+  mkdir -p "$INSTALL_DIR"
+
+  if curl -fsSL -f -o "$tmp_bin" "$download_url"; then
     chmod +x "$tmp_bin"
-    mkdir -p "$INSTALL_DIR"
     mv "$tmp_bin" "$INSTALL_DIR/assistclaw"
     ok "Binary installed: $INSTALL_DIR/assistclaw"
   else
-    warn "Failed to download pre-built binary from $download_url"
+    warn "Failed to download pre-built binary from $download_url (HTTP 404/Error)"
     warn "Falling back to compiling from source..."
     build_binary_from_source
   fi
@@ -109,7 +116,13 @@ build_binary_from_source() {
     go_version="$(go version | awk '{print $3}' | tr -d 'go')"
     log "Building with go $go_version..."
     (cd "$REPO_ROOT" && go build -ldflags "-s -w" -o /tmp/assistclaw-build ./cmd/assistclaw)
+    
+    if [[ ! -w "$INSTALL_DIR" ]]; then
+      warn "Cannot write to $INSTALL_DIR (permission denied). Changing INSTALL_DIR to $HOME/.local/bin"
+      INSTALL_DIR="$HOME/.local/bin"
+    fi
     mkdir -p "$INSTALL_DIR"
+    
     install -m 0755 /tmp/assistclaw-build "$INSTALL_DIR/assistclaw"
     rm -f /tmp/assistclaw-build
     ok "Binary compiled and installed: $INSTALL_DIR/assistclaw"
