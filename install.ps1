@@ -68,42 +68,7 @@ foreach ($dir in $SubDirs) {
 }
 Write-Ok "Workspace folders created"
 
-# 3. Create Default Config
-$ConfigPath = Join-Path $ConfigDir "assistclaw.yaml"
-if (-not (Test-Path $ConfigPath)) {
-    $DefaultConfig = @"
-# AssistClaw Configuration
-version: 1
 
-providers:
-  ollama:
-    base_url: http://localhost:11434
-    default_model: llama3.2
-
-embeddings:
-  priority: [openai, ollama, cohere, google, huggingface]
-  ollama:
-    base_url: http://localhost:11434
-
-routing:
-  default: ollama/llama3.2
-  fallback: ollama/llama3.2
-
-memory:
-  working_token_budget: 100000
-
-agent:
-  max_iterations: 64
-
-gateway:
-  host: 127.0.0.1
-  port: 18790
-"@
-    Set-Content -Path $ConfigPath -Value $DefaultConfig -Encoding UTF8
-    Write-Ok "Default configuration created at: $ConfigPath"
-} else {
-    Write-Ok "Configuration already exists: $ConfigPath"
-}
 
 # 4. Verify
 Write-Log "Verifying installation..."
