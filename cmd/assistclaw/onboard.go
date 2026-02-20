@@ -27,13 +27,15 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 
 func runOnboarding(configPath string) error {
 	var (
-		provider   string
-		apiKey     string
-		baseURL    string
-		apiVersion string
-		awsRegion  string
-		awsProfile string
-		tpl        string
+		provider     string
+		apiKey       string
+		baseURL      string
+		apiVersion   string
+		awsRegion    string
+		awsProfile   string
+		awsAccessKey string
+		awsSecretKey string
+		tpl          string
 	)
 
 	// Custom theme colors to match OpenClaw
@@ -83,7 +85,6 @@ func runOnboarding(configPath string) error {
 	needsAPIKey := map[string]bool{
 		"anthropic":  true,
 		"openai":     true,
-		"bedrock":    true,
 		"groq":       true,
 		"mistral":    true,
 		"openrouter": true,
@@ -118,16 +119,52 @@ func runOnboarding(configPath string) error {
 	}
 
 	if provider == "bedrock" {
+		var bedrockAuthMode string
 		awsRegion = "us-east-1"
-		awsProfile = "default"
-		form2Fields = append(form2Fields,
-			huh.NewInput().
-				Title("Enter AWS Region").
-				Value(&awsRegion),
-			huh.NewInput().
-				Title("Enter AWS Profile (Optional, hit Enter if using API Key / Default)").
-				Value(&awsProfile),
-		)
+
+		formBedrockAuth := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("How will you authenticate with AWS Bedrock?").
+					Options(
+						huh.NewOption("Native Bedrock API Key", "api_key"),
+						huh.NewOption("AWS IAM Security Keys", "iam_keys"),
+						huh.NewOption("AWS Profile (~/.aws/credentials)", "profile"),
+					).
+					Value(&bedrockAuthMode),
+			),
+		).WithTheme(theme)
+
+		if err := formBedrockAuth.Run(); err != nil {
+			return fmt.Errorf("onboarding interrupted")
+		}
+
+		form2Fields = append(form2Fields, huh.NewInput().
+			Title("Enter AWS Region").
+			Value(&awsRegion))
+
+		switch bedrockAuthMode {
+		case "api_key":
+			form2Fields = append(form2Fields, huh.NewInput().
+				Title("Enter AWS Bedrock API Key").
+				Password(true).
+				Value(&apiKey))
+		case "iam_keys":
+			form2Fields = append(form2Fields,
+				huh.NewInput().
+					Title("Enter AWS Access Key ID").
+					Value(&awsAccessKey),
+				huh.NewInput().
+					Title("Enter AWS Secret Access Key").
+					Password(true).
+					Value(&awsSecretKey),
+			)
+		case "profile":
+			awsProfile = "default"
+			form2Fields = append(form2Fields, huh.NewInput().
+				Title("Enter AWS Profile").
+				Value(&awsProfile))
+		}
 	}
 
 	if len(form2Fields) > 0 {
@@ -143,9 +180,6 @@ func runOnboarding(configPath string) error {
 	}
 	if awsRegion == "" {
 		awsRegion = "us-east-1"
-	}
-	if awsProfile == "" {
-		awsProfile = "default"
 	}
 
 	switch provider {
@@ -184,11 +218,13 @@ providers:
     region: "%s"
     profile: "%s"
     api_key: "%s"
+    access_key_id: "%s"
+    secret_access_key: "%s"
     default_model: "anthropic.claude-3-5-haiku-20241022-v1:0"
 
 routing:
   default: "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
-`, awsRegion, awsProfile, apiKey)
+`, awsRegion, awsProfile, apiKey, awsAccessKey, awsSecretKey)
 
 	case "vllm":
 		fallthrough

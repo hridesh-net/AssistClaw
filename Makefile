@@ -9,8 +9,8 @@
 # ─────────────────────────────────────────────
 BINARY     := assistclaw
 GOCMD      := go
-GOBUILD    := CGO_ENABLED=1 $(GOCMD) build
-GOTEST     := CGO_ENABLED=1 $(GOCMD) test
+GOBUILD    := CGO_ENABLED=1 $(GOCMD) build -tags fts5
+GOTEST     := CGO_ENABLED=1 $(GOCMD) test -tags fts5
 GOVET      := $(GOCMD) vet
 GOLINT     := golangci-lint
 GOFMT      := gofmt

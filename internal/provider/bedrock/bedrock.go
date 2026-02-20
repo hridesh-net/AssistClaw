@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
@@ -27,6 +28,10 @@ type Config struct {
 	Region string `yaml:"region"`
 	// Profile is the named AWS profile (~/.aws/credentials). Uses default if empty.
 	Profile string `yaml:"profile"`
+	// AccessKeyID optionally sets the AWS Access Key ID, bypassing ~/.aws/credentials.
+	AccessKeyID string `yaml:"access_key_id"`
+	// SecretAccessKey optionally sets the AWS Secret Access Key, bypassing ~/.aws/credentials.
+	SecretAccessKey string `yaml:"secret_access_key"`
 	// APIKey optionally sets the AWS Bedrock Bearer Token (API Key), bypassing SigV4.
 	APIKey string `yaml:"api_key"`
 	// DefaultModel is the default model ID (e.g. "anthropic.claude-3-5-sonnet-20241022-v2:0")
@@ -67,7 +72,11 @@ func New(cfg Config) (*Provider, error) {
 				base:  transport,
 			},
 		}))
+	} else if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
+		// Use direct IAM access keys
+		opts = append(opts, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")))
 	} else if cfg.Profile != "" {
+		// Use specific AWS profile
 		opts = append(opts, awsconfig.WithSharedConfigProfile(cfg.Profile))
 	}
 
@@ -83,6 +92,16 @@ func New(cfg Config) (*Provider, error) {
 						base:  http.DefaultTransport,
 					},
 				},
+			}
+		} else if cfg.AccessKeyID != "" {
+			awsCfg = aws.Config{
+				Region: cfg.Region,
+				Credentials: aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+					return aws.Credentials{
+						AccessKeyID:     cfg.AccessKeyID,
+						SecretAccessKey: cfg.SecretAccessKey,
+					}, nil
+				}),
 			}
 		} else {
 			return nil, fmt.Errorf("bedrock: load aws config: %w", err)

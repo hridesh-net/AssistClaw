@@ -61,7 +61,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          go build -ldflags "-s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
+          go build -tags fts5 -ldflags "-s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
 
       - name: Build Binary (Linux ARM64 Cross-Compile)
         if: matrix.target == 'linux-arm64'
@@ -73,7 +73,7 @@ jobs:
           CXX: aarch64-linux-gnu-g++
         run: |
           mkdir -p dist
-          go build -ldflags "-s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
+          go build -tags fts5 -ldflags "-s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
