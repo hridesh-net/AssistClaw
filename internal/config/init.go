@@ -25,18 +25,8 @@ func InitializeWorkspace(configPath string) error {
 		}
 	}
 
-	// Dump a default YAML config if it doesn't exist
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		const defaultConfig = `# AssistClaw default configuration
-version: 1
-
-routing:
-  default: "anthropic/claude-3-5-haiku-20241022"
-`
-		if err := os.WriteFile(configPath, []byte(defaultConfig), 0o600); err != nil {
-			return fmt.Errorf("failed to write default config: %w", err)
-		}
-	}
+	// We no longer write a default config.yaml here; the new interactive onboard wizard
+	// will generate the custom config once the user inputs their preferences.
 
 	return nil
 }

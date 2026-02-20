@@ -35,21 +35,17 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hridesh-net/AssistClaw
 
 Once complete, the `assistclaw` command will be available in your PATH, and your configuration workspace will be generated automatically at `~/.assistclaw/`.
 
-### 4. Configuration
+### Interactive Setup
 
-AssistClaw uses a YAML configuration file to manage API keys, routing, channels, and working memory constraints. 
+On your very first run, AssistClaw will automatically launch an interactive onboarding wizard to configure your preferred LLM provider (Anthropic, OpenAI, or a local provider like Ollama). It will securely save your API keys and automatically generate your `~/.assistclaw` workspace.
 
-1. Create the application directory:
-   ```bash
-   mkdir -p ~/.assistclaw
-   ```
-2. Copy the template configuration file:
-   ```bash
-   cp .assistclaw.yaml.example ~/.assistclaw/assistclaw.yaml
-   ```
-3. Open `~/.assistclaw/assistclaw.yaml` and add your desired API keys (e.g., Anthropic, OpenAI) and set your default routing model. Local providers like Ollama will work immediately out-of-the-box on `http://127.0.0.1:11434` without an API key.
+If you want to manually run the onboarding wizard again at any time, run:
 
-### 2. Verify the Installation
+```bash
+assistclaw onboard
+```
+
+### Verify the Installation
 
 Check the CLI and ensure the providers load correctly:
 

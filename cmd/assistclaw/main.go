@@ -82,6 +82,7 @@ func rootCmd() *cobra.Command {
 		memoryCmd(flags),
 		toolsCmd(flags),
 		gatewayCmd(flags),
+		onboardCmd(flags),
 		versionCmd(),
 	)
 	return root
@@ -500,9 +501,8 @@ func loadConfig(path string, log *zap.Logger) (*config.Config, error) {
 		path = config.DefaultConfigPath()
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Info("no config file found, initializing default workspace", zap.String("path", path))
-		if err := config.InitializeWorkspace(path); err != nil {
-			log.Warn("failed to initialize workspace, falling back to environment variables", zap.Error(err))
+		if err := runOnboarding(path); err != nil {
+			log.Warn("interactive onboarding failed or was skipped, falling back to environment variables", zap.Error(err))
 			return config.LoadFromEnv(), nil
 		}
 	}
