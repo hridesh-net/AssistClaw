@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
@@ -26,6 +27,10 @@ type Config struct {
 	Region string `yaml:"region"`
 	// Profile is the named AWS profile (~/.aws/credentials). Uses default if empty.
 	Profile string `yaml:"profile"`
+	// AccessKeyID optionally sets the AWS Access Key ID, bypassing ~/.aws/credentials.
+	AccessKeyID string `yaml:"access_key_id"`
+	// SecretAccessKey optionally sets the AWS Secret Access Key, bypassing ~/.aws/credentials.
+	SecretAccessKey string `yaml:"secret_access_key"`
 	// DefaultModel is the default model ID (e.g. "anthropic.claude-3-5-sonnet-20241022-v2:0")
 	DefaultModel string `yaml:"default_model"`
 }
@@ -43,8 +48,11 @@ func New(cfg Config) (*Provider, error) {
 	if cfg.Region != "" {
 		opts = append(opts, awsconfig.WithRegion(cfg.Region))
 	}
-	if cfg.Profile != "" {
+	if cfg.Profile != "" && cfg.AccessKeyID == "" {
 		opts = append(opts, awsconfig.WithSharedConfigProfile(cfg.Profile))
+	}
+	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
+		opts = append(opts, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")))
 	}
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), opts...)

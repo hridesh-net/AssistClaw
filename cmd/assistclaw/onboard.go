@@ -27,13 +27,14 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 
 func runOnboarding(configPath string) error {
 	var (
-		provider   string
-		apiKey     string
-		baseURL    string
-		apiVersion string
-		awsRegion  string
-		awsProfile string
-		tpl        string
+		provider     string
+		apiKey       string
+		baseURL      string
+		apiVersion   string
+		awsRegion    string
+		awsAccessKey string
+		awsSecretKey string
+		tpl          string
 	)
 
 	// Custom theme colors to match OpenClaw
@@ -118,14 +119,17 @@ func runOnboarding(configPath string) error {
 
 	if provider == "bedrock" {
 		awsRegion = "us-east-1"
-		awsProfile = "default"
 		form2Fields = append(form2Fields,
 			huh.NewInput().
 				Title("Enter AWS Region").
 				Value(&awsRegion),
 			huh.NewInput().
-				Title("Enter AWS Profile").
-				Value(&awsProfile),
+				Title("Enter AWS Access Key ID (Optional if using ~/.aws/credentials)").
+				Value(&awsAccessKey),
+			huh.NewInput().
+				Title("Enter AWS Secret Access Key (Optional if using ~/.aws/credentials)").
+				Password(true).
+				Value(&awsSecretKey),
 		)
 	}
 
@@ -142,9 +146,6 @@ func runOnboarding(configPath string) error {
 	}
 	if awsRegion == "" {
 		awsRegion = "us-east-1"
-	}
-	if awsProfile == "" {
-		awsProfile = "default"
 	}
 
 	switch provider {
@@ -181,12 +182,13 @@ version: 1
 providers:
   bedrock:
     region: "%s"
-    profile: "%s"
+    access_key_id: "%s"
+    secret_access_key: "%s"
     default_model: "anthropic.claude-3-5-haiku-20241022-v1:0"
 
 routing:
   default: "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
-`, awsRegion, awsProfile)
+`, awsRegion, awsAccessKey, awsSecretKey)
 
 	case "vllm":
 		fallthrough
