@@ -1,12 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
 
 	"github.com/assistclaw/assistclaw/internal/config"
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -25,29 +26,58 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 }
 
 func runOnboarding(configPath string) error {
-	fmt.Println("\n=======================================================")
-	fmt.Println("             Welcome to AssistClaw! 🐾")
-	fmt.Println("=======================================================")
-	fmt.Println("Let's get you set up with your preferred AI provider.")
+	var (
+		provider string
+		apiKey   string
+		tpl      string
+	)
+
+	// Custom theme colors to match OpenClaw
+	theme := huh.ThemeBase()
+	theme.Focused.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
+	theme.Focused.SelectedOption = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
+	theme.Focused.TextInput.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	theme.Focused.TextInput.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+
+	fmt.Println()
+	fmt.Println(lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("99")).
+		Render("  Welcome to AssistClaw 🐾"))
+	fmt.Println(lipgloss.NewStyle().
+		Faint(true).
+		Render("  Let's configure your autonomous agent environment."))
 	fmt.Println()
 
-	reader := bufio.NewReader(os.Stdin)
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Which primary AI provider would you like to use?").
+				Options(
+					huh.NewOption("Anthropic (Recommended)", "anthropic"),
+					huh.NewOption("OpenAI", "openai"),
+					huh.NewOption("Ollama (Local / Free)", "ollama"),
+				).
+				Value(&provider),
 
-	fmt.Println("Which primary provider would you like to use?")
-	fmt.Println("  1) Anthropic (Recommended)")
-	fmt.Println("  2) OpenAI")
-	fmt.Println("  3) Ollama (Local/Free)")
-	fmt.Print("\nEnter choice [1-3]: ")
+			huh.NewInput().
+				Title("Enter your API Key").
+				Description("This is stored safely in your local ~/.assistclaw configuration.").
+				Password(true).
+				Value(&apiKey).
+				WithTheme(theme).
+				WithHideFunc(func() bool {
+					return provider == "ollama"
+				}),
+		),
+	).WithTheme(theme)
 
-	choiceStr, _ := reader.ReadString('\n')
-	choiceStr = strings.TrimSpace(choiceStr)
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("onboarding interrupted")
+	}
 
-	var tpl string
-	switch choiceStr {
-	case "2":
-		fmt.Print("\nEnter your OpenAI API Key: ")
-		key, _ := reader.ReadString('\n')
-		key = strings.TrimSpace(key)
+	switch provider {
+	case "openai":
 		tpl = fmt.Sprintf(`# AssistClaw Configuration
 version: 1
 
@@ -58,10 +88,9 @@ providers:
 
 routing:
   default: "openai/gpt-4o-mini"
-`, key)
+`, apiKey)
 
-	case "3":
-		fmt.Println("\nGreat! AssistClaw will look for Ollama at http://localhost:11434.")
+	case "ollama":
 		tpl = `# AssistClaw Configuration
 version: 1
 
@@ -74,12 +103,9 @@ routing:
   default: "ollama/llama3.2"
 `
 
-	case "1":
+	case "anthropic":
 		fallthrough
 	default:
-		fmt.Print("\nEnter your Anthropic API Key: ")
-		key, _ := reader.ReadString('\n')
-		key = strings.TrimSpace(key)
 		tpl = fmt.Sprintf(`# AssistClaw Configuration
 version: 1
 
@@ -90,24 +116,30 @@ providers:
 
 routing:
   default: "anthropic/claude-3-5-haiku-20241022"
-`, key)
+`, apiKey)
 	}
 
-	// Make sure the directories exist.
+	// Dump empty file and create dirs so it works even if dir doesn't exist
 	if err := config.InitializeWorkspace(configPath); err != nil {
 		return err
 	}
 
-	// Write the configuration.
+	// Ensure parent dir exists
+	_ = os.MkdirAll(filepath.Dir(configPath), 0o755)
+
 	if err := os.WriteFile(configPath, []byte(tpl), 0o600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
-	fmt.Printf("\nPerfect! Your configuration has been saved to %s\n", configPath)
-	fmt.Println("You can edit this file at any time to add more providers or change router defaults.")
-	fmt.Println("\nTry running your first command:")
-	fmt.Println("  assistclaw agent -m \"Say hello!\"")
-	fmt.Println("=======================================================")
+	successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	boldStyle := lipgloss.NewStyle().Bold(true)
+
+	fmt.Println()
+	fmt.Println(successStyle.Render("✔ You're all set!"))
+	fmt.Printf("Your configuration was saved to: %s\n\n", configPath)
+	fmt.Println("Try running your first command:")
+	fmt.Println(boldStyle.Render("  assistclaw agent -m \"Say hello!\""))
+	fmt.Println()
 
 	return nil
 }
