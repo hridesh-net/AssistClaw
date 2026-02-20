@@ -100,5 +100,30 @@ If you wish to modify AssistClaw or build extensions:
 To view verbose debug information, including exact LLM requests and memory append operations, run any command with the `--log-level debug` flag:
 
 ```bash
-./bin/assistclaw agent --log-level debug
+assistclaw agent --log-level debug
+```
+
+---
+
+## Uninstallation
+
+If you wish to completely remove AssistClaw from your system, you just need to delete the executable and the configuration workspace.
+
+### Linux / macOS
+```bash
+# Remove the configuration workspace, downloaded tools, and local memory
+rm -rf ~/.assistclaw
+
+# Remove the executable
+rm -f ~/.local/bin/assistclaw
+sudo rm -f /usr/local/bin/assistclaw
+```
+
+### Windows (PowerShell)
+```powershell
+# Remove the configuration workspace
+Remove-Item -Recurse -Force "$env:USERPROFILE\.assistclaw"
+
+# Remove the executable (if installed to default location)
+Remove-Item -Force "$env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\assistclaw.exe"
 ```

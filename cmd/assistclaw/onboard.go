@@ -49,7 +49,7 @@ func runOnboarding(configPath string) error {
 		Render("  Let's configure your autonomous agent environment."))
 	fmt.Println()
 
-	form := huh.NewForm(
+	form1 := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Which primary AI provider would you like to use?").
@@ -59,21 +59,27 @@ func runOnboarding(configPath string) error {
 					huh.NewOption("Ollama (Local / Free)", "ollama"),
 				).
 				Value(&provider),
-
-			huh.NewInput().
-				Title("Enter your API Key").
-				Description("This is stored safely in your local ~/.assistclaw configuration.").
-				Password(true).
-				Value(&apiKey).
-				WithTheme(theme).
-				WithHideFunc(func() bool {
-					return provider == "ollama"
-				}),
 		),
 	).WithTheme(theme)
 
-	if err := form.Run(); err != nil {
+	if err := form1.Run(); err != nil {
 		return fmt.Errorf("onboarding interrupted")
+	}
+
+	if provider != "ollama" {
+		form2 := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Enter your API Key").
+					Description("This is stored safely in your local ~/.assistclaw configuration.").
+					Password(true).
+					Value(&apiKey),
+			),
+		).WithTheme(theme)
+
+		if err := form2.Run(); err != nil {
+			return fmt.Errorf("onboarding interrupted")
+		}
 	}
 
 	switch provider {
