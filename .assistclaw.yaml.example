@@ -1,0 +1,56 @@
+# AssistClaw Configuration Example
+#
+# Copy this file to ~/.assistclaw/assistclaw.yaml and customize.
+
+version: 1
+
+# Base directory for memory, tools, and skills
+state_dir: "~/.assistclaw"
+
+# Gateway settings (REST/WebSocket server)
+gateway:
+  host: "127.0.0.1"
+  port: 18789
+  token: ""
+
+# Agent Execution settings
+agent:
+  max_iterations: 64
+  system_prompt_ext: "" # Extra instructions appended to the global system prompt
+
+# Multi-model Routing
+routing:
+  default: "anthropic/claude-3-5-haiku-20241022"
+  fallback: "ollama/llama3.2"
+  rules:
+    - task: "code"
+      model: "anthropic/claude-3-7-sonnet-20250219"
+
+# Memory Configuration
+memory:
+  working_token_budget: 100000
+
+# Channel Messaging
+channels:
+  telegram:
+    bot_token: ""
+
+# Embedding Models (Priority defines fallback order)
+embeddings:
+  priority:
+    - "openai"
+    - "ollama"
+
+# Provider Configurations
+providers:
+  anthropic:
+    api_key: ""
+  openai:
+    api_key: ""
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    default_model: "llama3.2"
+  groq:
+    api_key: ""
+  openrouter:
+    api_key: ""

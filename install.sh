@@ -69,29 +69,48 @@ check_deps() {
 }
 
 # ─────────────────────────────────────────────
-# Go binary: build from source or download
+# Go binary: download pre-built or fallback to source
 # ─────────────────────────────────────────────
 install_binary() {
-  log "Building AssistClaw binary from source..."
+  if [[ "${FORCE_BUILD:-0}" == "1" ]]; then
+    log "FORCE_BUILD=1: Building AssistClaw binary from source..."
+    build_binary_from_source
+    return
+  fi
 
+  local artifact="assistclaw-${PLATFORM}"
+  if [[ "$PLATFORM" == windows-* ]]; then
+    artifact="${artifact}.exe"
+  fi
+
+  local download_url="https://github.com/hridesh-net/AssistClaw/releases/latest/download/${artifact}"
+  local tmp_bin="/tmp/assistclaw_bin_$$"
+
+  log "Downloading pre-built binary for ${PLATFORM}..."
+  if curl -fsSL -o "$tmp_bin" "$download_url"; then
+    chmod +x "$tmp_bin"
+    mkdir -p "$INSTALL_DIR"
+    mv "$tmp_bin" "$INSTALL_DIR/assistclaw"
+    ok "Binary installed: $INSTALL_DIR/assistclaw"
+  else
+    warn "Failed to download pre-built binary from $download_url"
+    warn "Falling back to compiling from source..."
+    build_binary_from_source
+  fi
+}
+
+build_binary_from_source() {
   if command -v go >/dev/null 2>&1; then
     local go_version
     go_version="$(go version | awk '{print $3}' | tr -d 'go')"
-    local go_major go_minor
-    IFS='.' read -r go_major go_minor _ <<< "$go_version"
-    if [[ "$go_major" -lt 1 ]] || [[ "$go_major" -eq 1 && "$go_minor" -lt 22 ]]; then
-      warn "Go $go_version is older than 1.22 — attempting anyway"
-    fi
     log "Building with go $go_version..."
     (cd "$REPO_ROOT" && go build -ldflags "-s -w" -o /tmp/assistclaw-build ./cmd/assistclaw)
+    mkdir -p "$INSTALL_DIR"
     install -m 0755 /tmp/assistclaw-build "$INSTALL_DIR/assistclaw"
     rm -f /tmp/assistclaw-build
-    ok "Binary installed: $INSTALL_DIR/assistclaw"
+    ok "Binary compiled and installed: $INSTALL_DIR/assistclaw"
   else
-    warn "Go not found — cannot build from source"
-    warn "Please install Go 1.22+ from https://go.dev/dl/ and re-run this script"
-    warn "Or set INSTALL_DIR and copy a pre-built binary manually"
-    exit 1
+    err "Go compiler not found! Unable to build from source, and pre-built binaries failed to download. Please install Go 1.24+."
   fi
 }
 

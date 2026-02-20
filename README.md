@@ -15,40 +15,25 @@ AssistClaw is a polyglot, production-grade AI assistant system written in Go. It
 
 ---
 
-## Linux Setup & Installation Guide
+## Quick Installation
 
-Follow these steps to build and setup AssistClaw from source on a new Linux system.
+AssistClaw distributes highly-optimized pre-compiled binaries for **Linux**, **macOS**, and **Windows**. You do not need Go installed on your machine.
 
-### 1. Prerequisites
-
-You will need the following installed on your system:
-- **Go 1.22+** (for compiling the core orchestration binary)
-- **Python 3.11+** & `venv` module (for sandboxing auto-generated tools)
-- *(Optional)* **CMake, OpenCV, PortAudio** (if you intend to build the C++ hardware sensing components)
-
-On Debian/Ubuntu, you can install the optional sensing dependencies via:
-```bash
-sudo apt update
-sudo apt install build-essential cmake libopencv-dev portaudio19-dev python3.11-venv
-```
-
-### 2. Clone the Repository
+### Linux / macOS
+Run the automated installation script to download the latest binary for your architecture and set up your workspace:
 
 ```bash
-git clone https://github.com/hridesh-net/AssistClaw.git
-cd AssistClaw
+curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
 ```
 
-### 3. Build the Core Binary
+### Windows
+Open PowerShell as Administrator and run:
 
-Compile the main Go orchestrator:
-
-```bash
-make build
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.ps1" -OutFile "install.ps1"; .\install.ps1
 ```
-*(Alternatively: `go build -o bin/assistclaw ./cmd/assistclaw`)*
 
-This creates a self-contained binary at `./bin/assistclaw`.
+Once complete, the `assistclaw` command will be available in your PATH, and your configuration workspace will be generated automatically at `~/.assistclaw/`.
 
 ### 4. Configuration
 
@@ -64,13 +49,13 @@ AssistClaw uses a YAML configuration file to manage API keys, routing, channels,
    ```
 3. Open `~/.assistclaw/assistclaw.yaml` and add your desired API keys (e.g., Anthropic, OpenAI) and set your default routing model. Local providers like Ollama will work immediately out-of-the-box on `http://127.0.0.1:11434` without an API key.
 
-### 5. Verify the Installation
+### 2. Verify the Installation
 
 Check the CLI and ensure the providers load correctly:
 
 ```bash
-./bin/assistclaw --version
-./bin/assistclaw providers list
+assistclaw --version
+assistclaw providers list
 ```
 
 ---
@@ -80,26 +65,37 @@ Check the CLI and ensure the providers load correctly:
 ### Interactive Agent Session
 Start an interactive chat session with the assistant:
 ```bash
-./bin/assistclaw agent
+assistclaw agent
 ```
 
 ### Single Message Command
 Fire off a single prompt to the assistant:
 ```bash
-./bin/assistclaw agent -m "Summarize the capabilities of sqlite-vec"
+assistclaw agent -m "Summarize the capabilities of sqlite-vec"
 ```
 
 ### Memory Management
 Query your episodic memory log across past sessions:
 ```bash
-./bin/assistclaw memory search "sqlite-vec"
+assistclaw memory search "sqlite-vec"
 ```
 
 ### Start the Gateway Server
 Start the HTTP REST and WebSocket control plane for connecting external chat clients:
 ```bash
-./bin/assistclaw gateway start
+assistclaw gateway start
 ```
+
+---
+
+## Building from Source
+
+If you wish to modify AssistClaw or build extensions:
+
+1. Install **Go 1.24+**
+2. Clone the repository: `git clone https://github.com/hridesh-net/AssistClaw.git`
+3. Build the binary: `make build`
+4. Use it directly: `./bin/assistclaw`
 
 ---
 
