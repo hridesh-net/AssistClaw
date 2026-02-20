@@ -52,4 +52,6 @@ yarn-error.log*
 
 openclaw/*
 /openclaw
-/openclaw/*
+/openclaw/*sqlite3.h
+sqlite3ext.h
+dist/
