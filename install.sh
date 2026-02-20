@@ -7,7 +7,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/assistclaw/assistclaw/main/install.sh | bash
 #   OR: bash install.sh
 
-set -euo pipefail
+set -eo pipefail
 
 # ─────────────────────────────────────────────
 # Config
@@ -16,7 +16,11 @@ ASSISTCLAW_VERSION="${ASSISTCLAW_VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 STATE_DIR="${STATE_DIR:-$HOME/.assistclaw}"
 VENV_DIR="$STATE_DIR/venv"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  REPO_ROOT="$PWD"
+fi
 
 # Colors
 RED='\033[0;31m'
