@@ -27,9 +27,13 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 
 func runOnboarding(configPath string) error {
 	var (
-		provider string
-		apiKey   string
-		tpl      string
+		provider   string
+		apiKey     string
+		baseURL    string
+		apiVersion string
+		awsRegion  string
+		awsProfile string
+		tpl        string
 	)
 
 	// Custom theme colors to match OpenClaw
@@ -57,6 +61,13 @@ func runOnboarding(configPath string) error {
 					huh.NewOption("Anthropic (Recommended)", "anthropic"),
 					huh.NewOption("OpenAI", "openai"),
 					huh.NewOption("Ollama (Local / Free)", "ollama"),
+					huh.NewOption("AWS Bedrock", "bedrock"),
+					huh.NewOption("vLLM (Local / Custom)", "vllm"),
+					huh.NewOption("LM Studio (Local)", "lmstudio"),
+					huh.NewOption("Groq", "groq"),
+					huh.NewOption("Mistral", "mistral"),
+					huh.NewOption("OpenRouter", "openrouter"),
+					huh.NewOption("Azure OpenAI", "azure"),
 				).
 				Value(&provider),
 		),
@@ -66,20 +77,74 @@ func runOnboarding(configPath string) error {
 		return fmt.Errorf("onboarding interrupted")
 	}
 
-	if provider != "ollama" {
-		form2 := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Enter your API Key").
-					Description("This is stored safely in your local ~/.assistclaw configuration.").
-					Password(true).
-					Value(&apiKey),
-			),
-		).WithTheme(theme)
+	// Dynamic second step based on the chosen provider
+	var form2Fields []huh.Field
 
+	needsAPIKey := map[string]bool{
+		"anthropic":  true,
+		"openai":     true,
+		"groq":       true,
+		"mistral":    true,
+		"openrouter": true,
+		"azure":      true,
+	}
+
+	needsBaseURL := map[string]string{
+		"ollama":   "http://localhost:11434",
+		"vllm":     "http://localhost:8000/v1",
+		"lmstudio": "http://localhost:1234/v1",
+		"azure":    "https://YOUR_RESOURCE_NAME.openai.azure.com",
+	}
+
+	if needsAPIKey[provider] {
+		form2Fields = append(form2Fields, huh.NewInput().
+			Title("Enter your API Key").
+			Description("This is stored safely in your local ~/.assistclaw configuration.").
+			Password(true).
+			Value(&apiKey))
+	}
+
+	if defaultURL, ok := needsBaseURL[provider]; ok {
+		form2Fields = append(form2Fields, huh.NewInput().
+			Title(fmt.Sprintf("Enter Base URL (Default: %s)", defaultURL)).
+			Value(&baseURL))
+	}
+
+	if provider == "azure" {
+		form2Fields = append(form2Fields, huh.NewInput().
+			Title("Enter Azure API Version (e.g., 2024-02-15-preview)").
+			Value(&apiVersion))
+	}
+
+	if provider == "bedrock" {
+		awsRegion = "us-east-1"
+		awsProfile = "default"
+		form2Fields = append(form2Fields,
+			huh.NewInput().
+				Title("Enter AWS Region").
+				Value(&awsRegion),
+			huh.NewInput().
+				Title("Enter AWS Profile").
+				Value(&awsProfile),
+		)
+	}
+
+	if len(form2Fields) > 0 {
+		form2 := huh.NewForm(huh.NewGroup(form2Fields...)).WithTheme(theme)
 		if err := form2.Run(); err != nil {
 			return fmt.Errorf("onboarding interrupted")
 		}
+	}
+
+	// Apply defaults if inputs were left blank
+	if baseURL == "" && needsBaseURL[provider] != "" {
+		baseURL = needsBaseURL[provider]
+	}
+	if awsRegion == "" {
+		awsRegion = "us-east-1"
+	}
+	if awsProfile == "" {
+		awsProfile = "default"
 	}
 
 	switch provider {
@@ -97,17 +162,100 @@ routing:
 `, apiKey)
 
 	case "ollama":
-		tpl = `# AssistClaw Configuration
+		tpl = fmt.Sprintf(`# AssistClaw Configuration
 version: 1
 
 providers:
   ollama:
-    base_url: "http://127.0.0.1:11434"
+    base_url: "%s"
     default_model: "llama3.2"
 
 routing:
   default: "ollama/llama3.2"
-`
+`, baseURL)
+
+	case "bedrock":
+		tpl = fmt.Sprintf(`# AssistClaw Configuration
+version: 1
+
+providers:
+  bedrock:
+    region: "%s"
+    profile: "%s"
+    default_model: "anthropic.claude-3-5-haiku-20241022-v1:0"
+
+routing:
+  default: "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
+`, awsRegion, awsProfile)
+
+	case "vllm":
+		fallthrough
+	case "lmstudio":
+		tpl = fmt.Sprintf(`# AssistClaw Configuration
+version: 1
+
+providers:
+  %s:
+    base_url: "%s"
+    default_model: "local-model"
+
+routing:
+  default: "%s/local-model"
+`, provider, baseURL, provider)
+
+	case "groq":
+		tpl = fmt.Sprintf(`# AssistClaw Configuration
+version: 1
+
+providers:
+  groq:
+    api_key: "%s"
+    default_model: "llama-3.1-8b-instant"
+
+routing:
+  default: "groq/llama-3.1-8b-instant"
+`, apiKey)
+
+	case "mistral":
+		tpl = fmt.Sprintf(`# AssistClaw Configuration
+version: 1
+
+providers:
+  mistral:
+    api_key: "%s"
+    default_model: "mistral-large-latest"
+
+routing:
+  default: "mistral/mistral-large-latest"
+`, apiKey)
+
+	case "openrouter":
+		tpl = fmt.Sprintf(`# AssistClaw Configuration
+version: 1
+
+providers:
+  openrouter:
+    api_key: "%s"
+    default_model: "anthropic/claude-3-5-haiku-20241022:beta"
+
+routing:
+  default: "openrouter/anthropic/claude-3-5-haiku-20241022:beta"
+`, apiKey)
+
+	case "azure":
+		tpl = fmt.Sprintf(`# AssistClaw Configuration
+version: 1
+
+providers:
+  azure:
+    api_key: "%s"
+    base_url: "%s"
+    api_version: "%s"
+    default_model: "gpt-4o"
+
+routing:
+  default: "azure/gpt-4o"
+`, apiKey, baseURL, apiVersion)
 
 	case "anthropic":
 		fallthrough
