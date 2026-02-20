@@ -500,8 +500,11 @@ func loadConfig(path string, log *zap.Logger) (*config.Config, error) {
 		path = config.DefaultConfigPath()
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Info("no config file found, using environment variables", zap.String("path", path))
-		return config.LoadFromEnv(), nil
+		log.Info("no config file found, initializing default workspace", zap.String("path", path))
+		if err := config.InitializeWorkspace(path); err != nil {
+			log.Warn("failed to initialize workspace, falling back to environment variables", zap.Error(err))
+			return config.LoadFromEnv(), nil
+		}
 	}
 	return config.Load(path)
 }
