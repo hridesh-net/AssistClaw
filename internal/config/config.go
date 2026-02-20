@@ -1,0 +1,353 @@
+// Package config loads and validates AssistClaw configuration from YAML.
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config is the root configuration structure for AssistClaw.
+type Config struct {
+	// Version identifies the config schema version for migration.
+	Version int `yaml:"version"`
+
+	// StateDir is the root directory for all AssistClaw state (~/.assistclaw by default).
+	StateDir string `yaml:"state_dir"`
+
+	// Gateway configures the HTTP/WebSocket gateway.
+	Gateway GatewayConfig `yaml:"gateway"`
+
+	// Providers holds LLM provider credentials and settings.
+	Providers ProvidersConfig `yaml:"providers"`
+
+	// Embeddings configures embedding model providers.
+	Embeddings EmbeddingsConfig `yaml:"embeddings"`
+
+	// Memory configures the three-tier memory system.
+	Memory MemoryConfig `yaml:"memory"`
+
+	// Routing defines multi-model task routing rules.
+	Routing RoutingConfig `yaml:"routing"`
+
+	// Hardware configures C++ sensing integration.
+	Hardware HardwareConfig `yaml:"hardware"`
+
+	// Agent configures the agent runner behavior.
+	Agent AgentConfig `yaml:"agent"`
+
+	// Channels configures messaging channel integrations.
+	Channels ChannelsConfig `yaml:"channels"`
+}
+
+// GatewayConfig controls the HTTP/WebSocket gateway.
+type GatewayConfig struct {
+	Host  string `yaml:"host"`
+	Port  int    `yaml:"port"`
+	Token string `yaml:"token"`
+	TLS   struct {
+		Cert string `yaml:"cert"`
+		Key  string `yaml:"key"`
+	} `yaml:"tls"`
+}
+
+// ProvidersConfig holds all LLM provider configurations.
+type ProvidersConfig struct {
+	OpenAI      *ProviderCreds    `yaml:"openai"`
+	AzureOpenAI *AzureCreds       `yaml:"azure_openai"`
+	Anthropic   *ProviderCreds    `yaml:"anthropic"`
+	Bedrock     *BedrockCreds     `yaml:"bedrock"`
+	Vertex      *VertexCreds      `yaml:"vertex"`
+	Ollama      *LocalCreds       `yaml:"ollama"`
+	VLLM        *LocalCreds       `yaml:"vllm"`
+	LMStudio    *LocalCreds       `yaml:"lm_studio"`
+	Groq        *ProviderCreds    `yaml:"groq"`
+	Mistral     *ProviderCreds    `yaml:"mistral"`
+	Together    *ProviderCreds    `yaml:"together"`
+	OpenRouter  *OpenRouterCreds  `yaml:"openrouter"`
+	NVIDIA      *ProviderCreds    `yaml:"nvidia"`
+	Cohere      *ProviderCreds    `yaml:"cohere"`
+	HuggingFace *HuggingFaceCreds `yaml:"huggingface"`
+}
+
+// ProviderCreds holds API key and optional settings for a cloud provider.
+type ProviderCreds struct {
+	APIKey       string `yaml:"api_key"`
+	BaseURL      string `yaml:"base_url"`
+	DefaultModel string `yaml:"default_model"`
+}
+
+// AzureCreds adds Azure-specific fields.
+type AzureCreds struct {
+	ProviderCreds `yaml:",inline"`
+	APIVersion    string `yaml:"api_version"`
+}
+
+// BedrockCreds holds AWS Bedrock authentication settings.
+type BedrockCreds struct {
+	Region       string `yaml:"region"`
+	Profile      string `yaml:"profile"` // AWS named profile
+	DefaultModel string `yaml:"default_model"`
+}
+
+// VertexCreds holds Google Vertex AI settings.
+type VertexCreds struct {
+	ProjectID    string `yaml:"project_id"`
+	Location     string `yaml:"location"`
+	Credentials  string `yaml:"credentials"` // path to service account JSON
+	DefaultModel string `yaml:"default_model"`
+}
+
+// LocalCreds configures a local server (Ollama, vLLM, LM Studio).
+type LocalCreds struct {
+	BaseURL      string `yaml:"base_url"`
+	APIKey       string `yaml:"api_key"` // optional for vLLM
+	DefaultModel string `yaml:"default_model"`
+}
+
+// OpenRouterCreds adds OpenRouter-specific fields.
+type OpenRouterCreds struct {
+	ProviderCreds `yaml:",inline"`
+	SiteName      string `yaml:"site_name"`
+	SiteURL       string `yaml:"site_url"`
+}
+
+// HuggingFaceCreds adds HuggingFace-specific fields.
+type HuggingFaceCreds struct {
+	ProviderCreds `yaml:",inline"`
+	Model         string `yaml:"model"` // specific model endpoint
+}
+
+// EmbeddingsConfig configures embedding provider priority.
+type EmbeddingsConfig struct {
+	// Priority lists providers in order of preference.
+	// Accepted values: openai, cohere, google, ollama, huggingface
+	Priority    []string          `yaml:"priority"`
+	OpenAI      *ProviderCreds    `yaml:"openai"`
+	Cohere      *ProviderCreds    `yaml:"cohere"`
+	Google      *ProviderCreds    `yaml:"google"`
+	OllamaEmbed *LocalCreds       `yaml:"ollama"`
+	HuggingFace *HuggingFaceCreds `yaml:"huggingface"`
+}
+
+// MemoryConfig controls the memory system.
+type MemoryConfig struct {
+	// WorkingTokenBudget is the max token count kept in working memory.
+	WorkingTokenBudget int `yaml:"working_token_budget"`
+	// EpisodicDBPath is the path to the episodic SQLite database.
+	EpisodicDBPath string `yaml:"episodic_db_path"`
+	// SemanticDBPath is the path to the semantic sqlite-vec database.
+	SemanticDBPath string `yaml:"semantic_db_path"`
+}
+
+// RoutingConfig defines multi-model routing rules.
+type RoutingConfig struct {
+	// Default model used when no rule matches.
+	Default string `yaml:"default"`
+	// Fallback model used when the primary provider is unavailable.
+	Fallback string `yaml:"fallback"`
+	// Rules maps task types to model strings (e.g. "ollama/llama3.2").
+	Rules []RoutingRule `yaml:"rules"`
+}
+
+// RoutingRule maps a task type to a specific model.
+type RoutingRule struct {
+	Task  string `yaml:"task"`
+	Model string `yaml:"model"`
+}
+
+// HardwareConfig controls C++ sensing integration.
+type HardwareConfig struct {
+	Camera CameraConfig `yaml:"camera"`
+	Audio  AudioConfig  `yaml:"audio"`
+	GPIO   GPIOConfig   `yaml:"gpio"`
+}
+
+// CameraConfig configures the camera sensing process.
+type CameraConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	BinaryPath  string `yaml:"binary_path"`
+	DeviceIndex int    `yaml:"device_index"`
+	Width       int    `yaml:"width"`
+	Height      int    `yaml:"height"`
+	FPS         int    `yaml:"fps"`
+}
+
+// AudioConfig configures the audio sensing process.
+type AudioConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	BinaryPath string `yaml:"binary_path"`
+	SampleRate int    `yaml:"sample_rate"`
+	Channels   int    `yaml:"channels"`
+}
+
+// GPIOConfig configures GPIO control.
+type GPIOConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	BinaryPath string `yaml:"binary_path"`
+}
+
+// AgentConfig controls agent runner behavior.
+type AgentConfig struct {
+	MaxIterations   int    `yaml:"max_iterations"`
+	SystemPromptExt string `yaml:"system_prompt_ext"`
+	ToolsDir        string `yaml:"tools_dir"`
+	SkillsDir       string `yaml:"skills_dir"`
+}
+
+// ChannelsConfig configures messaging channels.
+type ChannelsConfig struct {
+	Telegram *TelegramConfig `yaml:"telegram"`
+	Discord  *DiscordConfig  `yaml:"discord"`
+	Slack    *SlackConfig    `yaml:"slack"`
+}
+
+type TelegramConfig struct {
+	BotToken string `yaml:"bot_token"`
+}
+
+type DiscordConfig struct {
+	BotToken string `yaml:"bot_token"`
+}
+
+type SlackConfig struct {
+	BotToken string `yaml:"bot_token"`
+	AppToken string `yaml:"app_token"`
+}
+
+// ─────────────────────────────────────────────
+// Loading
+// ─────────────────────────────────────────────
+
+// Load reads configuration from the given file path, expanding environment
+// variables in values. Returns a Config with defaults applied.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config: read %s: %w", path, err)
+	}
+
+	// Expand ${ENV_VAR} patterns in the config file.
+	expanded := os.ExpandEnv(string(data))
+
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
+		return nil, fmt.Errorf("config: parse %s: %w", path, err)
+	}
+
+	applyDefaults(&cfg)
+	if err := validate(&cfg); err != nil {
+		return nil, fmt.Errorf("config: validate: %w", err)
+	}
+	return &cfg, nil
+}
+
+// LoadFromEnv builds a minimal Config from environment variables only.
+// Useful for containerized deployments without a config file.
+func LoadFromEnv() *Config {
+	cfg := &Config{}
+	applyDefaults(cfg)
+
+	// Provider keys from environment
+	if key := os.Getenv("ASSISTCLAW_OPENAI_API_KEY"); key != "" {
+		cfg.Providers.OpenAI = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" && cfg.Providers.OpenAI == nil {
+		cfg.Providers.OpenAI = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("ASSISTCLAW_ANTHROPIC_API_KEY"); key != "" {
+		cfg.Providers.Anthropic = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" && cfg.Providers.Anthropic == nil {
+		cfg.Providers.Anthropic = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("ASSISTCLAW_GROQ_API_KEY"); key != "" {
+		cfg.Providers.Groq = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("GROQ_API_KEY"); key != "" && cfg.Providers.Groq == nil {
+		cfg.Providers.Groq = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("ASSISTCLAW_MISTRAL_API_KEY"); key != "" {
+		cfg.Providers.Mistral = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("MISTRAL_API_KEY"); key != "" && cfg.Providers.Mistral == nil {
+		cfg.Providers.Mistral = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("ASSISTCLAW_OPENROUTER_API_KEY"); key != "" {
+		cfg.Providers.OpenRouter = &OpenRouterCreds{ProviderCreds: ProviderCreds{APIKey: key}}
+	}
+	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" && cfg.Providers.OpenRouter == nil {
+		cfg.Providers.OpenRouter = &OpenRouterCreds{ProviderCreds: ProviderCreds{APIKey: key}}
+	}
+	// Ollama (local, no key needed)
+	if url := os.Getenv("ASSISTCLAW_OLLAMA_BASE_URL"); url != "" {
+		cfg.Providers.Ollama = &LocalCreds{BaseURL: url}
+	} else if os.Getenv("ASSISTCLAW_OLLAMA_ENABLED") == "1" || os.Getenv("ASSISTCLAW_OLLAMA_ENABLED") == "true" {
+		cfg.Providers.Ollama = &LocalCreds{BaseURL: "http://localhost:11434"}
+	}
+
+	return cfg
+}
+
+// applyDefaults fills in default values for missing configuration.
+func applyDefaults(cfg *Config) {
+	if cfg.StateDir == "" {
+		home, _ := os.UserHomeDir()
+		cfg.StateDir = filepath.Join(home, ".assistclaw")
+	}
+	if cfg.Gateway.Host == "" {
+		cfg.Gateway.Host = "127.0.0.1"
+	}
+	if cfg.Gateway.Port == 0 {
+		cfg.Gateway.Port = 18790
+	}
+	if cfg.Memory.WorkingTokenBudget == 0 {
+		cfg.Memory.WorkingTokenBudget = 100_000
+	}
+	if cfg.Memory.EpisodicDBPath == "" {
+		cfg.Memory.EpisodicDBPath = filepath.Join(cfg.StateDir, "memory", "episodic.db")
+	}
+	if cfg.Memory.SemanticDBPath == "" {
+		cfg.Memory.SemanticDBPath = filepath.Join(cfg.StateDir, "memory", "semantic.db")
+	}
+	if cfg.Agent.MaxIterations == 0 {
+		cfg.Agent.MaxIterations = 64
+	}
+	if cfg.Agent.ToolsDir == "" {
+		cfg.Agent.ToolsDir = filepath.Join(cfg.StateDir, "tools")
+	}
+	if cfg.Agent.SkillsDir == "" {
+		cfg.Agent.SkillsDir = filepath.Join(cfg.StateDir, "skills")
+	}
+	if len(cfg.Embeddings.Priority) == 0 {
+		cfg.Embeddings.Priority = []string{"openai", "ollama", "cohere", "google", "huggingface"}
+	}
+}
+
+// validate checks that required fields are present.
+func validate(cfg *Config) error {
+	var issues []string
+
+	if cfg.Routing.Default == "" && cfg.Providers.OpenAI == nil && cfg.Providers.Anthropic == nil &&
+		cfg.Providers.Ollama == nil && cfg.Providers.VLLM == nil {
+		issues = append(issues, "at least one LLM provider must be configured (providers.openai, providers.anthropic, providers.ollama, etc.)")
+	}
+
+	if cfg.Gateway.Port < 1 || cfg.Gateway.Port > 65535 {
+		issues = append(issues, "gateway.port must be between 1 and 65535")
+	}
+
+	if len(issues) > 0 {
+		return fmt.Errorf("config validation errors:\n  - %s", strings.Join(issues, "\n  - "))
+	}
+	return nil
+}
+
+// DefaultConfigPath returns the default config file path (~/.assistclaw/assistclaw.yaml).
+func DefaultConfigPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".assistclaw", "assistclaw.yaml")
+}

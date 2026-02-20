@@ -1,0 +1,105 @@
+{
+    "name": "assistclaw",
+    "version": "2026.1.0",
+    "description": "A high-performance, polyglot AI assistant with hardware integration and autonomous tool generation",
+    "keywords": [
+        "ai",
+        "assistant",
+        "llm",
+        "multimodal",
+        "hardware"
+    ],
+    "license": "MIT",
+    "author": "",
+    "type": "module",
+    "bin": {
+        "assistclaw": "assistclaw.mjs"
+    },
+    "main": "dist/index.js",
+    "exports": {
+        ".": "./dist/index.js",
+        "./plugin-sdk": {
+            "types": "./dist/plugin-sdk/index.d.ts",
+            "default": "./dist/plugin-sdk/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsdown && node --import tsx scripts/write-build-info.ts",
+        "build:go": "go build -o bin/assistclaw-orchestrator ./cmd/assistclaw",
+        "build:sensing": "cmake -S sensing -B sensing/build && cmake --build sensing/build",
+        "build:all": "pnpm build && pnpm build:go",
+        "dev": "node scripts/run-node.mjs",
+        "check": "pnpm format:check && pnpm tsgo && pnpm lint",
+        "format": "oxfmt --write",
+        "format:check": "oxfmt --check",
+        "lint": "oxlint --type-aware",
+        "lint:fix": "oxlint --type-aware --fix && pnpm format",
+        "tsgo": "tsc --noEmit",
+        "test": "vitest run",
+        "test:fast": "vitest run --config vitest.unit.config.ts",
+        "test:e2e": "vitest run --config vitest.e2e.config.ts",
+        "test:coverage": "vitest run --coverage",
+        "test:watch": "vitest",
+        "go:test": "go test -race ./...",
+        "go:lint": "golangci-lint run",
+        "go:vet": "go vet ./..."
+    },
+    "dependencies": {
+        "@mariozechner/pi-agent-core": "0.54.0",
+        "@mariozechner/pi-ai": "0.54.0",
+        "@mariozechner/pi-coding-agent": "0.54.0",
+        "@mariozechner/pi-tui": "0.54.0",
+        "@clack/prompts": "^1.0.1",
+        "@sinclair/typebox": "0.34.48",
+        "ajv": "^8.18.0",
+        "chalk": "^5.6.2",
+        "chokidar": "^5.0.0",
+        "commander": "^14.0.3",
+        "dotenv": "^17.3.1",
+        "express": "^5.2.1",
+        "grammy": "^1.40.0",
+        "@slack/bolt": "^4.6.0",
+        "@slack/web-api": "^7.14.1",
+        "jiti": "^2.6.1",
+        "json5": "^2.2.3",
+        "markdown-it": "^14.1.1",
+        "osc-progress": "^0.3.0",
+        "playwright-core": "1.58.2",
+        "sqlite-vec": "0.1.7-alpha.2",
+        "tar": "7.5.9",
+        "tslog": "^4.10.2",
+        "undici": "^7.22.0",
+        "ws": "^8.19.0",
+        "yaml": "^2.8.2",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.6",
+        "@types/markdown-it": "^14.1.2",
+        "@types/node": "^25.3.0",
+        "@types/ws": "^8.18.1",
+        "@vitest/coverage-v8": "^4.0.18",
+        "oxfmt": "0.33.0",
+        "oxlint": "^1.48.0",
+        "rolldown": "1.0.0-rc.5",
+        "tsdown": "^0.20.3",
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3",
+        "vitest": "^4.0.18"
+    },
+    "engines": {
+        "node": ">=22.12.0"
+    },
+    "packageManager": "pnpm@10.23.0",
+    "pnpm": {
+        "overrides": {
+            "@sinclair/typebox": "0.34.48",
+            "tar": "7.5.9"
+        },
+        "onlyBuiltDependencies": [
+            "sqlite-vec",
+            "esbuild",
+            "playwright-core"
+        ]
+    }
+}
