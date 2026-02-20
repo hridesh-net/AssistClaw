@@ -73,7 +73,20 @@ func New(cfg Config) (*Provider, error) {
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), opts...)
 	if err != nil {
-		return nil, fmt.Errorf("bedrock: load aws config: %w", err)
+		if cfg.APIKey != "" {
+			awsCfg = aws.Config{
+				Region:      cfg.Region,
+				Credentials: aws.AnonymousCredentials{},
+				HTTPClient: &http.Client{
+					Transport: &apiKeyTransport{
+						token: cfg.APIKey,
+						base:  http.DefaultTransport,
+					},
+				},
+			}
+		} else {
+			return nil, fmt.Errorf("bedrock: load aws config: %w", err)
+		}
 	}
 
 	return &Provider{
