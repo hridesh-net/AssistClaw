@@ -1,0 +1,1 @@
+export const ASSISTCLAW_VERSION = "2026.1.0";
