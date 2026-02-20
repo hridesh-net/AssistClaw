@@ -47,6 +47,11 @@ jobs:
         with:
           go-version: '1.24'
           
+      - name: Download SQLite Headers
+        run: |
+          curl -sSLo sqlite3.h https://raw.githubusercontent.com/sqlite/sqlite/master/src/sqlite3.h
+          curl -sSLo sqlite3ext.h https://raw.githubusercontent.com/sqlite/sqlite/master/src/sqlite3ext.h
+
       - name: Install Linux ARM64 Toolchain
         if: matrix.target == 'linux-arm64'
         run: |
@@ -59,6 +64,7 @@ jobs:
           CGO_ENABLED: 1
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CGO_CFLAGS: "-I${{ github.workspace }}"
         run: |
           mkdir -p dist
           go build -tags fts5 -ldflags "-s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
@@ -71,6 +77,7 @@ jobs:
           GOARCH: arm64
           CC: aarch64-linux-gnu-gcc
           CXX: aarch64-linux-gnu-g++
+          CGO_CFLAGS: "-I${{ github.workspace }}"
         run: |
           mkdir -p dist
           go build -tags fts5 -ldflags "-s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
