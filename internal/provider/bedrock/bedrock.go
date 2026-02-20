@@ -33,13 +33,13 @@ type Config struct {
 	DefaultModel string `yaml:"default_model"`
 }
 
-type bearerTransport struct {
+type apiKeyTransport struct {
 	token string
 	base  http.RoundTripper
 }
 
-func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", "Bearer "+t.token)
+func (t *apiKeyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("x-api-key", t.token)
 	return t.base.RoundTrip(req)
 }
 
@@ -59,10 +59,10 @@ func New(cfg Config) (*Provider, error) {
 	if cfg.APIKey != "" {
 		// Disable AWS SigV4 by using anonymous credentials
 		opts = append(opts, awsconfig.WithCredentialsProvider(aws.AnonymousCredentials{}))
-		// Inject the Bearer token header via a custom transport
+		// Inject the API key header via a custom transport
 		transport := http.DefaultTransport
 		opts = append(opts, awsconfig.WithHTTPClient(&http.Client{
-			Transport: &bearerTransport{
+			Transport: &apiKeyTransport{
 				token: cfg.APIKey,
 				base:  transport,
 			},
