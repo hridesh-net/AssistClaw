@@ -7,12 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
@@ -27,12 +27,20 @@ type Config struct {
 	Region string `yaml:"region"`
 	// Profile is the named AWS profile (~/.aws/credentials). Uses default if empty.
 	Profile string `yaml:"profile"`
-	// AccessKeyID optionally sets the AWS Access Key ID, bypassing ~/.aws/credentials.
-	AccessKeyID string `yaml:"access_key_id"`
-	// SecretAccessKey optionally sets the AWS Secret Access Key, bypassing ~/.aws/credentials.
-	SecretAccessKey string `yaml:"secret_access_key"`
+	// APIKey optionally sets the AWS Bedrock Bearer Token (API Key), bypassing SigV4.
+	APIKey string `yaml:"api_key"`
 	// DefaultModel is the default model ID (e.g. "anthropic.claude-3-5-sonnet-20241022-v2:0")
 	DefaultModel string `yaml:"default_model"`
+}
+
+type bearerTransport struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(req)
 }
 
 // Provider implements provider.Provider for AWS Bedrock.
@@ -48,11 +56,19 @@ func New(cfg Config) (*Provider, error) {
 	if cfg.Region != "" {
 		opts = append(opts, awsconfig.WithRegion(cfg.Region))
 	}
-	if cfg.Profile != "" && cfg.AccessKeyID == "" {
+	if cfg.APIKey != "" {
+		// Disable AWS SigV4 by using anonymous credentials
+		opts = append(opts, awsconfig.WithCredentialsProvider(aws.AnonymousCredentials{}))
+		// Inject the Bearer token header via a custom transport
+		transport := http.DefaultTransport
+		opts = append(opts, awsconfig.WithHTTPClient(&http.Client{
+			Transport: &bearerTransport{
+				token: cfg.APIKey,
+				base:  transport,
+			},
+		}))
+	} else if cfg.Profile != "" {
 		opts = append(opts, awsconfig.WithSharedConfigProfile(cfg.Profile))
-	}
-	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
-		opts = append(opts, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")))
 	}
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), opts...)
