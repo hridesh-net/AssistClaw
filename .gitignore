@@ -33,17 +33,20 @@ Thumbs.db
 *.swo
 *~
 
-# Environment files
+# Environment and Config files
 .env
-.env.local
-.env.*.local
+.env.*
 assistclaw.yaml
+*.yaml.local
 
-# Local data / DBs
+# Local data / DBs / State
 *.db
 *.sqlite
 *.sqlite3
 .assistclaw/
+memory/
+skills/
+tools/
 
 # Node.js (if any JS tooling exists)
 node_modules/
@@ -51,8 +54,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-openclaw/*
-/openclaw
-/openclaw/*sqlite3.h
+# Legacy / Reference
+openclaw/
+sqlite3.h
 sqlite3ext.h
 dist/
