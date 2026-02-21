@@ -52,6 +52,13 @@ type GatewayConfig struct {
 		Cert string `yaml:"cert"`
 		Key  string `yaml:"key"`
 	} `yaml:"tls"`
+	Bind      string          `yaml:"bind"` // loopback, lan, tailnet, custom
+	Tailscale TailscaleConfig `yaml:"tailscale"`
+}
+
+type TailscaleConfig struct {
+	Mode        string `yaml:"mode"` // off, serve, funnel
+	ResetOnExit bool   `yaml:"reset_on_exit"`
 }
 
 // ProvidersConfig holds all LLM provider configurations.
@@ -192,10 +199,11 @@ type GPIOConfig struct {
 
 // AgentConfig controls agent runner behavior.
 type AgentConfig struct {
-	MaxIterations   int    `yaml:"max_iterations"`
-	SystemPromptExt string `yaml:"system_prompt_ext"`
-	ToolsDir        string `yaml:"tools_dir"`
-	SkillsDir       string `yaml:"skills_dir"`
+	MaxIterations   int      `yaml:"max_iterations"`
+	SystemPromptExt string   `yaml:"system_prompt_ext"`
+	ToolsDir        string   `yaml:"tools_dir"`
+	SkillsDir       string   `yaml:"skills_dir"`
+	EnabledSkills   []string `yaml:"enabled_skills"`
 }
 
 // ChannelsConfig configures messaging channels.
@@ -203,6 +211,11 @@ type ChannelsConfig struct {
 	Telegram *TelegramConfig `yaml:"telegram"`
 	Discord  *DiscordConfig  `yaml:"discord"`
 	Slack    *SlackConfig    `yaml:"slack"`
+	WhatsApp *WhatsAppConfig `yaml:"whatsapp"`
+}
+
+type WhatsAppConfig struct {
+	SessionID string `yaml:"session_id"`
 }
 
 type TelegramConfig struct {

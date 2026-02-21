@@ -1,15 +1,26 @@
+# filippo.io/edwards25519 v1.1.0
+## explicit; go 1.20
+filippo.io/edwards25519
+filippo.io/edwards25519/field
+# github.com/akutz/memconn v0.1.0
+## explicit
+github.com/akutz/memconn
+# github.com/alexbrainman/sspi v0.0.0-20231016080023-1a75b4708caa
+## explicit; go 1.13
+github.com/alexbrainman/sspi
+github.com/alexbrainman/sspi/internal/common
+github.com/alexbrainman/sspi/negotiate
 # github.com/asg017/sqlite-vec-go-bindings v0.1.6
 ## explicit; go 1.22.5
 github.com/asg017/sqlite-vec-go-bindings/cgo
 # github.com/atotto/clipboard v0.1.4
 ## explicit
 github.com/atotto/clipboard
-# github.com/aws/aws-sdk-go-v2 v1.32.0
-## explicit; go 1.21
+# github.com/aws/aws-sdk-go-v2 v1.41.0
+## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/aws
 github.com/aws/aws-sdk-go-v2/aws/defaults
 github.com/aws/aws-sdk-go-v2/aws/middleware
-github.com/aws/aws-sdk-go-v2/aws/middleware/private/metrics
 github.com/aws/aws-sdk-go-v2/aws/protocol/query
 github.com/aws/aws-sdk-go-v2/aws/protocol/restjson
 github.com/aws/aws-sdk-go-v2/aws/protocol/xml
@@ -31,14 +42,14 @@ github.com/aws/aws-sdk-go-v2/internal/shareddefaults
 github.com/aws/aws-sdk-go-v2/internal/strings
 github.com/aws/aws-sdk-go-v2/internal/sync/singleflight
 github.com/aws/aws-sdk-go-v2/internal/timeconv
-# github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.6
+# github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.8
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream/eventstreamapi
-# github.com/aws/aws-sdk-go-v2/config v1.27.31
+# github.com/aws/aws-sdk-go-v2/config v1.29.5
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/config
-# github.com/aws/aws-sdk-go-v2/credentials v1.17.30
+# github.com/aws/aws-sdk-go-v2/credentials v1.17.58
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/credentials
 github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds
@@ -47,17 +58,17 @@ github.com/aws/aws-sdk-go-v2/credentials/endpointcreds/internal/client
 github.com/aws/aws-sdk-go-v2/credentials/processcreds
 github.com/aws/aws-sdk-go-v2/credentials/ssocreds
 github.com/aws/aws-sdk-go-v2/credentials/stscreds
-# github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.12
+# github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.27
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds/internal/config
-# github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.19
-## explicit; go 1.21
+# github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.16
+## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/internal/configsources
-# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.19
-## explicit; go 1.21
+# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.16
+## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
-# github.com/aws/aws-sdk-go-v2/internal/ini v1.8.1
+# github.com/aws/aws-sdk-go-v2/internal/ini v1.8.2
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/internal/ini
 # github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.19.0
@@ -67,29 +78,29 @@ github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document
 github.com/aws/aws-sdk-go-v2/service/bedrockruntime/internal/document
 github.com/aws/aws-sdk-go-v2/service/bedrockruntime/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types
-# github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.11.4
-## explicit; go 1.21
+# github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4
+## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
-# github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.11.18
-## explicit; go 1.21
+# github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.16
+## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
-# github.com/aws/aws-sdk-go-v2/service/sso v1.22.5
+# github.com/aws/aws-sdk-go-v2/service/sso v1.24.14
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/service/sso
 github.com/aws/aws-sdk-go-v2/service/sso/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/sso/types
-# github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.5
+# github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.13
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/service/ssooidc
 github.com/aws/aws-sdk-go-v2/service/ssooidc/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/ssooidc/types
-# github.com/aws/aws-sdk-go-v2/service/sts v1.30.5
-## explicit; go 1.21
+# github.com/aws/aws-sdk-go-v2/service/sts v1.41.5
+## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/sts
 github.com/aws/aws-sdk-go-v2/service/sts/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/sts/types
-# github.com/aws/smithy-go v1.22.0
-## explicit; go 1.21
+# github.com/aws/smithy-go v1.24.0
+## explicit; go 1.23
 github.com/aws/smithy-go
 github.com/aws/smithy-go/auth
 github.com/aws/smithy-go/auth/bearer
@@ -102,6 +113,7 @@ github.com/aws/smithy-go/encoding/httpbinding
 github.com/aws/smithy-go/encoding/json
 github.com/aws/smithy-go/encoding/xml
 github.com/aws/smithy-go/endpoints
+github.com/aws/smithy-go/endpoints/private/rulesfn
 github.com/aws/smithy-go/internal/sync/singleflight
 github.com/aws/smithy-go/io
 github.com/aws/smithy-go/logging
@@ -118,6 +130,18 @@ github.com/aws/smithy-go/transport/http/internal/io
 # github.com/aymanbagabas/go-osc52/v2 v2.0.1
 ## explicit; go 1.16
 github.com/aymanbagabas/go-osc52/v2
+# github.com/beeper/argo-go v1.1.2
+## explicit; go 1.23.0
+github.com/beeper/argo-go/block
+github.com/beeper/argo-go/codec
+github.com/beeper/argo-go/header
+github.com/beeper/argo-go/internal/util
+github.com/beeper/argo-go/label
+github.com/beeper/argo-go/pkg/bitset
+github.com/beeper/argo-go/pkg/buf
+github.com/beeper/argo-go/pkg/varint
+github.com/beeper/argo-go/wire
+github.com/beeper/argo-go/wirecodec
 # github.com/bwmarrin/discordgo v0.29.0
 ## explicit; go 1.13
 github.com/bwmarrin/discordgo
@@ -227,15 +251,41 @@ github.com/chromedp/chromedp/kb
 # github.com/chromedp/sysutil v1.1.0
 ## explicit; go 1.23
 github.com/chromedp/sysutil
-# github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
-## explicit
+# github.com/coder/websocket v1.8.14
+## explicit; go 1.23
+github.com/coder/websocket
+github.com/coder/websocket/internal/bpool
+github.com/coder/websocket/internal/errd
+github.com/coder/websocket/internal/util
+github.com/coder/websocket/internal/wsjs
+# github.com/creachadair/msync v0.7.1
+## explicit; go 1.25
+github.com/creachadair/msync/trigger
+# github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa
+## explicit; go 1.21
+github.com/dblohm7/wingoes
+github.com/dblohm7/wingoes/com
+github.com/dblohm7/wingoes/com/automation
+github.com/dblohm7/wingoes/internal
+github.com/dblohm7/wingoes/pe
 # github.com/dustin/go-humanize v1.0.1
 ## explicit; go 1.16
 github.com/dustin/go-humanize
+# github.com/elliotchance/orderedmap/v3 v3.1.0
+## explicit; go 1.23.0
+github.com/elliotchance/orderedmap/v3
 # github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f
 ## explicit; go 1.16
 github.com/erikgeiser/coninput
-# github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2
+# github.com/fxamacker/cbor/v2 v2.9.0
+## explicit; go 1.20
+github.com/fxamacker/cbor/v2
+# github.com/gaissmai/bart v0.18.0
+## explicit; go 1.23.6
+github.com/gaissmai/bart
+github.com/gaissmai/bart/internal/bitset
+github.com/gaissmai/bart/internal/sparse
+# github.com/go-json-experiment/json v0.0.0-20250813024750-ebf49471dced
 ## explicit; go 1.24
 github.com/go-json-experiment/json
 github.com/go-json-experiment/json/internal
@@ -259,18 +309,62 @@ github.com/gobwas/pool/pbytes
 ## explicit; go 1.16
 github.com/gobwas/ws
 github.com/gobwas/ws/wsutil
+# github.com/godbus/dbus/v5 v5.1.1-0.20230522191255-76236955d466
+## explicit; go 1.12
+github.com/godbus/dbus/v5
+# github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
+## explicit; go 1.20
+github.com/golang/groupcache/lru
+# github.com/google/btree v1.1.3
+## explicit; go 1.18
+github.com/google/btree
+# github.com/google/go-cmp v0.7.0
+## explicit; go 1.21
+github.com/google/go-cmp/cmp
+github.com/google/go-cmp/cmp/internal/diff
+github.com/google/go-cmp/cmp/internal/flags
+github.com/google/go-cmp/cmp/internal/function
+github.com/google/go-cmp/cmp/internal/value
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
-# github.com/gorilla/websocket v1.5.3
-## explicit; go 1.12
+# github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
+## explicit; go 1.20
 github.com/gorilla/websocket
+# github.com/hdevalence/ed25519consensus v0.2.0
+## explicit; go 1.19
+github.com/hdevalence/ed25519consensus
+# github.com/huin/goupnp v1.3.0
+## explicit; go 1.14
+github.com/huin/goupnp
+github.com/huin/goupnp/dcps/internetgateway2
+github.com/huin/goupnp/httpu
+github.com/huin/goupnp/scpd
+github.com/huin/goupnp/soap
+github.com/huin/goupnp/ssdp
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
 github.com/inconshreveable/mousetrap
+# github.com/jsimonetti/rtnetlink v1.4.0
+## explicit; go 1.20
+github.com/jsimonetti/rtnetlink
+github.com/jsimonetti/rtnetlink/internal/unix
+# github.com/klauspost/compress v1.18.2
+## explicit; go 1.23
+github.com/klauspost/compress
+github.com/klauspost/compress/fse
+github.com/klauspost/compress/huff0
+github.com/klauspost/compress/internal/cpuinfo
+github.com/klauspost/compress/internal/le
+github.com/klauspost/compress/internal/snapref
+github.com/klauspost/compress/zstd
+github.com/klauspost/compress/zstd/internal/xxhash
 # github.com/lucasb-eyer/go-colorful v1.2.0
 ## explicit; go 1.12
 github.com/lucasb-eyer/go-colorful
+# github.com/mattn/go-colorable v0.1.14
+## explicit; go 1.18
+github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
@@ -280,9 +374,19 @@ github.com/mattn/go-localereader
 # github.com/mattn/go-runewidth v0.0.16
 ## explicit; go 1.9
 github.com/mattn/go-runewidth
-# github.com/mattn/go-sqlite3 v1.14.22
+# github.com/mattn/go-sqlite3 v1.14.34
 ## explicit; go 1.19
 github.com/mattn/go-sqlite3
+# github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42
+## explicit; go 1.21
+github.com/mdlayher/netlink
+github.com/mdlayher/netlink/nlenc
+# github.com/mdlayher/socket v0.5.0
+## explicit; go 1.21
+github.com/mdlayher/socket
+# github.com/mitchellh/go-ps v1.0.0
+## explicit; go 1.13
+github.com/mitchellh/go-ps
 # github.com/mitchellh/hashstructure/v2 v2.0.2
 ## explicit; go 1.14
 github.com/mitchellh/hashstructure/v2
@@ -296,14 +400,30 @@ github.com/muesli/cancelreader
 # github.com/muesli/termenv v0.16.0
 ## explicit; go 1.17
 github.com/muesli/termenv
-# github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
-## explicit
+# github.com/petermattis/goid v0.0.0-20260113132338-7c7de50cc741
+## explicit; go 1.17
+github.com/petermattis/goid
+# github.com/pires/go-proxyproto v0.8.1
+## explicit; go 1.24
+github.com/pires/go-proxyproto
+# github.com/prometheus-community/pro-bing v0.4.0
+## explicit; go 1.19
+github.com/prometheus-community/pro-bing
 # github.com/rivo/uniseg v0.4.7
 ## explicit; go 1.18
 github.com/rivo/uniseg
 # github.com/robfig/cron/v3 v3.0.1
 ## explicit; go 1.12
 github.com/robfig/cron/v3
+# github.com/rs/zerolog v1.34.0
+## explicit; go 1.15
+github.com/rs/zerolog
+github.com/rs/zerolog/internal/cbor
+github.com/rs/zerolog/internal/json
+github.com/rs/zerolog/log
+# github.com/safchain/ethtool v0.3.0
+## explicit; go 1.16
+github.com/safchain/ethtool
 # github.com/slack-go/slack v0.17.3
 ## explicit; go 1.22
 github.com/slack-go/slack
@@ -313,16 +433,159 @@ github.com/slack-go/slack/internal/timex
 github.com/slack-go/slack/slackevents
 github.com/slack-go/slack/slackutilsx
 github.com/slack-go/slack/socketmode
-# github.com/spf13/cobra v1.8.0
+# github.com/spf13/cobra v1.10.1
 ## explicit; go 1.15
 github.com/spf13/cobra
-# github.com/spf13/pflag v1.0.5
+# github.com/spf13/pflag v1.0.9
 ## explicit; go 1.12
 github.com/spf13/pflag
+# github.com/tailscale/certstore v0.1.1-0.20231202035212-d3fa0460f47e
+## explicit; go 1.20
+github.com/tailscale/certstore
+# github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55
+## explicit; go 1.17
+github.com/tailscale/go-winio
+github.com/tailscale/go-winio/internal/fs
+github.com/tailscale/go-winio/internal/socket
+github.com/tailscale/go-winio/internal/stringbuffer
+github.com/tailscale/go-winio/pkg/guid
+# github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
+## explicit; go 1.18
+github.com/tailscale/hujson
+# github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc
+## explicit; go 1.18
+github.com/tailscale/peercred
+# github.com/tailscale/web-client-prebuilt v0.0.0-20250124233751-d4cd19a26976
+## explicit; go 1.21
+github.com/tailscale/web-client-prebuilt
+# github.com/tailscale/wireguard-go v0.0.0-20250716170648-1d0488a3d7da
+## explicit; go 1.20
+github.com/tailscale/wireguard-go/conn
+github.com/tailscale/wireguard-go/conn/winrio
+github.com/tailscale/wireguard-go/device
+github.com/tailscale/wireguard-go/ipc
+github.com/tailscale/wireguard-go/ipc/namedpipe
+github.com/tailscale/wireguard-go/ratelimiter
+github.com/tailscale/wireguard-go/replay
+github.com/tailscale/wireguard-go/rwcancel
+github.com/tailscale/wireguard-go/tai64n
+github.com/tailscale/wireguard-go/tun
+# github.com/vektah/gqlparser/v2 v2.5.27
+## explicit; go 1.22
+github.com/vektah/gqlparser/v2/ast
+# github.com/x448/float16 v0.8.4
+## explicit; go 1.11
+github.com/x448/float16
 # github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
 ## explicit; go 1.19
 github.com/xo/terminfo
-# go.uber.org/multierr v1.10.0
+# go.mau.fi/libsignal v0.2.1
+## explicit; go 1.24.0
+go.mau.fi/libsignal/cipher
+go.mau.fi/libsignal/ecc
+go.mau.fi/libsignal/groups
+go.mau.fi/libsignal/groups/ratchet
+go.mau.fi/libsignal/groups/state/record
+go.mau.fi/libsignal/groups/state/store
+go.mau.fi/libsignal/kdf
+go.mau.fi/libsignal/keys/chain
+go.mau.fi/libsignal/keys/identity
+go.mau.fi/libsignal/keys/message
+go.mau.fi/libsignal/keys/prekey
+go.mau.fi/libsignal/keys/root
+go.mau.fi/libsignal/keys/session
+go.mau.fi/libsignal/logger
+go.mau.fi/libsignal/protocol
+go.mau.fi/libsignal/ratchet
+go.mau.fi/libsignal/serialize
+go.mau.fi/libsignal/session
+go.mau.fi/libsignal/signalerror
+go.mau.fi/libsignal/state/record
+go.mau.fi/libsignal/state/store
+go.mau.fi/libsignal/util/bytehelper
+go.mau.fi/libsignal/util/errorhelper
+go.mau.fi/libsignal/util/keyhelper
+go.mau.fi/libsignal/util/medium
+go.mau.fi/libsignal/util/optional
+# go.mau.fi/util v0.9.6
+## explicit; go 1.25.0
+go.mau.fi/util/dbutil
+go.mau.fi/util/exbytes
+go.mau.fi/util/exerrors
+go.mau.fi/util/exhttp
+go.mau.fi/util/exmaps
+go.mau.fi/util/exslices
+go.mau.fi/util/exstrings
+go.mau.fi/util/exsync
+go.mau.fi/util/exzerolog
+go.mau.fi/util/fallocate
+go.mau.fi/util/jsontime
+go.mau.fi/util/ptr
+go.mau.fi/util/random
+go.mau.fi/util/retryafter
+# go.mau.fi/whatsmeow v0.0.0-20260219150138-7ae702b1eed4
+## explicit; go 1.25.0
+go.mau.fi/whatsmeow
+go.mau.fi/whatsmeow/appstate
+go.mau.fi/whatsmeow/appstate/lthash
+go.mau.fi/whatsmeow/argo
+go.mau.fi/whatsmeow/binary
+go.mau.fi/whatsmeow/binary/proto
+go.mau.fi/whatsmeow/binary/token
+go.mau.fi/whatsmeow/proto
+go.mau.fi/whatsmeow/proto/armadilloutil
+go.mau.fi/whatsmeow/proto/instamadilloAddMessage
+go.mau.fi/whatsmeow/proto/instamadilloCoreTypeActionLog
+go.mau.fi/whatsmeow/proto/instamadilloCoreTypeAdminMessage
+go.mau.fi/whatsmeow/proto/instamadilloCoreTypeCollection
+go.mau.fi/whatsmeow/proto/instamadilloCoreTypeLink
+go.mau.fi/whatsmeow/proto/instamadilloCoreTypeMedia
+go.mau.fi/whatsmeow/proto/instamadilloCoreTypeText
+go.mau.fi/whatsmeow/proto/instamadilloDeleteMessage
+go.mau.fi/whatsmeow/proto/instamadilloSupplementMessage
+go.mau.fi/whatsmeow/proto/instamadilloTransportPayload
+go.mau.fi/whatsmeow/proto/instamadilloXmaContentRef
+go.mau.fi/whatsmeow/proto/waAICommon
+go.mau.fi/whatsmeow/proto/waAdv
+go.mau.fi/whatsmeow/proto/waArmadilloApplication
+go.mau.fi/whatsmeow/proto/waArmadilloXMA
+go.mau.fi/whatsmeow/proto/waBotMetadata
+go.mau.fi/whatsmeow/proto/waCert
+go.mau.fi/whatsmeow/proto/waChatLockSettings
+go.mau.fi/whatsmeow/proto/waCommon
+go.mau.fi/whatsmeow/proto/waCompanionReg
+go.mau.fi/whatsmeow/proto/waConsumerApplication
+go.mau.fi/whatsmeow/proto/waDeviceCapabilities
+go.mau.fi/whatsmeow/proto/waE2E
+go.mau.fi/whatsmeow/proto/waEphemeral
+go.mau.fi/whatsmeow/proto/waHistorySync
+go.mau.fi/whatsmeow/proto/waLidMigrationSyncPayload
+go.mau.fi/whatsmeow/proto/waMediaTransport
+go.mau.fi/whatsmeow/proto/waMmsRetry
+go.mau.fi/whatsmeow/proto/waMsgApplication
+go.mau.fi/whatsmeow/proto/waMsgTransport
+go.mau.fi/whatsmeow/proto/waMultiDevice
+go.mau.fi/whatsmeow/proto/waQuickPromotionSurfaces
+go.mau.fi/whatsmeow/proto/waServerSync
+go.mau.fi/whatsmeow/proto/waStatusAttributions
+go.mau.fi/whatsmeow/proto/waSyncAction
+go.mau.fi/whatsmeow/proto/waSyncdSnapshotRecovery
+go.mau.fi/whatsmeow/proto/waUserPassword
+go.mau.fi/whatsmeow/proto/waVnameCert
+go.mau.fi/whatsmeow/proto/waWa6
+go.mau.fi/whatsmeow/proto/waWeb
+go.mau.fi/whatsmeow/socket
+go.mau.fi/whatsmeow/store
+go.mau.fi/whatsmeow/store/sqlstore
+go.mau.fi/whatsmeow/store/sqlstore/upgrades
+go.mau.fi/whatsmeow/types
+go.mau.fi/whatsmeow/types/events
+go.mau.fi/whatsmeow/util/cbcutil
+go.mau.fi/whatsmeow/util/gcmutil
+go.mau.fi/whatsmeow/util/hkdfutil
+go.mau.fi/whatsmeow/util/keys
+go.mau.fi/whatsmeow/util/log
+# go.uber.org/multierr v1.11.0
 ## explicit; go 1.19
 go.uber.org/multierr
 # go.uber.org/zap v1.27.0
@@ -336,23 +599,365 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
-# golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b
-## explicit; go 1.11
-golang.org/x/crypto/internal/subtle
+# go4.org/mem v0.0.0-20240501181205-ae6ca9944745
+## explicit; go 1.14
+go4.org/mem
+# go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
+## explicit; go 1.18
+go4.org/netipx
+# golang.org/x/crypto v0.48.0
+## explicit; go 1.24.0
+golang.org/x/crypto/argon2
+golang.org/x/crypto/blake2b
+golang.org/x/crypto/blake2s
+golang.org/x/crypto/blowfish
+golang.org/x/crypto/chacha20
+golang.org/x/crypto/chacha20poly1305
+golang.org/x/crypto/curve25519
+golang.org/x/crypto/hkdf
+golang.org/x/crypto/internal/alias
+golang.org/x/crypto/internal/poly1305
+golang.org/x/crypto/nacl/box
 golang.org/x/crypto/nacl/secretbox
+golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/poly1305
 golang.org/x/crypto/salsa20/salsa
-# golang.org/x/sync v0.15.0
-## explicit; go 1.23.0
+golang.org/x/crypto/ssh
+golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
+# golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a
+## explicit; go 1.25.0
+golang.org/x/exp/constraints
+golang.org/x/exp/maps
+# golang.org/x/net v0.50.0
+## explicit; go 1.24.0
+golang.org/x/net/bpf
+golang.org/x/net/dns/dnsmessage
+golang.org/x/net/http/httpguts
+golang.org/x/net/http/httpproxy
+golang.org/x/net/http2
+golang.org/x/net/http2/hpack
+golang.org/x/net/icmp
+golang.org/x/net/idna
+golang.org/x/net/internal/httpcommon
+golang.org/x/net/internal/httpsfv
+golang.org/x/net/internal/iana
+golang.org/x/net/internal/socket
+golang.org/x/net/internal/socks
+golang.org/x/net/ipv4
+golang.org/x/net/ipv6
+golang.org/x/net/proxy
+golang.org/x/net/route
+# golang.org/x/oauth2 v0.32.0
+## explicit; go 1.24.0
+golang.org/x/oauth2
+golang.org/x/oauth2/clientcredentials
+golang.org/x/oauth2/internal
+# golang.org/x/sync v0.19.0
+## explicit; go 1.24.0
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.34.0
-## explicit; go 1.23.0
+# golang.org/x/sys v0.41.0
+## explicit; go 1.24.0
 golang.org/x/sys/cpu
+golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/text v0.23.0
-## explicit; go 1.23.0
+golang.org/x/sys/windows/registry
+golang.org/x/sys/windows/svc
+golang.org/x/sys/windows/svc/mgr
+# golang.org/x/term v0.40.0
+## explicit; go 1.24.0
+golang.org/x/term
+# golang.org/x/text v0.34.0
+## explicit; go 1.24.0
+golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
+golang.org/x/text/unicode/bidi
+golang.org/x/text/unicode/norm
+# golang.org/x/time v0.12.0
+## explicit; go 1.23.0
+golang.org/x/time/rate
+# golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2
+## explicit; go 1.17
+golang.zx2c4.com/wintun
+# golang.zx2c4.com/wireguard/windows v0.5.3
+## explicit; go 1.18
+golang.zx2c4.com/wireguard/windows/tunnel/winipcfg
+# google.golang.org/protobuf v1.36.11
+## explicit; go 1.23
+google.golang.org/protobuf/encoding/prototext
+google.golang.org/protobuf/encoding/protowire
+google.golang.org/protobuf/internal/descfmt
+google.golang.org/protobuf/internal/descopts
+google.golang.org/protobuf/internal/detrand
+google.golang.org/protobuf/internal/editiondefaults
+google.golang.org/protobuf/internal/encoding/defval
+google.golang.org/protobuf/internal/encoding/messageset
+google.golang.org/protobuf/internal/encoding/tag
+google.golang.org/protobuf/internal/encoding/text
+google.golang.org/protobuf/internal/errors
+google.golang.org/protobuf/internal/filedesc
+google.golang.org/protobuf/internal/filetype
+google.golang.org/protobuf/internal/flags
+google.golang.org/protobuf/internal/genid
+google.golang.org/protobuf/internal/impl
+google.golang.org/protobuf/internal/order
+google.golang.org/protobuf/internal/pragma
+google.golang.org/protobuf/internal/protolazy
+google.golang.org/protobuf/internal/set
+google.golang.org/protobuf/internal/strs
+google.golang.org/protobuf/internal/version
+google.golang.org/protobuf/proto
+google.golang.org/protobuf/reflect/protoreflect
+google.golang.org/protobuf/reflect/protoregistry
+google.golang.org/protobuf/runtime/protoiface
+google.golang.org/protobuf/runtime/protoimpl
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
+# gvisor.dev/gvisor v0.0.0-20250205023644-9414b50a5633
+## explicit; go 1.23.1
+gvisor.dev/gvisor/pkg/atomicbitops
+gvisor.dev/gvisor/pkg/bits
+gvisor.dev/gvisor/pkg/buffer
+gvisor.dev/gvisor/pkg/context
+gvisor.dev/gvisor/pkg/cpuid
+gvisor.dev/gvisor/pkg/gohacks
+gvisor.dev/gvisor/pkg/goid
+gvisor.dev/gvisor/pkg/linewriter
+gvisor.dev/gvisor/pkg/log
+gvisor.dev/gvisor/pkg/rand
+gvisor.dev/gvisor/pkg/refs
+gvisor.dev/gvisor/pkg/sleep
+gvisor.dev/gvisor/pkg/state
+gvisor.dev/gvisor/pkg/state/wire
+gvisor.dev/gvisor/pkg/sync
+gvisor.dev/gvisor/pkg/sync/locking
+gvisor.dev/gvisor/pkg/tcpip
+gvisor.dev/gvisor/pkg/tcpip/adapters/gonet
+gvisor.dev/gvisor/pkg/tcpip/checksum
+gvisor.dev/gvisor/pkg/tcpip/hash/jenkins
+gvisor.dev/gvisor/pkg/tcpip/header
+gvisor.dev/gvisor/pkg/tcpip/header/parse
+gvisor.dev/gvisor/pkg/tcpip/internal/tcp
+gvisor.dev/gvisor/pkg/tcpip/network/hash
+gvisor.dev/gvisor/pkg/tcpip/network/internal/fragmentation
+gvisor.dev/gvisor/pkg/tcpip/network/internal/ip
+gvisor.dev/gvisor/pkg/tcpip/network/internal/multicast
+gvisor.dev/gvisor/pkg/tcpip/network/ipv4
+gvisor.dev/gvisor/pkg/tcpip/network/ipv6
+gvisor.dev/gvisor/pkg/tcpip/ports
+gvisor.dev/gvisor/pkg/tcpip/seqnum
+gvisor.dev/gvisor/pkg/tcpip/stack
+gvisor.dev/gvisor/pkg/tcpip/stack/gro
+gvisor.dev/gvisor/pkg/tcpip/transport
+gvisor.dev/gvisor/pkg/tcpip/transport/icmp
+gvisor.dev/gvisor/pkg/tcpip/transport/internal/network
+gvisor.dev/gvisor/pkg/tcpip/transport/internal/noop
+gvisor.dev/gvisor/pkg/tcpip/transport/packet
+gvisor.dev/gvisor/pkg/tcpip/transport/raw
+gvisor.dev/gvisor/pkg/tcpip/transport/tcp
+gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack
+gvisor.dev/gvisor/pkg/tcpip/transport/udp
+gvisor.dev/gvisor/pkg/waiter
+# tailscale.com v1.94.2
+## explicit; go 1.25.5
+tailscale.com
+tailscale.com/appc
+tailscale.com/atomicfile
+tailscale.com/client/local
+tailscale.com/client/tailscale
+tailscale.com/client/tailscale/apitype
+tailscale.com/client/web
+tailscale.com/control/controlbase
+tailscale.com/control/controlclient
+tailscale.com/control/controlhttp
+tailscale.com/control/controlhttp/controlhttpcommon
+tailscale.com/control/controlknobs
+tailscale.com/control/ts2021
+tailscale.com/derp
+tailscale.com/derp/derpconst
+tailscale.com/derp/derphttp
+tailscale.com/disco
+tailscale.com/drive
+tailscale.com/envknob
+tailscale.com/envknob/featureknob
+tailscale.com/feature
+tailscale.com/feature/buildfeatures
+tailscale.com/feature/c2n
+tailscale.com/feature/condlite/expvar
+tailscale.com/feature/condregister/identityfederation
+tailscale.com/feature/condregister/oauthkey
+tailscale.com/feature/condregister/portmapper
+tailscale.com/feature/condregister/useproxy
+tailscale.com/feature/identityfederation
+tailscale.com/feature/oauthkey
+tailscale.com/feature/portmapper
+tailscale.com/feature/syspolicy
+tailscale.com/feature/useproxy
+tailscale.com/health
+tailscale.com/health/healthmsg
+tailscale.com/hostinfo
+tailscale.com/internal/client/tailscale
+tailscale.com/ipn
+tailscale.com/ipn/conffile
+tailscale.com/ipn/ipnauth
+tailscale.com/ipn/ipnext
+tailscale.com/ipn/ipnlocal
+tailscale.com/ipn/ipnstate
+tailscale.com/ipn/localapi
+tailscale.com/ipn/store
+tailscale.com/ipn/store/mem
+tailscale.com/kube/kubetypes
+tailscale.com/licenses
+tailscale.com/log/filelogger
+tailscale.com/log/sockstatlog
+tailscale.com/logpolicy
+tailscale.com/logtail
+tailscale.com/logtail/filch
+tailscale.com/metrics
+tailscale.com/net/bakedroots
+tailscale.com/net/batching
+tailscale.com/net/captivedetection
+tailscale.com/net/dns
+tailscale.com/net/dns/publicdns
+tailscale.com/net/dns/resolvconffile
+tailscale.com/net/dns/resolver
+tailscale.com/net/dnscache
+tailscale.com/net/dnsfallback
+tailscale.com/net/flowtrack
+tailscale.com/net/ipset
+tailscale.com/net/memnet
+tailscale.com/net/netaddr
+tailscale.com/net/netcheck
+tailscale.com/net/neterror
+tailscale.com/net/netkernelconf
+tailscale.com/net/netknob
+tailscale.com/net/netmon
+tailscale.com/net/netns
+tailscale.com/net/netutil
+tailscale.com/net/netx
+tailscale.com/net/packet
+tailscale.com/net/packet/checksum
+tailscale.com/net/ping
+tailscale.com/net/portmapper
+tailscale.com/net/portmapper/portmappertype
+tailscale.com/net/proxymux
+tailscale.com/net/sockopts
+tailscale.com/net/socks5
+tailscale.com/net/sockstats
+tailscale.com/net/stun
+tailscale.com/net/tlsdial
+tailscale.com/net/tlsdial/blockblame
+tailscale.com/net/tsaddr
+tailscale.com/net/tsdial
+tailscale.com/net/tshttpproxy
+tailscale.com/net/tstun
+tailscale.com/net/udprelay/endpoint
+tailscale.com/net/udprelay/status
+tailscale.com/net/wsconn
+tailscale.com/omit
+tailscale.com/paths
+tailscale.com/proxymap
+tailscale.com/safesocket
+tailscale.com/syncs
+tailscale.com/tailcfg
+tailscale.com/tempfork/acme
+tailscale.com/tempfork/heap
+tailscale.com/tempfork/httprec
+tailscale.com/tka
+tailscale.com/tsconst
+tailscale.com/tsd
+tailscale.com/tsnet
+tailscale.com/tstime
+tailscale.com/tstime/mono
+tailscale.com/tstime/rate
+tailscale.com/tsweb
+tailscale.com/tsweb/varz
+tailscale.com/types/appctype
+tailscale.com/types/bools
+tailscale.com/types/dnstype
+tailscale.com/types/empty
+tailscale.com/types/ipproto
+tailscale.com/types/key
+tailscale.com/types/lazy
+tailscale.com/types/logger
+tailscale.com/types/logid
+tailscale.com/types/mapx
+tailscale.com/types/netlogfunc
+tailscale.com/types/netlogtype
+tailscale.com/types/netmap
+tailscale.com/types/nettype
+tailscale.com/types/opt
+tailscale.com/types/persist
+tailscale.com/types/preftype
+tailscale.com/types/ptr
+tailscale.com/types/result
+tailscale.com/types/structs
+tailscale.com/types/tkatype
+tailscale.com/types/views
+tailscale.com/util/backoff
+tailscale.com/util/checkchange
+tailscale.com/util/cibuild
+tailscale.com/util/clientmetric
+tailscale.com/util/cloudenv
+tailscale.com/util/cloudinfo
+tailscale.com/util/cmpver
+tailscale.com/util/ctxkey
+tailscale.com/util/deephash
+tailscale.com/util/dirwalk
+tailscale.com/util/dnsname
+tailscale.com/util/eventbus
+tailscale.com/util/execqueue
+tailscale.com/util/goroutines
+tailscale.com/util/groupmember
+tailscale.com/util/hashx
+tailscale.com/util/httpm
+tailscale.com/util/lineiter
+tailscale.com/util/mak
+tailscale.com/util/must
+tailscale.com/util/nocasemaps
+tailscale.com/util/osdiag
+tailscale.com/util/osdiag/internal/wsc
+tailscale.com/util/osuser
+tailscale.com/util/race
+tailscale.com/util/racebuild
+tailscale.com/util/rands
+tailscale.com/util/ringlog
+tailscale.com/util/set
+tailscale.com/util/singleflight
+tailscale.com/util/slicesx
+tailscale.com/util/syspolicy
+tailscale.com/util/syspolicy/internal
+tailscale.com/util/syspolicy/internal/loggerx
+tailscale.com/util/syspolicy/internal/metrics
+tailscale.com/util/syspolicy/pkey
+tailscale.com/util/syspolicy/policyclient
+tailscale.com/util/syspolicy/ptype
+tailscale.com/util/syspolicy/rsop
+tailscale.com/util/syspolicy/setting
+tailscale.com/util/syspolicy/source
+tailscale.com/util/testenv
+tailscale.com/util/truncate
+tailscale.com/util/usermetric
+tailscale.com/util/vizerror
+tailscale.com/util/winutil
+tailscale.com/util/winutil/authenticode
+tailscale.com/util/winutil/gp
+tailscale.com/util/winutil/policy
+tailscale.com/util/winutil/winenv
+tailscale.com/util/zstdframe
+tailscale.com/version
+tailscale.com/version/distro
+tailscale.com/wgengine
+tailscale.com/wgengine/filter
+tailscale.com/wgengine/filter/filtertype
+tailscale.com/wgengine/magicsock
+tailscale.com/wgengine/netlog
+tailscale.com/wgengine/netstack
+tailscale.com/wgengine/netstack/gro
+tailscale.com/wgengine/router
+tailscale.com/wgengine/wgcfg
+tailscale.com/wgengine/wgcfg/nmcfg
+tailscale.com/wgengine/wgint
+tailscale.com/wgengine/wglog
+tailscale.com/wif

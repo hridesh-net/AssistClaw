@@ -33,6 +33,12 @@ import (
 	"github.com/assistclaw/assistclaw/internal/provider/openaicompat"
 	"github.com/assistclaw/assistclaw/internal/skills"
 	"github.com/assistclaw/assistclaw/internal/tools"
+
+	// Channels
+	"github.com/assistclaw/assistclaw/internal/channels/discord"
+	"github.com/assistclaw/assistclaw/internal/channels/slack"
+	"github.com/assistclaw/assistclaw/internal/channels/telegram"
+	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 )
 
 const version = "2026.1.0"
@@ -245,6 +251,36 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 				return <-done
 			}
 
+			// Start Messaging Channels
+			if cfg.Channels.Telegram != nil {
+				tg, err := telegram.New(cfg.Channels.Telegram.BotToken)
+				if err == nil {
+					go tg.Start(ctx, runner.HandleChannelMessage)
+					log.Info("Telegram channel active")
+				}
+			}
+			if cfg.Channels.Discord != nil {
+				dc, err := discord.New(cfg.Channels.Discord.BotToken)
+				if err == nil {
+					go dc.Start(ctx, runner.HandleChannelMessage)
+					log.Info("Discord channel active")
+				}
+			}
+			if cfg.Channels.Slack != nil {
+				sl, err := slack.New(cfg.Channels.Slack.BotToken, cfg.Channels.Slack.AppToken)
+				if err == nil {
+					go sl.Start(ctx, runner.HandleChannelMessage)
+					log.Info("Slack channel active")
+				}
+			}
+			if cfg.Channels.WhatsApp != nil {
+				wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID)
+				if err == nil {
+					go wa.Start(ctx, runner.HandleChannelMessage)
+					log.Info("WhatsApp channel active")
+				}
+			}
+
 			// Interactive REPL mode
 			return runREPL(ctx, runner, log)
 		},
@@ -442,15 +478,19 @@ func gatewayCmd(gf *globalFlags) *cobra.Command {
 			log := buildLogger(gf.logLevel)
 			defer log.Sync()
 
-			_, err := loadConfig(gf.configPath, log)
+			cfg, err := loadConfig(gf.configPath, log)
 			if err != nil {
 				return err
 			}
 
-			port := 18789
-			// TODO: Use config if provided in the future
-			log.Info("Starting AssistClaw Gateway...", zap.Int("port", port))
-			srv := gateway.NewServer(port)
+			log.Info("Starting AssistClaw Gateway...",
+				zap.String("host", cfg.Gateway.Host),
+				zap.Int("port", cfg.Gateway.Port),
+				zap.String("bind", cfg.Gateway.Bind),
+			)
+			srv := gateway.NewServer(cfg.Gateway.Port)
+			srv.Bind = cfg.Gateway.Bind
+			srv.Tailscale.Mode = cfg.Gateway.Tailscale.Mode
 
 			errCh := make(chan error, 1)
 			go func() {

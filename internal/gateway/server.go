@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"tailscale.com/tsnet"
 )
 
 var upgrader = websocket.Upgrader{
@@ -23,6 +25,10 @@ type Server struct {
 	Hub        *Hub
 	HTTPServer *http.Server
 	Port       int
+	Bind       string
+	Tailscale  struct {
+		Mode string
+	}
 }
 
 // NewServer initializes a new Gateway server on the specified port.
@@ -48,13 +54,46 @@ func (s *Server) Start() error {
 		serveWs(s.Hub, w, r)
 	})
 
-	addr := fmt.Sprintf("127.0.0.1:%d", s.Port) // Bind to loopback by default to match OpenClaw security
+	addr := fmt.Sprintf(":%d", s.Port)
+	if s.Bind == "tailnet" {
+		ts := &tsnet.Server{
+			Hostname: "assistclaw",
+		}
+		defer ts.Close()
+
+		var ln net.Listener
+		var err error
+
+		if s.Tailscale.Mode == "funnel" {
+			ln, err = ts.ListenFunnel("tcp", addr)
+		} else {
+			ln, err = ts.Listen("tcp", addr)
+		}
+
+		if err != nil {
+			return fmt.Errorf("tailscale listen error: %w", err)
+		}
+
+		s.HTTPServer = &http.Server{
+			Handler: mux,
+		}
+		log.Printf("Gateway control plane listening via Tailscale (%s) on %s", s.Tailscale.Mode, addr)
+		return s.HTTPServer.Serve(ln)
+	}
+
+	// Default loopback or LAN bind
+	bindAddr := "127.0.0.1"
+	if s.Bind == "lan" {
+		bindAddr = "0.0.0.0"
+	}
+	fullAddr := fmt.Sprintf("%s%s", bindAddr, addr)
+
 	s.HTTPServer = &http.Server{
-		Addr:    addr,
+		Addr:    fullAddr,
 		Handler: mux,
 	}
 
-	log.Printf("Gateway control plane listening silently on ws://%s/ws", addr)
+	log.Printf("Gateway control plane listening on ws://%s/ws", fullAddr)
 	return s.HTTPServer.ListenAndServe()
 }
 

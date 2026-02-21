@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/charmbracelet/huh"
@@ -24,7 +25,6 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 		},
 	}
 }
-
 func runOnboarding(configPath string) error {
 	var (
 		provider     string
@@ -35,7 +35,25 @@ func runOnboarding(configPath string) error {
 		awsProfile   string
 		awsAccessKey string
 		awsSecretKey string
-		tpl          string
+
+		// Gateway
+		gwMode string // loopback, lan, tailscale
+		tsMode string // off, serve, funnel
+		gwPort int    = 18790
+		gwHost string = "127.0.0.1"
+
+		// Channels
+		selectedChannels []string
+		tgBotToken       string
+		dcBotToken       string
+		slackBotToken    string
+		slackAppToken    string
+		waSessionID      string
+
+		// Skills
+		selectedSkills []string
+
+		tpl string
 	)
 
 	// Custom theme colors to match OpenClaw
@@ -174,6 +192,110 @@ func runOnboarding(configPath string) error {
 		}
 	}
 
+	// Phase 3: Gateway & Remote Access
+	formGateway := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Gateway & Remote Access").
+				Description("How would you like to expose AssistClaw control plane?").
+				Options(
+					huh.NewOption("Local Only (127.0.0.1)", "loopback"),
+					huh.NewOption("Local Network (LAN)", "lan"),
+					huh.NewOption("Tailscale (Recommended for Remote)", "tailscale"),
+				).
+				Value(&gwMode),
+		),
+	).WithTheme(theme)
+
+	if err := formGateway.Run(); err != nil {
+		return fmt.Errorf("onboarding interrupted")
+	}
+
+	if gwMode == "tailscale" {
+		formTailscale := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Tailscale Mode").
+					Options(
+						huh.NewOption("Tailscale Serve (Secure Private Link)", "serve"),
+						huh.NewOption("Tailscale Funnel (Public Internet)", "funnel"),
+						huh.NewOption("Tailscale IP Only (Private Tailnet)", "off"),
+					).
+					Value(&tsMode),
+			),
+		).WithTheme(theme)
+		if err := formTailscale.Run(); err != nil {
+			return fmt.Errorf("onboarding interrupted")
+		}
+	} else if gwMode == "lan" {
+		gwHost = "0.0.0.0"
+	}
+
+	// Phase 4: Messaging Channels
+	formChannels := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Messaging Channels").
+				Description("Which platforms should AssistClaw connect to?").
+				Options(
+					huh.NewOption("Telegram", "telegram"),
+					huh.NewOption("Discord", "discord"),
+					huh.NewOption("Slack", "slack"),
+					huh.NewOption("WhatsApp (Beta)", "whatsapp"),
+				).
+				Value(&selectedChannels),
+		),
+	).WithTheme(theme)
+
+	if err := formChannels.Run(); err != nil {
+		return fmt.Errorf("onboarding interrupted")
+	}
+
+	for _, ch := range selectedChannels {
+		var chFields []huh.Field
+		switch ch {
+		case "telegram":
+			chFields = append(chFields, huh.NewInput().Title("Telegram Bot Token").Password(true).Value(&tgBotToken))
+		case "discord":
+			chFields = append(chFields, huh.NewInput().Title("Discord Bot Token").Password(true).Value(&dcBotToken))
+		case "slack":
+			chFields = append(chFields,
+				huh.NewInput().Title("Slack Bot Token (xoxb-...)").Password(true).Value(&slackBotToken),
+				huh.NewInput().Title("Slack App Token (xapp-...)").Password(true).Value(&slackAppToken),
+			)
+		case "whatsapp":
+			chFields = append(chFields, huh.NewInput().Title("WhatsApp Session ID (Optional)").Description("Leave blank for new session scanning").Value(&waSessionID))
+		}
+
+		if len(chFields) > 0 {
+			formCh := huh.NewForm(huh.NewGroup(chFields...)).WithTheme(theme)
+			if err := formCh.Run(); err != nil {
+				return fmt.Errorf("onboarding interrupted")
+			}
+		}
+	}
+
+	// Phase 5: Skills Discovery
+	// For now we just list standard ones or common ones
+	formSkills := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Enable Skills").
+				Description("Enable specialized capabilities for your agent.").
+				Options(
+					huh.NewOption("Browser Control", "browser"),
+					huh.NewOption("System Administration", "sysadmin"),
+					huh.NewOption("Project Management", "pm"),
+					huh.NewOption("Development Assistant", "dev"),
+				).
+				Value(&selectedSkills),
+		),
+	).WithTheme(theme)
+
+	if err := formSkills.Run(); err != nil {
+		return fmt.Errorf("onboarding interrupted")
+	}
+
 	// Apply defaults if inputs were left blank
 	if baseURL == "" && needsBaseURL[provider] != "" {
 		baseURL = needsBaseURL[provider]
@@ -182,134 +304,110 @@ func runOnboarding(configPath string) error {
 		awsRegion = "us-east-1"
 	}
 
+	// Build the final YAML template
+	var sb strings.Builder
+	sb.WriteString("# AssistClaw Configuration\nversion: 1\n\n")
+
+	// Gateway config
+	sb.WriteString("gateway:\n")
+	sb.WriteString(fmt.Sprintf("  host: \"%s\"\n", gwHost))
+	sb.WriteString(fmt.Sprintf("  port: %d\n", gwPort))
+	if gwMode == "tailscale" {
+		sb.WriteString("  bind: \"tailnet\"\n")
+		sb.WriteString("  tailscale:\n")
+		sb.WriteString(fmt.Sprintf("    mode: \"%s\"\n", tsMode))
+	} else {
+		sb.WriteString(fmt.Sprintf("  bind: \"%s\"\n", gwMode))
+	}
+	sb.WriteString("\n")
+
+	// Provider config
+	sb.WriteString("agent:\n")
+	sb.WriteString("  max_iterations: 64\n")
+	if len(selectedSkills) > 0 {
+		sb.WriteString("  enabled_skills:\n")
+		for _, s := range selectedSkills {
+			sb.WriteString(fmt.Sprintf("    - \"%s\"\n", s))
+		}
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString("providers:\n")
 	switch provider {
 	case "openai":
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  openai:
-    api_key: "%s"
-    default_model: "gpt-4o-mini"
-
-routing:
-  default: "openai/gpt-4o-mini"
-`, apiKey)
-
-	case "ollama":
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  ollama:
-    base_url: "%s"
-    default_model: "llama3.2"
-
-routing:
-  default: "ollama/llama3.2"
-`, baseURL)
-
-	case "bedrock":
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  bedrock:
-    region: "%s"
-    profile: "%s"
-    api_key: "%s"
-    access_key_id: "%s"
-    secret_access_key: "%s"
-    default_model: "anthropic.claude-3-5-haiku-20241022-v1:0"
-
-routing:
-  default: "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
-`, awsRegion, awsProfile, apiKey, awsAccessKey, awsSecretKey)
-
-	case "vllm":
-		fallthrough
-	case "lmstudio":
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  %s:
-    base_url: "%s"
-    default_model: "local-model"
-
-routing:
-  default: "%s/local-model"
-`, provider, baseURL, provider)
-
-	case "groq":
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  groq:
-    api_key: "%s"
-    default_model: "llama-3.1-8b-instant"
-
-routing:
-  default: "groq/llama-3.1-8b-instant"
-`, apiKey)
-
-	case "mistral":
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  mistral:
-    api_key: "%s"
-    default_model: "mistral-large-latest"
-
-routing:
-  default: "mistral/mistral-large-latest"
-`, apiKey)
-
-	case "openrouter":
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  openrouter:
-    api_key: "%s"
-    default_model: "anthropic/claude-3-5-haiku-20241022:beta"
-
-routing:
-  default: "openrouter/anthropic/claude-3-5-haiku-20241022:beta"
-`, apiKey)
-
-	case "azure":
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  azure:
-    api_key: "%s"
-    base_url: "%s"
-    api_version: "%s"
-    default_model: "gpt-4o"
-
-routing:
-  default: "azure/gpt-4o"
-`, apiKey, baseURL, apiVersion)
-
+		sb.WriteString(fmt.Sprintf("  openai:\n    api_key: \"%s\"\n    default_model: \"gpt-4o-mini\"\n", apiKey))
 	case "anthropic":
-		fallthrough
+		sb.WriteString(fmt.Sprintf("  anthropic:\n    api_key: \"%s\"\n    default_model: \"claude-3-5-haiku-20241022\"\n", apiKey))
+	case "ollama":
+		sb.WriteString(fmt.Sprintf("  ollama:\n    base_url: \"%s\"\n    default_model: \"llama3.2\"\n", baseURL))
+	case "bedrock":
+		sb.WriteString("  bedrock:\n")
+		sb.WriteString(fmt.Sprintf("    region: \"%s\"\n", awsRegion))
+		if awsProfile != "" {
+			sb.WriteString(fmt.Sprintf("    profile: \"%s\"\n", awsProfile))
+		}
+		if apiKey != "" {
+			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", apiKey))
+		}
+		if awsAccessKey != "" {
+			sb.WriteString(fmt.Sprintf("    access_key_id: \"%s\"\n", awsAccessKey))
+			sb.WriteString(fmt.Sprintf("    secret_access_key: \"%s\"\n", awsSecretKey))
+		}
+		sb.WriteString("    default_model: \"anthropic.claude-3-5-haiku-20241022-v1:0\"\n")
+	case "azure":
+		sb.WriteString("  azure_openai:\n")
+		sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", apiKey))
+		sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", baseURL))
+		sb.WriteString(fmt.Sprintf("    api_version: \"%s\"\n", apiVersion))
+		sb.WriteString("    default_model: \"gpt-4o\"\n")
 	default:
-		tpl = fmt.Sprintf(`# AssistClaw Configuration
-version: 1
-
-providers:
-  anthropic:
-    api_key: "%s"
-    default_model: "claude-3-5-haiku-20241022"
-
-routing:
-  default: "anthropic/claude-3-5-haiku-20241022"
-`, apiKey)
+		sb.WriteString(fmt.Sprintf("  %s:\n", provider))
+		if apiKey != "" {
+			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", apiKey))
+		}
+		if baseURL != "" {
+			sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", baseURL))
+		}
+		sb.WriteString("    default_model: \"default\"\n")
 	}
+	sb.WriteString("\n")
+
+	// Channels config
+	if len(selectedChannels) > 0 {
+		sb.WriteString("channels:\n")
+		for _, ch := range selectedChannels {
+			switch ch {
+			case "telegram":
+				sb.WriteString(fmt.Sprintf("  telegram:\n    bot_token: \"%s\"\n", tgBotToken))
+			case "discord":
+				sb.WriteString(fmt.Sprintf("  discord:\n    bot_token: \"%s\"\n", dcBotToken))
+			case "slack":
+				sb.WriteString(fmt.Sprintf("  slack:\n    bot_token: \"%s\"\n    app_token: \"%s\"\n", slackBotToken, slackAppToken))
+			case "whatsapp":
+				sb.WriteString("  whatsapp:\n")
+				if waSessionID != "" {
+					sb.WriteString(fmt.Sprintf("    session_id: \"%s\"\n", waSessionID))
+				} else {
+					sb.WriteString("    session_id: \"default\"\n")
+				}
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	// Routing config
+	sb.WriteString("routing:\n")
+	sb.WriteString(fmt.Sprintf("  default: \"%s/default\"\n", provider))
+	switch provider {
+	case "openai":
+		sb.WriteString("  default: \"openai/gpt-4o-mini\"\n")
+	case "anthropic":
+		sb.WriteString("  default: \"anthropic/claude-3-5-haiku-20241022\"\n")
+	case "bedrock":
+		sb.WriteString("  default: \"bedrock/anthropic.claude-3-5-haiku-20241022-v1:0\"\n")
+	}
+
+	tpl = sb.String()
 
 	// Dump empty file and create dirs so it works even if dir doesn't exist
 	if err := config.InitializeWorkspace(configPath); err != nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/provider"
 )
@@ -386,6 +387,49 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 	}
 
 	handler.OnError(fmt.Errorf("agent: exceeded max iterations (%d)", r.cfg.MaxIterations))
+}
+
+// HandleChannelMessage is a background message handler for messaging channels.
+func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message, replyFn channels.StreamingReplyFunc) {
+	r.log.Info("inbound message",
+		zap.String("channel", msg.ChannelID),
+		zap.String("session", msg.SessionID),
+		zap.String("text", truncate(msg.Text, 100)),
+	)
+
+	// Note: In a production system, we would resolve a dedicated Runner instance per SessionID
+	// to maintain separate working memories. For now, we share the runner's session logic.
+
+	handler := &channelStreamHandler{
+		replyFn: replyFn,
+	}
+
+	r.RunStream(ctx, msg.Text, handler)
+}
+
+// channelStreamHandler routes agent tokens back to a messaging channel.
+type channelStreamHandler struct {
+	replyFn channels.StreamingReplyFunc
+}
+
+func (h *channelStreamHandler) OnToken(token string) {
+	_ = h.replyFn(token)
+}
+
+func (h *channelStreamHandler) OnToolCall(name string, _ json.RawMessage) {
+	// Optional: send status update to channel
+}
+
+func (h *channelStreamHandler) OnToolResult(name string, _ string) {
+	// Optional: send status update to channel
+}
+
+func (h *channelStreamHandler) OnDone(_ *RunResult) {
+	_ = h.replyFn("") // signal done
+}
+
+func (h *channelStreamHandler) OnError(err error) {
+	_ = h.replyFn(fmt.Sprintf("\n[Error: %v]", err))
 }
 
 func truncate(s string, n int) string {
