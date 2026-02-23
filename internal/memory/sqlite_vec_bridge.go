@@ -1,7 +1,7 @@
 package memory
 
 /*
-#cgo CFLAGS: -I. -I../../vendor/github.com/mattn/go-sqlite3 -DSQLITE_CORE
+#cgo CFLAGS: -I${SRCDIR} -I${SRCDIR}/../../vendor/github.com/mattn/go-sqlite3 -DSQLITE_CORE
 #cgo linux LDFLAGS: -lm
 #include "sqlite3.h"
 #include "sqlite-vec.h"
