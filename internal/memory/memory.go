@@ -13,12 +13,15 @@ import (
 	"sync"
 	"time"
 
-	vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
 
 func init() {
-	vec.Auto()
+	sql.Register("sqlite3_with_vec", &sqlite3.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			return RegisterVec(conn)
+		},
+	})
 }
 
 // ─────────────────────────────────────────────
