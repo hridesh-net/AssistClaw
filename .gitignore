@@ -44,9 +44,11 @@ assistclaw.yaml
 *.sqlite
 *.sqlite3
 .assistclaw/
-memory/
-skills/
-tools/
+/memory/
+/skills/
+/tools/
+/bin/
+/dist/
 
 # Node.js (if any JS tooling exists)
 node_modules/
