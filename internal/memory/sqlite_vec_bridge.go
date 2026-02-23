@@ -1,7 +1,7 @@
 package memory
 
 /*
-#cgo CFLAGS: -DSQLITE_CORE
+#cgo CFLAGS: -I. -DSQLITE_CORE
 #cgo linux LDFLAGS: -lm
 #include "sqlite3.h"
 #include "sqlite-vec.h"
