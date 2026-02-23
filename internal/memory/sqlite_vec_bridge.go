@@ -1,7 +1,7 @@
 package memory
 
 /*
-#cgo CFLAGS: -I. -DSQLITE_CORE
+#cgo CFLAGS: -I. -I../../vendor/github.com/mattn/go-sqlite3 -DSQLITE_CORE
 #cgo linux LDFLAGS: -lm
 #include "sqlite3.h"
 #include "sqlite-vec.h"
@@ -37,5 +37,6 @@ func RegisterVec(conn *sqlite3.SQLiteConn) error {
 	if rc != C.SQLITE_OK {
 		return fmt.Errorf("failed to register sqlite-vec: rc=%d", int(rc))
 	}
+	fmt.Println("[assistclaw] sqlite-vec registered on connection")
 	return nil
 }
