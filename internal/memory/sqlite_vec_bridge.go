@@ -1,9 +1,9 @@
 package memory
 
 /*
-#cgo CFLAGS: -I../../vendor/github.com/mattn/go-sqlite3 -I../../vendor/github.com/asg017/sqlite-vec-go-bindings/cgo -DSQLITE_CORE
+#cgo CFLAGS: -DSQLITE_CORE
 #cgo linux LDFLAGS: -lm
-#include "sqlite3-binding.h"
+#include "sqlite3.h"
 #include "sqlite-vec.h"
 
 int assistclaw_sqlite3_vec_init(sqlite3 *db) {
