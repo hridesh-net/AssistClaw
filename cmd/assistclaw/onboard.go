@@ -200,26 +200,34 @@ func runOnboarding(configPath string) error {
 			huh.NewOption("Claude 3.5 Sonnet (Best Balance)", "claude-3-5-sonnet-20241022"),
 			huh.NewOption("Claude 3.5 Haiku (Fast & Cheap)", "claude-3-5-haiku-20241022"),
 			huh.NewOption("Claude 3 Opus (Most Powerful)", "claude-3-opus-20240229"),
+			huh.NewOption("Claude 3.7 Sonnet (Latest)", "claude-3-7-sonnet-20250219"),
+			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"openai": {
 			huh.NewOption("GPT-4o (Most Capable)", "gpt-4o"),
 			huh.NewOption("GPT-4o-mini (Fast & Cheap)", "gpt-4o-mini"),
 			huh.NewOption("o1-preview (Reasoning)", "o1-preview"),
+			huh.NewOption("o3-mini (Next Gen)", "o3-mini"),
+			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"ollama": {
 			huh.NewOption("Llama 3.2 (3B)", "llama3.2"),
 			huh.NewOption("Mistral (7B)", "mistral"),
 			huh.NewOption("DeepSeek-R1 (Distill)", "deepseek-r1"),
+			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"bedrock": {
 			huh.NewOption("Claude 3.5 Sonnet v2", "anthropic.claude-3-5-sonnet-20241022-v2:0"),
 			huh.NewOption("Claude 3.5 Haiku", "anthropic.claude-3-5-haiku-20241022-v1:0"),
 			huh.NewOption("Llama 3.3 70B", "meta.llama3-3-70b-instruct-v1:0"),
+			huh.NewOption("Claude 3 Opus", "anthropic.claude-3-opus-20240229-v1:0"),
+			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"groq": {
 			huh.NewOption("Llama 3.3 70B Versatile", "llama-3.3-70b-versatile"),
 			huh.NewOption("Mixtral 8x7B", "mixtral-8x7b-32768"),
 			huh.NewOption("DeepSeek-R1 70B", "deepseek-r1-distill-llama-70b"),
+			huh.NewOption("Other / Custom...", "custom"),
 		},
 	}
 
@@ -234,6 +242,20 @@ func runOnboarding(configPath string) error {
 		).WithTheme(theme)
 		if err := formModel.Run(); err != nil {
 			return fmt.Errorf("onboarding interrupted")
+		}
+
+		if selectedModel == "custom" {
+			formCustom := huh.NewForm(
+				huh.NewGroup(
+					huh.NewInput().
+						Title("Enter Custom Model ID").
+						Description("Refer to the provider's documentation for valid model identifiers.").
+						Value(&selectedModel),
+				),
+			).WithTheme(theme)
+			if err := formCustom.Run(); err != nil {
+				return fmt.Errorf("onboarding interrupted")
+			}
 		}
 	} else if provider != "" {
 		formModel := huh.NewForm(
@@ -264,6 +286,36 @@ func runOnboarding(configPath string) error {
 		),
 	).WithTheme(theme)
 	if err := formSecondary.Run(); err != nil {
+		return fmt.Errorf("onboarding interrupted")
+	}
+
+	// Phase 2.5: Advanced Routing Rules
+	var codingModel string
+	var visionModel string
+	formRouting := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Advanced Routing: Coding Tasks").
+				Description("Choose a specialized model for code generation and debugging.").
+				Options(
+					huh.NewOption("Use Default", "default"),
+					huh.NewOption("Claude 3.5 Sonnet (Recommend)", "anthropic/claude-3-5-sonnet-20241022"),
+					huh.NewOption("GPT-4o", "openai/gpt-4o"),
+					huh.NewOption("DeepSeek-R1 (Local)", "ollama/deepseek-r1"),
+				).
+				Value(&codingModel),
+			huh.NewSelect[string]().
+				Title("Advanced Routing: Vision Tasks").
+				Description("Choose a model for image analysis and visual understanding.").
+				Options(
+					huh.NewOption("Use Default", "default"),
+					huh.NewOption("Claude 3.5 Sonnet", "anthropic/claude-3-5-sonnet-20241022"),
+					huh.NewOption("GPT-4o", "openai/gpt-4o"),
+				).
+				Value(&visionModel),
+		),
+	).WithTheme(theme)
+	if err := formRouting.Run(); err != nil {
 		return fmt.Errorf("onboarding interrupted")
 	}
 
@@ -552,6 +604,16 @@ func runOnboarding(configPath string) error {
 			secName = "azure_openai"
 		}
 		sb.WriteString(fmt.Sprintf("  fallback: \"%s/default\"\n", secName))
+	}
+	if codingModel != "default" && codingModel != "" {
+		sb.WriteString("  rules:\n")
+		sb.WriteString(fmt.Sprintf("    - task: \"coding\"\n      model: \"%s\"\n", codingModel))
+	}
+	if visionModel != "default" && visionModel != "" {
+		if codingModel == "default" || codingModel == "" {
+			sb.WriteString("  rules:\n")
+		}
+		sb.WriteString(fmt.Sprintf("    - task: \"vision\"\n      model: \"%s\"\n", visionModel))
 	}
 
 	tpl = sb.String()
