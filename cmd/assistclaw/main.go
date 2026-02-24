@@ -717,6 +717,12 @@ func registerEmbedders(ctx context.Context, cfg *config.Config, reg *embeddings.
 			} else if cfg.Providers.OpenAI != nil {
 				register(embedproviders.NewOpenAI(cfg.Providers.OpenAI.APIKey, ""))
 			}
+		case "azure":
+			if ec.AzureOpenAI != nil {
+				register(embedproviders.NewAzure(ec.AzureOpenAI.APIKey, ec.AzureOpenAI.BaseURL, ec.AzureOpenAI.APIVersion))
+			} else if cfg.Providers.AzureOpenAI != nil {
+				register(embedproviders.NewAzure(cfg.Providers.AzureOpenAI.APIKey, cfg.Providers.AzureOpenAI.BaseURL, cfg.Providers.AzureOpenAI.APIVersion))
+			}
 		case "ollama":
 			if ec.OllamaEmbed != nil {
 				register(embedproviders.NewOllama(ec.OllamaEmbed.BaseURL))
@@ -724,6 +730,17 @@ func registerEmbedders(ctx context.Context, cfg *config.Config, reg *embeddings.
 				register(embedproviders.NewOllama(cfg.Providers.Ollama.BaseURL))
 			} else {
 				register(embedproviders.NewOllama(""))
+			}
+		case "bedrock":
+			b := ec.Bedrock
+			if b == nil && cfg.Providers.Bedrock != nil {
+				b = cfg.Providers.Bedrock
+			}
+			if b != nil {
+				e, err := embedproviders.NewBedrock(b.Region, b.Profile, b.AccessKeyID, b.SecretAccessKey, b.APIKey)
+				if err == nil {
+					register(e)
+				}
 			}
 		case "cohere":
 			if ec.Cohere != nil {

@@ -309,10 +309,28 @@ func runOnboarding(configPath string) error {
 					primary.baseURL = existing.Providers.OpenAI.BaseURL
 					primary.model = existing.Providers.OpenAI.DefaultModel
 				}
+			case "azure":
+				if existing.Providers.AzureOpenAI != nil {
+					primary.apiKey = existing.Providers.AzureOpenAI.APIKey
+					primary.baseURL = existing.Providers.AzureOpenAI.BaseURL
+					primary.apiVersion = existing.Providers.AzureOpenAI.APIVersion
+					primary.model = existing.Providers.AzureOpenAI.DefaultModel
+				}
 			case "ollama":
 				if existing.Providers.Ollama != nil {
 					primary.baseURL = existing.Providers.Ollama.BaseURL
 					primary.model = existing.Providers.Ollama.DefaultModel
+				}
+			case "vllm":
+				if existing.Providers.VLLM != nil {
+					primary.baseURL = existing.Providers.VLLM.BaseURL
+					primary.apiKey = existing.Providers.VLLM.APIKey
+					primary.model = existing.Providers.VLLM.DefaultModel
+				}
+			case "lmstudio":
+				if existing.Providers.LMStudio != nil {
+					primary.baseURL = existing.Providers.LMStudio.BaseURL
+					primary.model = existing.Providers.LMStudio.DefaultModel
 				}
 			case "bedrock":
 				if existing.Providers.Bedrock != nil {
@@ -328,6 +346,16 @@ func runOnboarding(configPath string) error {
 					primary.apiKey = existing.Providers.Groq.APIKey
 					primary.model = existing.Providers.Groq.DefaultModel
 				}
+			case "mistral":
+				if existing.Providers.Mistral != nil {
+					primary.apiKey = existing.Providers.Mistral.APIKey
+					primary.model = existing.Providers.Mistral.DefaultModel
+				}
+			case "openrouter":
+				if existing.Providers.OpenRouter != nil {
+					primary.apiKey = existing.Providers.OpenRouter.APIKey
+					primary.model = existing.Providers.OpenRouter.DefaultModel
+				}
 			}
 		}
 
@@ -335,33 +363,123 @@ func runOnboarding(configPath string) error {
 		if existing.Routing.Fallback != "" {
 			parts := strings.Split(existing.Routing.Fallback, "/")
 			if len(parts) > 0 {
-				secondary.provider = parts[0]
-				if secondary.provider == "azure_openai" {
-					secondary.provider = "azure"
+				sProv := parts[0]
+				if sProv == "azure_openai" {
+					sProv = "azure"
+				}
+				secondary.provider = sProv
+				switch sProv {
+				case "anthropic":
+					if existing.Providers.Anthropic != nil {
+						secondary.apiKey = existing.Providers.Anthropic.APIKey
+						secondary.baseURL = existing.Providers.Anthropic.BaseURL
+						secondary.model = existing.Providers.Anthropic.DefaultModel
+					}
+				case "openai":
+					if existing.Providers.OpenAI != nil {
+						secondary.apiKey = existing.Providers.OpenAI.APIKey
+						secondary.baseURL = existing.Providers.OpenAI.BaseURL
+						secondary.model = existing.Providers.OpenAI.DefaultModel
+					}
+				case "azure":
+					if existing.Providers.AzureOpenAI != nil {
+						secondary.apiKey = existing.Providers.AzureOpenAI.APIKey
+						secondary.baseURL = existing.Providers.AzureOpenAI.BaseURL
+						secondary.apiVersion = existing.Providers.AzureOpenAI.APIVersion
+						secondary.model = existing.Providers.AzureOpenAI.DefaultModel
+					}
+				case "ollama":
+					if existing.Providers.Ollama != nil {
+						secondary.baseURL = existing.Providers.Ollama.BaseURL
+						secondary.model = existing.Providers.Ollama.DefaultModel
+					}
+				case "vllm":
+					if existing.Providers.VLLM != nil {
+						secondary.baseURL = existing.Providers.VLLM.BaseURL
+						secondary.apiKey = existing.Providers.VLLM.APIKey
+						secondary.model = existing.Providers.VLLM.DefaultModel
+					}
+				case "lmstudio":
+					if existing.Providers.LMStudio != nil {
+						secondary.baseURL = existing.Providers.LMStudio.BaseURL
+						secondary.model = existing.Providers.LMStudio.DefaultModel
+					}
+				case "bedrock":
+					if existing.Providers.Bedrock != nil {
+						secondary.awsRegion = existing.Providers.Bedrock.Region
+						secondary.awsProfile = existing.Providers.Bedrock.Profile
+						secondary.awsAccessKey = existing.Providers.Bedrock.AccessKeyID
+						secondary.awsSecretKey = existing.Providers.Bedrock.SecretAccessKey
+						secondary.apiKey = existing.Providers.Bedrock.APIKey
+						secondary.model = existing.Providers.Bedrock.DefaultModel
+					}
+				case "groq":
+					if existing.Providers.Groq != nil {
+						secondary.apiKey = existing.Providers.Groq.APIKey
+						secondary.model = existing.Providers.Groq.DefaultModel
+					}
+				case "mistral":
+					if existing.Providers.Mistral != nil {
+						secondary.apiKey = existing.Providers.Mistral.APIKey
+						secondary.model = existing.Providers.Mistral.DefaultModel
+					}
+				case "openrouter":
+					if existing.Providers.OpenRouter != nil {
+						secondary.apiKey = existing.Providers.OpenRouter.APIKey
+						secondary.model = existing.Providers.OpenRouter.DefaultModel
+					}
 				}
 			}
 		}
 
 		// Pre-populate Embeddings
 		if len(existing.Embeddings.Priority) > 0 {
-			embed.provider = existing.Embeddings.Priority[0]
-			switch embed.provider {
+			eName := existing.Embeddings.Priority[0]
+			if eName == "azure_openai" {
+				eName = "azure"
+			}
+			embed.provider = eName
+			switch eName {
 			case "openai":
 				if existing.Embeddings.OpenAI != nil {
 					embed.apiKey = existing.Embeddings.OpenAI.APIKey
 					embed.baseURL = existing.Embeddings.OpenAI.BaseURL
 					embed.model = existing.Embeddings.OpenAI.DefaultModel
 				}
+			case "azure":
+				if existing.Embeddings.AzureOpenAI != nil {
+					embed.apiKey = existing.Embeddings.AzureOpenAI.APIKey
+					embed.baseURL = existing.Embeddings.AzureOpenAI.BaseURL
+					embed.model = existing.Embeddings.AzureOpenAI.DefaultModel
+				}
 			case "ollama":
 				if existing.Embeddings.OllamaEmbed != nil {
 					embed.baseURL = existing.Embeddings.OllamaEmbed.BaseURL
 					embed.model = existing.Embeddings.OllamaEmbed.DefaultModel
+				}
+			case "bedrock":
+				if existing.Embeddings.Bedrock != nil {
+					embed.apiKey = existing.Embeddings.Bedrock.APIKey // If using bearer token
+					embed.model = existing.Embeddings.Bedrock.DefaultModel
+				}
+			case "cohere":
+				if existing.Embeddings.Cohere != nil {
+					embed.apiKey = existing.Embeddings.Cohere.APIKey
+					embed.model = existing.Embeddings.Cohere.DefaultModel
+				}
+			case "google":
+				if existing.Embeddings.Google != nil {
+					embed.apiKey = existing.Embeddings.Google.APIKey
+					embed.model = existing.Embeddings.Google.DefaultModel
 				}
 			}
 		}
 
 		// Pre-populate Gateway & Routing
 		gwMode = existing.Gateway.Bind
+		if existing.Gateway.Host != "" {
+			gwHost = existing.Gateway.Host
+		}
 		if existing.Gateway.Port != 0 {
 			gwPort = existing.Gateway.Port
 		}
@@ -463,7 +581,9 @@ func runOnboarding(configPath string) error {
 				Description("Used for Semantic Memory (local learning).").
 				Options(
 					huh.NewOption("OpenAI (Recommended)", "openai"),
+					huh.NewOption("Azure OpenAI", "azure"),
 					huh.NewOption("Ollama (Local)", "ollama"),
+					huh.NewOption("AWS Bedrock", "bedrock"),
 					huh.NewOption("Cohere", "cohere"),
 					huh.NewOption("Google", "google"),
 				).
@@ -475,19 +595,30 @@ func runOnboarding(configPath string) error {
 	}
 
 	var embedFields []huh.Field
-	if embed.provider != "ollama" {
+	if embed.provider == "ollama" {
+		embed.baseURL = "http://localhost:11434"
+		embedFields = append(embedFields, huh.NewInput().Title("Ollama Base URL").Value(&embed.baseURL))
+	} else if embed.provider == "azure" {
+		embedFields = append(embedFields,
+			huh.NewInput().Title("Azure Endpoint").Value(&embed.baseURL),
+			huh.NewInput().Title("Azure API Key").Password(true).Value(&embed.apiKey),
+		)
+	} else if embed.provider != "bedrock" {
 		embedFields = append(embedFields, huh.NewInput().
 			Title(fmt.Sprintf("%s API Key (Embeddings)", embed.provider)).
 			Password(true).
 			Value(&embed.apiKey))
-	} else {
-		embed.baseURL = "http://localhost:11434"
-		embedFields = append(embedFields, huh.NewInput().Title("Ollama Base URL").Value(&embed.baseURL))
 	}
 
 	embedModels := map[string][]huh.Option[string]{
 		"openai": {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
+		"azure":  {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
 		"ollama": {huh.NewOption("nomic-embed-text", "nomic-embed-text"), huh.NewOption("mxbai-embed-large", "mxbai-embed-large")},
+		"bedrock": {
+			huh.NewOption("Titan Text Embed v2", "amazon.titan-embed-text-v2:0"),
+			huh.NewOption("Titan Text Embed v1", "amazon.titan-embed-text-v1"),
+			huh.NewOption("Cohere English v3", "cohere.embed-english-v3"),
+		},
 		"cohere": {huh.NewOption("embed-v4.0", "embed-v4.0")},
 		"google": {huh.NewOption("text-embedding-004", "text-embedding-004")},
 	}
@@ -605,7 +736,11 @@ func runOnboarding(configPath string) error {
 	sb.WriteString("embeddings:\n")
 	sb.WriteString(fmt.Sprintf("  priority:\n    - \"%s\"\n", embed.provider))
 	writeEmbed := func(e embedEntry) {
-		sb.WriteString(fmt.Sprintf("  %s:\n", e.provider))
+		name := e.provider
+		if name == "azure" {
+			name = "azure_openai"
+		}
+		sb.WriteString(fmt.Sprintf("  %s:\n", name))
 		if e.apiKey != "" {
 			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", e.apiKey))
 		}

@@ -137,9 +137,11 @@ type EmbeddingsConfig struct {
 	// Accepted values: openai, cohere, google, ollama, huggingface
 	Priority    []string          `yaml:"priority"`
 	OpenAI      *ProviderCreds    `yaml:"openai"`
+	AzureOpenAI *AzureCreds       `yaml:"azure_openai"`
 	Cohere      *ProviderCreds    `yaml:"cohere"`
 	Google      *ProviderCreds    `yaml:"google"`
 	OllamaEmbed *LocalCreds       `yaml:"ollama"`
+	Bedrock     *BedrockCreds     `yaml:"bedrock"`
 	HuggingFace *HuggingFaceCreds `yaml:"huggingface"`
 }
 

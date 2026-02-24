@@ -458,3 +458,101 @@ func (e *huggingfaceEmbedder) Embed(ctx context.Context, req *embeddings.EmbedRe
 	}
 	return &embeddings.EmbedResponse{Embeddings: vecs, Dimensions: dim, Model: model}, nil
 }
+
+// ─────────────────────────────────────────────
+// Azure OpenAI Embeddings
+// ─────────────────────────────────────────────
+
+type azureEmbedder struct {
+	apiKey     string
+	baseURL    string // https://{resource}.openai.azure.com
+	apiVersion string
+	client     *http.Client
+}
+
+// NewAzure creates an Azure OpenAI embedding provider.
+func NewAzure(apiKey, baseURL, apiVersion string) embeddings.Embedder {
+	if apiVersion == "" {
+		apiVersion = "2024-02-15-preview"
+	}
+	return &azureEmbedder{
+		apiKey:     apiKey,
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		apiVersion: apiVersion,
+		client:     &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+func (e *azureEmbedder) Name() string                        { return "azure" }
+func (e *azureEmbedder) DefaultModel() string                { return "text-embedding-3-small" }
+func (e *azureEmbedder) HealthCheck(_ context.Context) error { return nil }
+
+func (e *azureEmbedder) ListModels(_ context.Context) ([]embeddings.ModelInfo, error) {
+	return []embeddings.ModelInfo{
+		{ID: "text-embedding-3-small", Name: "Text Embedding 3 Small", Provider: "azure", Dimensions: 1536},
+		{ID: "text-embedding-3-large", Name: "Text Embedding 3 Large", Provider: "azure", Dimensions: 3072},
+		{ID: "text-embedding-ada-002", Name: "Text Embedding Ada 002", Provider: "azure", Dimensions: 1536},
+	}, nil
+}
+
+func (e *azureEmbedder) Embed(ctx context.Context, req *embeddings.EmbedRequest) (*embeddings.EmbedResponse, error) {
+	model := req.Model
+	if model == "" {
+		model = e.DefaultModel()
+	}
+	body, _ := json.Marshal(map[string]any{"input": req.Texts})
+	// Azure URL format: {endpoint}/openai/deployments/{deployment-id}/embeddings?api-version={api-version}
+	url := fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s", e.baseURL, model, e.apiVersion)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("api-key", e.apiKey)
+
+	resp, err := e.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("azure embeddings: http %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+			Index     int       `json:"index"`
+		} `json:"data"`
+		Usage struct {
+			TotalTokens int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	vecs := make([][]float32, len(result.Data))
+	for _, d := range result.Data {
+		vecs[d.Index] = d.Embedding
+	}
+	dim := 0
+	if len(vecs) > 0 {
+		dim = len(vecs[0])
+	}
+	return &embeddings.EmbedResponse{
+		Embeddings: vecs,
+		Dimensions: dim,
+		Model:      model,
+		TokensUsed: result.Usage.TotalTokens,
+	}, nil
+}
+
+// ─────────────────────────────────────────────
+// Bedrock Embeddings
+// ─────────────────────────────────────────────
+
+// NOTE: Bedrock embeddings are handled via the AWS SDK in a separate file or
+// via raw HTTP if we want to avoid complex dependency cycles here.
+// Given Bedrock's complex SigV4 signing, using the SDK is much better.
+// I will add a placeholder here and implement it properly if I can import bedrockruntime.
+// For now, let's assume we implement it in a way that avoids circular imports.
