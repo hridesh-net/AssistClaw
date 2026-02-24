@@ -242,7 +242,14 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 			case *types.ConverseStreamOutputMemberMessageStop:
 				ch <- provider.StreamEvent{Type: provider.StreamEventDone}
 			case *types.ConverseStreamOutputMemberMetadata:
-				// Optional: handle usage
+				if v.Value.Usage != nil {
+					usage := &provider.TokenUsage{
+						PromptTokens:     int(aws.ToInt32(v.Value.Usage.InputTokens)),
+						CompletionTokens: int(aws.ToInt32(v.Value.Usage.OutputTokens)),
+						TotalTokens:      int(aws.ToInt32(v.Value.Usage.TotalTokens)),
+					}
+					ch <- provider.StreamEvent{Type: provider.StreamEventDone, Usage: usage}
+				}
 			}
 		}
 	}()
