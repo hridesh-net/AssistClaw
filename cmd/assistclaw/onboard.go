@@ -397,15 +397,16 @@ func runOnboarding(configPath string) error {
 
 	// Routing config
 	sb.WriteString("routing:\n")
-	sb.WriteString(fmt.Sprintf("  default: \"%s/default\"\n", provider))
+	defaultRoute := fmt.Sprintf("%s/default", provider)
 	switch provider {
 	case "openai":
-		sb.WriteString("  default: \"openai/gpt-4o-mini\"\n")
+		defaultRoute = "openai/gpt-4o-mini"
 	case "anthropic":
-		sb.WriteString("  default: \"anthropic/claude-3-5-haiku-20241022\"\n")
+		defaultRoute = "anthropic/claude-3-5-haiku-20241022"
 	case "bedrock":
-		sb.WriteString("  default: \"bedrock/anthropic.claude-3-5-haiku-20241022-v1:0\"\n")
+		defaultRoute = "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
 	}
+	sb.WriteString(fmt.Sprintf("  default: \"%s\"\n", defaultRoute))
 
 	tpl = sb.String()
 
