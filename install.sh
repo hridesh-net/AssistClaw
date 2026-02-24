@@ -87,7 +87,11 @@ install_binary() {
     artifact="${artifact}.exe"
   fi
 
-  local download_url="https://github.com/hridesh-net/AssistClaw/releases/latest/download/${artifact}"
+  local release_path="download/${ASSISTCLAW_VERSION}"
+  if [[ "${ASSISTCLAW_VERSION}" == "latest" ]]; then
+    release_path="latest/download"
+  fi
+  local download_url="https://github.com/hridesh-net/AssistClaw/releases/${release_path}/${artifact}"
   local tmp_bin="/tmp/assistclaw_bin_$$"
 
   log "Downloading pre-built binary for ${PLATFORM}..."
