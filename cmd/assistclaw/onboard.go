@@ -46,8 +46,8 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 }
 
 // collectProvider guides the user through selecting and configuring an LLM provider.
-func collectProvider(theme *huh.Theme, providerType string, isPrimary bool) (provEntry, error) {
-	var entry provEntry
+func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, initial provEntry) (provEntry, error) {
+	entry := initial
 	var providerOptions []huh.Option[string]
 
 	if isPrimary {
@@ -273,10 +273,136 @@ func runOnboarding(configPath string) error {
 	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("  Welcome to AssistClaw 🐾"))
 	fmt.Println(lipgloss.NewStyle().Faint(true).Render("  Let's configure your autonomous agent environment."))
 
+	// Load existing config if available to pre-populate defaults
+	var existing *config.Config
+	if _, err := os.Stat(configPath); err == nil {
+		if c, err := config.Load(configPath); err == nil {
+			existing = c
+		}
+	}
+
+	if existing != nil {
+		// Pre-populate Primary
+		defProv := ""
+		if existing.Routing.Default != "" {
+			parts := strings.Split(existing.Routing.Default, "/")
+			if len(parts) > 0 {
+				defProv = parts[0]
+				if defProv == "azure_openai" {
+					defProv = "azure"
+				}
+			}
+		}
+
+		if defProv != "" {
+			primary.provider = defProv
+			switch defProv {
+			case "anthropic":
+				if existing.Providers.Anthropic != nil {
+					primary.apiKey = existing.Providers.Anthropic.APIKey
+					primary.baseURL = existing.Providers.Anthropic.BaseURL
+					primary.model = existing.Providers.Anthropic.DefaultModel
+				}
+			case "openai":
+				if existing.Providers.OpenAI != nil {
+					primary.apiKey = existing.Providers.OpenAI.APIKey
+					primary.baseURL = existing.Providers.OpenAI.BaseURL
+					primary.model = existing.Providers.OpenAI.DefaultModel
+				}
+			case "ollama":
+				if existing.Providers.Ollama != nil {
+					primary.baseURL = existing.Providers.Ollama.BaseURL
+					primary.model = existing.Providers.Ollama.DefaultModel
+				}
+			case "bedrock":
+				if existing.Providers.Bedrock != nil {
+					primary.awsRegion = existing.Providers.Bedrock.Region
+					primary.awsProfile = existing.Providers.Bedrock.Profile
+					primary.awsAccessKey = existing.Providers.Bedrock.AccessKeyID
+					primary.awsSecretKey = existing.Providers.Bedrock.SecretAccessKey
+					primary.apiKey = existing.Providers.Bedrock.APIKey
+					primary.model = existing.Providers.Bedrock.DefaultModel
+				}
+			case "groq":
+				if existing.Providers.Groq != nil {
+					primary.apiKey = existing.Providers.Groq.APIKey
+					primary.model = existing.Providers.Groq.DefaultModel
+				}
+			}
+		}
+
+		// Pre-populate Secondary
+		if existing.Routing.Fallback != "" {
+			parts := strings.Split(existing.Routing.Fallback, "/")
+			if len(parts) > 0 {
+				secondary.provider = parts[0]
+				if secondary.provider == "azure_openai" {
+					secondary.provider = "azure"
+				}
+			}
+		}
+
+		// Pre-populate Embeddings
+		if len(existing.Embeddings.Priority) > 0 {
+			embed.provider = existing.Embeddings.Priority[0]
+			switch embed.provider {
+			case "openai":
+				if existing.Embeddings.OpenAI != nil {
+					embed.apiKey = existing.Embeddings.OpenAI.APIKey
+					embed.baseURL = existing.Embeddings.OpenAI.BaseURL
+					embed.model = existing.Embeddings.OpenAI.DefaultModel
+				}
+			case "ollama":
+				if existing.Embeddings.OllamaEmbed != nil {
+					embed.baseURL = existing.Embeddings.OllamaEmbed.BaseURL
+					embed.model = existing.Embeddings.OllamaEmbed.DefaultModel
+				}
+			}
+		}
+
+		// Pre-populate Gateway & Routing
+		gwMode = existing.Gateway.Bind
+		if existing.Gateway.Port != 0 {
+			gwPort = existing.Gateway.Port
+		}
+		for _, r := range existing.Routing.Rules {
+			if r.Task == "coding" {
+				codingModel = r.Model
+			}
+			if r.Task == "vision" {
+				visionModel = r.Model
+			}
+		}
+
+		// Pre-populate Channels
+		if existing.Channels.Telegram != nil {
+			selectedChannels = append(selectedChannels, "telegram")
+			tgBotToken = existing.Channels.Telegram.BotToken
+		}
+		if existing.Channels.WhatsApp != nil {
+			selectedChannels = append(selectedChannels, "whatsapp")
+			waSessionID = existing.Channels.WhatsApp.SessionID
+		}
+		if existing.Channels.Discord != nil {
+			selectedChannels = append(selectedChannels, "discord")
+		}
+		if existing.Channels.Slack != nil {
+			selectedChannels = append(selectedChannels, "slack")
+		}
+
+		// Pre-populate Skills
+		selectedSkills = existing.Agent.EnabledSkills
+	}
+
 	var err error
-	primary, err = collectProvider(theme, "primary", true)
+	primary, err = collectProvider(theme, "primary", true, primary)
 	if err != nil {
 		return err
+	}
+
+	secChoice := "none"
+	if secondary.provider != "" && secondary.provider != "none" {
+		secChoice = "configure"
 	}
 
 	formSecondaryChoice := huh.NewForm(
@@ -288,18 +414,20 @@ func runOnboarding(configPath string) error {
 					huh.NewOption("None", "none"),
 					huh.NewOption("Choose a secondary provider", "configure"),
 				).
-				Value(&secondary.provider),
+				Value(&secChoice),
 		),
 	).WithTheme(theme)
 	if err := formSecondaryChoice.Run(); err != nil {
 		return fmt.Errorf("onboarding interrupted")
 	}
 
-	if secondary.provider == "configure" {
-		secondary, err = collectProvider(theme, "secondary", false)
+	if secChoice == "configure" {
+		secondary, err = collectProvider(theme, "secondary", false, secondary)
 		if err != nil {
 			return err
 		}
+	} else {
+		secondary.provider = "none"
 	}
 
 	formRouting := huh.NewForm(
