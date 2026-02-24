@@ -624,6 +624,8 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 	if prov.Bedrock != nil {
 		p, err := bedrock.New(bedrock.Config{
 			Region: prov.Bedrock.Region, Profile: prov.Bedrock.Profile,
+			AccessKeyID: prov.Bedrock.AccessKeyID, SecretAccessKey: prov.Bedrock.SecretAccessKey,
+			APIKey:       prov.Bedrock.APIKey,
 			DefaultModel: prov.Bedrock.DefaultModel,
 		})
 		if err != nil {

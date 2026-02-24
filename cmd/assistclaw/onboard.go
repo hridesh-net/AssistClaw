@@ -27,14 +27,16 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 }
 func runOnboarding(configPath string) error {
 	var (
-		provider     string
-		apiKey       string
-		baseURL      string
-		apiVersion   string
-		awsRegion    string
-		awsProfile   string
-		awsAccessKey string
-		awsSecretKey string
+		provider          string
+		apiKey            string
+		baseURL           string
+		apiVersion        string
+		awsRegion         string
+		awsProfile        string
+		awsAccessKey      string
+		awsSecretKey      string
+		selectedModel     string
+		secondaryProvider string
 
 		// Gateway
 		gwMode string // loopback, lan, tailscale
@@ -192,6 +194,105 @@ func runOnboarding(configPath string) error {
 		}
 	}
 
+	// Model Selection
+	modelChoices := map[string][]huh.Option[string]{
+		"anthropic": {
+			huh.NewOption("Claude 3.5 Sonnet (Best Balance)", "claude-3-5-sonnet-20241022"),
+			huh.NewOption("Claude 3.5 Haiku (Fast & Cheap)", "claude-3-5-haiku-20241022"),
+			huh.NewOption("Claude 3 Opus (Most Powerful)", "claude-3-opus-20240229"),
+		},
+		"openai": {
+			huh.NewOption("GPT-4o (Most Capable)", "gpt-4o"),
+			huh.NewOption("GPT-4o-mini (Fast & Cheap)", "gpt-4o-mini"),
+			huh.NewOption("o1-preview (Reasoning)", "o1-preview"),
+		},
+		"ollama": {
+			huh.NewOption("Llama 3.2 (3B)", "llama3.2"),
+			huh.NewOption("Mistral (7B)", "mistral"),
+			huh.NewOption("DeepSeek-R1 (Distill)", "deepseek-r1"),
+		},
+		"bedrock": {
+			huh.NewOption("Claude 3.5 Sonnet v2", "anthropic.claude-3-5-sonnet-20241022-v2:0"),
+			huh.NewOption("Claude 3.5 Haiku", "anthropic.claude-3-5-haiku-20241022-v1:0"),
+			huh.NewOption("Llama 3.3 70B", "meta.llama3-3-70b-instruct-v1:0"),
+		},
+		"groq": {
+			huh.NewOption("Llama 3.3 70B Versatile", "llama-3.3-70b-versatile"),
+			huh.NewOption("Mixtral 8x7B", "mixtral-8x7b-32768"),
+			huh.NewOption("DeepSeek-R1 70B", "deepseek-r1-distill-llama-70b"),
+		},
+	}
+
+	if opts, ok := modelChoices[provider]; ok {
+		formModel := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Which specific model would you like to use by default?").
+					Options(opts...).
+					Value(&selectedModel),
+			),
+		).WithTheme(theme)
+		if err := formModel.Run(); err != nil {
+			return fmt.Errorf("onboarding interrupted")
+		}
+	} else if provider != "" {
+		formModel := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Enter Model ID (e.g., mistral-small-latest)").
+					Value(&selectedModel),
+			),
+		).WithTheme(theme)
+		if err := formModel.Run(); err != nil {
+			return fmt.Errorf("onboarding interrupted")
+		}
+	}
+
+	// Optional Secondary Provider
+	formSecondary := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Would you like to configure a secondary / fallback provider?").
+				Description("Useful for high availability or task-specific routing.").
+				Options(
+					huh.NewOption("None (Stick to primary)", "none"),
+					huh.NewOption("Ollama (Local / Free)", "ollama"),
+					huh.NewOption("OpenAI", "openai"),
+					huh.NewOption("Groq (Super Fast)", "groq"),
+				).
+				Value(&secondaryProvider),
+		),
+	).WithTheme(theme)
+	if err := formSecondary.Run(); err != nil {
+		return fmt.Errorf("onboarding interrupted")
+	}
+
+	var secondaryAPIKey string
+	var secondaryBaseURL string
+	if secondaryProvider != "none" && secondaryProvider != provider {
+		var secFields []huh.Field
+		if needsAPIKey[secondaryProvider] {
+			secFields = append(secFields, huh.NewInput().
+				Title(fmt.Sprintf("Enter API Key for %s", secondaryProvider)).
+				Password(true).
+				Value(&secondaryAPIKey))
+		}
+		if du, ok := needsBaseURL[secondaryProvider]; ok {
+			secFields = append(secFields, huh.NewInput().
+				Title(fmt.Sprintf("Enter Base URL for %s (Default: %s)", secondaryProvider, du)).
+				Value(&secondaryBaseURL))
+		}
+		if len(secFields) > 0 {
+			formSec := huh.NewForm(huh.NewGroup(secFields...)).WithTheme(theme)
+			if err := formSec.Run(); err != nil {
+				return fmt.Errorf("onboarding interrupted")
+			}
+		}
+		if secondaryBaseURL == "" && needsBaseURL[secondaryProvider] != "" {
+			secondaryBaseURL = needsBaseURL[secondaryProvider]
+		}
+	}
+
 	// Phase 3: Gateway & Remote Access
 	formGateway := huh.NewForm(
 		huh.NewGroup(
@@ -333,42 +434,81 @@ func runOnboarding(configPath string) error {
 	sb.WriteString("\n")
 
 	sb.WriteString("providers:\n")
-	switch provider {
-	case "openai":
-		sb.WriteString(fmt.Sprintf("  openai:\n    api_key: \"%s\"\n    default_model: \"gpt-4o-mini\"\n", apiKey))
-	case "anthropic":
-		sb.WriteString(fmt.Sprintf("  anthropic:\n    api_key: \"%s\"\n    default_model: \"claude-3-5-haiku-20241022\"\n", apiKey))
-	case "ollama":
-		sb.WriteString(fmt.Sprintf("  ollama:\n    base_url: \"%s\"\n    default_model: \"llama3.2\"\n", baseURL))
-	case "bedrock":
-		sb.WriteString("  bedrock:\n")
-		sb.WriteString(fmt.Sprintf("    region: \"%s\"\n", awsRegion))
-		if awsProfile != "" {
-			sb.WriteString(fmt.Sprintf("    profile: \"%s\"\n", awsProfile))
+	writeProvider := func(p, ak, bu, model string) {
+		switch p {
+		case "openai":
+			m := model
+			if m == "" {
+				m = "gpt-4o-mini"
+			}
+			sb.WriteString(fmt.Sprintf("  openai:\n    api_key: \"%s\"\n    default_model: \"%s\"\n", ak, m))
+		case "anthropic":
+			m := model
+			if m == "" {
+				m = "claude-3-5-haiku-20241022"
+			}
+			sb.WriteString(fmt.Sprintf("  anthropic:\n    api_key: \"%s\"\n    default_model: \"%s\"\n", ak, m))
+		case "ollama":
+			m := model
+			if m == "" {
+				m = "llama3.2"
+			}
+			sb.WriteString(fmt.Sprintf("  ollama:\n    base_url: \"%s\"\n    default_model: \"%s\"\n", bu, m))
+		case "bedrock":
+			sb.WriteString("  bedrock:\n")
+			sb.WriteString(fmt.Sprintf("    region: \"%s\"\n", awsRegion))
+			if awsProfile != "" {
+				sb.WriteString(fmt.Sprintf("    profile: \"%s\"\n", awsProfile))
+			}
+			if ak != "" {
+				sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", ak))
+			}
+			if awsAccessKey != "" {
+				sb.WriteString(fmt.Sprintf("    access_key_id: \"%s\"\n", awsAccessKey))
+				sb.WriteString(fmt.Sprintf("    secret_access_key: \"%s\"\n", awsSecretKey))
+			}
+			m := model
+			if m == "" {
+				m = "anthropic.claude-3-5-haiku-20241022-v1:0"
+			}
+			sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", m))
+		case "azure":
+			sb.WriteString("  azure_openai:\n")
+			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", ak))
+			sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", bu))
+			sb.WriteString(fmt.Sprintf("    api_version: \"%s\"\n", apiVersion))
+			m := model
+			if m == "" {
+				m = "gpt-4o"
+			}
+			sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", m))
+		case "groq":
+			m := model
+			if m == "" {
+				m = "llama-3.3-70b-versatile"
+			}
+			sb.WriteString(fmt.Sprintf("  groq:\n    api_key: \"%s\"\n    default_model: \"%s\"\n", ak, m))
+		case "none":
+			// skip
+		default:
+			sb.WriteString(fmt.Sprintf("  %s:\n", p))
+			if ak != "" {
+				sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", ak))
+			}
+			if bu != "" {
+				sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", bu))
+			}
+			m := model
+			if m == "" {
+				m = "default"
+			}
+			sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", m))
 		}
-		if apiKey != "" {
-			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", apiKey))
-		}
-		if awsAccessKey != "" {
-			sb.WriteString(fmt.Sprintf("    access_key_id: \"%s\"\n", awsAccessKey))
-			sb.WriteString(fmt.Sprintf("    secret_access_key: \"%s\"\n", awsSecretKey))
-		}
-		sb.WriteString("    default_model: \"anthropic.claude-3-5-haiku-20241022-v1:0\"\n")
-	case "azure":
-		sb.WriteString("  azure_openai:\n")
-		sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", apiKey))
-		sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", baseURL))
-		sb.WriteString(fmt.Sprintf("    api_version: \"%s\"\n", apiVersion))
-		sb.WriteString("    default_model: \"gpt-4o\"\n")
-	default:
-		sb.WriteString(fmt.Sprintf("  %s:\n", provider))
-		if apiKey != "" {
-			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", apiKey))
-		}
-		if baseURL != "" {
-			sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", baseURL))
-		}
-		sb.WriteString("    default_model: \"default\"\n")
+	}
+
+	writeProvider(provider, apiKey, baseURL, selectedModel)
+	if secondaryProvider != "none" && secondaryProvider != provider {
+		writeProvider(secondaryProvider, secondaryAPIKey, secondaryBaseURL, "default")
 	}
 	sb.WriteString("\n")
 
@@ -397,16 +537,22 @@ func runOnboarding(configPath string) error {
 
 	// Routing config
 	sb.WriteString("routing:\n")
-	defaultRoute := fmt.Sprintf("%s/default", provider)
-	switch provider {
-	case "openai":
-		defaultRoute = "openai/gpt-4o-mini"
-	case "anthropic":
-		defaultRoute = "anthropic/claude-3-5-haiku-20241022"
-	case "bedrock":
-		defaultRoute = "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
+	provName := provider
+	if provName == "azure" {
+		provName = "azure_openai"
 	}
-	sb.WriteString(fmt.Sprintf("  default: \"%s\"\n", defaultRoute))
+	m := selectedModel
+	if m == "" {
+		m = "default"
+	}
+	sb.WriteString(fmt.Sprintf("  default: \"%s/%s\"\n", provName, m))
+	if secondaryProvider != "none" {
+		secName := secondaryProvider
+		if secName == "azure" {
+			secName = "azure_openai"
+		}
+		sb.WriteString(fmt.Sprintf("  fallback: \"%s/default\"\n", secName))
+	}
 
 	tpl = sb.String()
 

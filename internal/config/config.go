@@ -95,9 +95,12 @@ type AzureCreds struct {
 
 // BedrockCreds holds AWS Bedrock authentication settings.
 type BedrockCreds struct {
-	Region       string `yaml:"region"`
-	Profile      string `yaml:"profile"` // AWS named profile
-	DefaultModel string `yaml:"default_model"`
+	Region          string `yaml:"region"`
+	Profile         string `yaml:"profile"` // AWS named profile
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	APIKey          string `yaml:"api_key"`
+	DefaultModel    string `yaml:"default_model"`
 }
 
 // VertexCreds holds Google Vertex AI settings.
