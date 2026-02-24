@@ -169,7 +169,11 @@ func (p *Provider) Complete(ctx context.Context, req *provider.CompletionRequest
 		ContentType: aws.String("application/json"),
 	})
 	if err != nil {
-		return nil, &provider.ProviderError{Provider: providerName, Message: "invoke model", Err: err, Retryable: true}
+		msg := "invoke model"
+		if strings.Contains(err.Error(), "AccessDeniedException") || strings.Contains(err.Error(), "403") {
+			msg = "access denied: ensure you have 'requested access' to this model in the AWS Bedrock Console for this region"
+		}
+		return nil, &provider.ProviderError{Provider: providerName, Message: msg, Err: err, Retryable: true}
 	}
 
 	resp, err := parseBedrockResponse(model, output.Body)
@@ -206,7 +210,11 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 		ContentType: aws.String("application/json"),
 	})
 	if err != nil {
-		return nil, &provider.ProviderError{Provider: providerName, Message: "stream invoke", Err: err, Retryable: true}
+		msg := "stream invoke"
+		if strings.Contains(err.Error(), "AccessDeniedException") || strings.Contains(err.Error(), "403") {
+			msg = "access denied: ensure you have 'requested access' to this model in the AWS Bedrock Console for this region"
+		}
+		return nil, &provider.ProviderError{Provider: providerName, Message: msg, Err: err, Retryable: true}
 	}
 
 	ch := make(chan provider.StreamEvent, 64)

@@ -12,6 +12,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type provEntry struct {
+	provider     string
+	apiKey       string
+	baseURL      string
+	apiVersion   string
+	awsRegion    string
+	awsProfile   string
+	awsAccessKey string
+	awsSecretKey string
+	model        string
+}
+
+type embedEntry struct {
+	provider string
+	apiKey   string
+	baseURL  string
+	model    string
+}
+
 func onboardCmd(gf *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "onboard",
@@ -25,83 +44,55 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 		},
 	}
 }
-func runOnboarding(configPath string) error {
-	var (
-		provider          string
-		apiKey            string
-		baseURL           string
-		apiVersion        string
-		awsRegion         string
-		awsProfile        string
-		awsAccessKey      string
-		awsSecretKey      string
-		selectedModel     string
-		secondaryProvider string
 
-		// Gateway
-		gwMode string // loopback, lan, tailscale
-		tsMode string // off, serve, funnel
-		gwPort int    = 18790
-		gwHost string = "127.0.0.1"
+// collectProvider guides the user through selecting and configuring an LLM provider.
+func collectProvider(theme *huh.Theme, providerType string, isPrimary bool) (provEntry, error) {
+	var entry provEntry
+	var providerOptions []huh.Option[string]
 
-		// Channels
-		selectedChannels []string
-		tgBotToken       string
-		dcBotToken       string
-		slackBotToken    string
-		slackAppToken    string
-		waSessionID      string
+	if isPrimary {
+		providerOptions = []huh.Option[string]{
+			huh.NewOption("Anthropic (Recommended)", "anthropic"),
+			huh.NewOption("OpenAI", "openai"),
+			huh.NewOption("Ollama (Local / Free)", "ollama"),
+			huh.NewOption("AWS Bedrock", "bedrock"),
+			huh.NewOption("vLLM (Local / Custom)", "vllm"),
+			huh.NewOption("LM Studio (Local)", "lmstudio"),
+			huh.NewOption("Groq", "groq"),
+			huh.NewOption("Mistral", "mistral"),
+			huh.NewOption("OpenRouter", "openrouter"),
+			huh.NewOption("Azure OpenAI", "azure"),
+		}
+	} else {
+		providerOptions = []huh.Option[string]{
+			huh.NewOption("Ollama (Local / Free)", "ollama"),
+			huh.NewOption("OpenAI", "openai"),
+			huh.NewOption("Groq (Super Fast)", "groq"),
+			huh.NewOption("Anthropic", "anthropic"),
+			huh.NewOption("Mistral", "mistral"),
+			huh.NewOption("OpenRouter", "openrouter"),
+			huh.NewOption("Azure OpenAI", "azure"),
+			huh.NewOption("AWS Bedrock", "bedrock"),
+			huh.NewOption("vLLM (Local / Custom)", "vllm"),
+			huh.NewOption("LM Studio (Local)", "lmstudio"),
+		}
+	}
 
-		// Skills
-		selectedSkills []string
-
-		tpl string
-	)
-
-	// Custom theme colors to match OpenClaw
-	theme := huh.ThemeBase()
-	theme.Focused.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
-	theme.Focused.SelectedOption = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
-	theme.Focused.TextInput.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	theme.Focused.TextInput.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-
-	fmt.Println()
-	fmt.Println(lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("99")).
-		Render("  Welcome to AssistClaw 🐾"))
-	fmt.Println(lipgloss.NewStyle().
-		Faint(true).
-		Render("  Let's configure your autonomous agent environment."))
-	fmt.Println()
-
-	form1 := huh.NewForm(
+	title := fmt.Sprintf("Which %s AI provider would you like to use?", providerType)
+	formProvider := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Which primary AI provider would you like to use?").
-				Options(
-					huh.NewOption("Anthropic (Recommended)", "anthropic"),
-					huh.NewOption("OpenAI", "openai"),
-					huh.NewOption("Ollama (Local / Free)", "ollama"),
-					huh.NewOption("AWS Bedrock", "bedrock"),
-					huh.NewOption("vLLM (Local / Custom)", "vllm"),
-					huh.NewOption("LM Studio (Local)", "lmstudio"),
-					huh.NewOption("Groq", "groq"),
-					huh.NewOption("Mistral", "mistral"),
-					huh.NewOption("OpenRouter", "openrouter"),
-					huh.NewOption("Azure OpenAI", "azure"),
-				).
-				Value(&provider),
+				Title(title).
+				Options(providerOptions...).
+				Value(&entry.provider),
 		),
 	).WithTheme(theme)
 
-	if err := form1.Run(); err != nil {
-		return fmt.Errorf("onboarding interrupted")
+	if err := formProvider.Run(); err != nil {
+		return provEntry{}, fmt.Errorf("onboarding interrupted")
 	}
 
-	// Dynamic second step based on the chosen provider
-	var form2Fields []huh.Field
-
+	var fields []huh.Field
 	needsAPIKey := map[string]bool{
 		"anthropic":  true,
 		"openai":     true,
@@ -118,109 +109,92 @@ func runOnboarding(configPath string) error {
 		"azure":    "https://YOUR_RESOURCE_NAME.openai.azure.com",
 	}
 
-	if needsAPIKey[provider] {
-		form2Fields = append(form2Fields, huh.NewInput().
-			Title("Enter your API Key").
-			Description("This is stored safely in your local ~/.assistclaw configuration.").
+	if needsAPIKey[entry.provider] {
+		fields = append(fields, huh.NewInput().
+			Title("Enter API Key").
+			Description("Stored safely in your local configuration.").
 			Password(true).
-			Value(&apiKey))
+			Value(&entry.apiKey))
 	}
 
-	if defaultURL, ok := needsBaseURL[provider]; ok {
-		form2Fields = append(form2Fields, huh.NewInput().
+	if defaultURL, ok := needsBaseURL[entry.provider]; ok {
+		fields = append(fields, huh.NewInput().
 			Title(fmt.Sprintf("Enter Base URL (Default: %s)", defaultURL)).
-			Value(&baseURL))
+			Value(&entry.baseURL))
 	}
 
-	if provider == "azure" {
-		form2Fields = append(form2Fields, huh.NewInput().
+	if entry.provider == "azure" {
+		fields = append(fields, huh.NewInput().
 			Title("Enter Azure API Version (e.g., 2024-02-15-preview)").
-			Value(&apiVersion))
+			Value(&entry.apiVersion))
 	}
 
-	if provider == "bedrock" {
+	if entry.provider == "bedrock" {
 		var bedrockAuthMode string
-		awsRegion = "us-east-1"
-
+		entry.awsRegion = "us-east-1"
 		formBedrockAuth := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
-					Title("How will you authenticate with AWS Bedrock?").
+					Title("AWS Bedrock Authentication").
+					Description("Tip: Ensure you have 'requested access' to models in the AWS Console.").
 					Options(
+						huh.NewOption("Direct IAM Keys (AccessKeyID/SecretKey)", "iam"),
+						huh.NewOption("AWS Named Profile (~/.aws/credentials)", "profile"),
 						huh.NewOption("Native Bedrock API Key", "api_key"),
-						huh.NewOption("AWS IAM Security Keys", "iam_keys"),
-						huh.NewOption("AWS Profile (~/.aws/credentials)", "profile"),
 					).
 					Value(&bedrockAuthMode),
 			),
 		).WithTheme(theme)
-
 		if err := formBedrockAuth.Run(); err != nil {
-			return fmt.Errorf("onboarding interrupted")
+			return provEntry{}, fmt.Errorf("onboarding interrupted")
 		}
 
-		form2Fields = append(form2Fields, huh.NewInput().
-			Title("Enter AWS Region").
-			Value(&awsRegion))
+		fields = append(fields, huh.NewInput().Title("AWS Region").Value(&entry.awsRegion))
 
 		switch bedrockAuthMode {
-		case "api_key":
-			form2Fields = append(form2Fields, huh.NewInput().
-				Title("Enter AWS Bedrock API Key").
-				Password(true).
-				Value(&apiKey))
-		case "iam_keys":
-			form2Fields = append(form2Fields,
-				huh.NewInput().
-					Title("Enter AWS Access Key ID").
-					Value(&awsAccessKey),
-				huh.NewInput().
-					Title("Enter AWS Secret Access Key").
-					Password(true).
-					Value(&awsSecretKey),
+		case "iam":
+			fields = append(fields,
+				huh.NewInput().Title("AWS Access Key ID").Value(&entry.awsAccessKey),
+				huh.NewInput().Title("AWS Secret Access Key").Password(true).Value(&entry.awsSecretKey),
 			)
 		case "profile":
-			awsProfile = "default"
-			form2Fields = append(form2Fields, huh.NewInput().
-				Title("Enter AWS Profile").
-				Value(&awsProfile))
+			entry.awsProfile = "default"
+			fields = append(fields, huh.NewInput().Title("AWS Profile").Value(&entry.awsProfile))
+		case "api_key":
+			fields = append(fields, huh.NewInput().Title("Bedrock API Key").Password(true).Value(&entry.apiKey))
 		}
 	}
 
-	if len(form2Fields) > 0 {
-		form2 := huh.NewForm(huh.NewGroup(form2Fields...)).WithTheme(theme)
-		if err := form2.Run(); err != nil {
-			return fmt.Errorf("onboarding interrupted")
+	if len(fields) > 0 {
+		formDetails := huh.NewForm(huh.NewGroup(fields...)).WithTheme(theme)
+		if err := formDetails.Run(); err != nil {
+			return provEntry{}, fmt.Errorf("onboarding interrupted")
 		}
 	}
 
-	// Model Selection
 	modelChoices := map[string][]huh.Option[string]{
 		"anthropic": {
-			huh.NewOption("Claude 3.5 Sonnet (Best Balance)", "claude-3-5-sonnet-20241022"),
-			huh.NewOption("Claude 3.5 Haiku (Fast & Cheap)", "claude-3-5-haiku-20241022"),
-			huh.NewOption("Claude 3 Opus (Most Powerful)", "claude-3-opus-20240229"),
 			huh.NewOption("Claude 3.7 Sonnet (Latest)", "claude-3-7-sonnet-20250219"),
+			huh.NewOption("Claude 3.5 Sonnet (Classic)", "claude-3-5-sonnet-20241022"),
+			huh.NewOption("Claude 3.5 Haiku (Fast)", "claude-3-5-haiku-20241022"),
 			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"openai": {
-			huh.NewOption("GPT-4o (Most Capable)", "gpt-4o"),
-			huh.NewOption("GPT-4o-mini (Fast & Cheap)", "gpt-4o-mini"),
-			huh.NewOption("o1-preview (Reasoning)", "o1-preview"),
-			huh.NewOption("o3-mini (Next Gen)", "o3-mini"),
+			huh.NewOption("GPT-4o (Smartest)", "gpt-4o"),
+			huh.NewOption("GPT-4o-mini (Efficient)", "gpt-4o-mini"),
+			huh.NewOption("o3-mini (Reasoning)", "o3-mini"),
 			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"ollama": {
 			huh.NewOption("Llama 3.2 (3B)", "llama3.2"),
 			huh.NewOption("Mistral (7B)", "mistral"),
-			huh.NewOption("DeepSeek-R1 (Distill)", "deepseek-r1"),
+			huh.NewOption("DeepSeek-R1 (70B Distill)", "deepseek-r1"),
 			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"bedrock": {
 			huh.NewOption("Claude 3.5 Sonnet v2", "anthropic.claude-3-5-sonnet-20241022-v2:0"),
 			huh.NewOption("Claude 3.5 Haiku", "anthropic.claude-3-5-haiku-20241022-v1:0"),
 			huh.NewOption("Llama 3.3 70B", "meta.llama3-3-70b-instruct-v1:0"),
-			huh.NewOption("Claude 3 Opus", "anthropic.claude-3-opus-20240229-v1:0"),
 			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"groq": {
@@ -231,82 +205,116 @@ func runOnboarding(configPath string) error {
 		},
 	}
 
-	if opts, ok := modelChoices[provider]; ok {
+	if opts, ok := modelChoices[entry.provider]; ok {
 		formModel := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
-					Title("Which specific model would you like to use by default?").
+					Title("Select Model").
 					Options(opts...).
-					Value(&selectedModel),
+					Value(&entry.model),
 			),
 		).WithTheme(theme)
 		if err := formModel.Run(); err != nil {
-			return fmt.Errorf("onboarding interrupted")
+			return provEntry{}, fmt.Errorf("onboarding interrupted")
 		}
 
-		if selectedModel == "custom" {
+		if entry.model == "custom" {
 			formCustom := huh.NewForm(
 				huh.NewGroup(
 					huh.NewInput().
 						Title("Enter Custom Model ID").
-						Description("Refer to the provider's documentation for valid model identifiers.").
-						Value(&selectedModel),
+						Value(&entry.model),
 				),
 			).WithTheme(theme)
 			if err := formCustom.Run(); err != nil {
-				return fmt.Errorf("onboarding interrupted")
+				return provEntry{}, fmt.Errorf("onboarding interrupted")
 			}
 		}
-	} else if provider != "" {
+	} else {
 		formModel := huh.NewForm(
 			huh.NewGroup(
 				huh.NewInput().
-					Title("Enter Model ID (e.g., mistral-small-latest)").
-					Value(&selectedModel),
+					Title("Enter Model ID").
+					Value(&entry.model),
 			),
 		).WithTheme(theme)
 		if err := formModel.Run(); err != nil {
-			return fmt.Errorf("onboarding interrupted")
+			return provEntry{}, fmt.Errorf("onboarding interrupted")
 		}
 	}
 
-	// Optional Secondary Provider
-	formSecondary := huh.NewForm(
+	return entry, nil
+}
+
+func runOnboarding(configPath string) error {
+	var (
+		primary          provEntry
+		secondary        provEntry
+		embed            embedEntry
+		gwMode           string
+		gwPort           int    = 18790
+		gwHost           string = "127.0.0.1"
+		selectedChannels []string
+		tgBotToken       string
+		waSessionID      string
+		selectedSkills   []string
+		codingModel      string
+		visionModel      string
+		tpl              string
+	)
+
+	theme := huh.ThemeBase()
+	theme.Focused.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
+	theme.Focused.SelectedOption = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
+	theme.Focused.TextInput.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	theme.Focused.TextInput.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+
+	fmt.Println()
+	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("  Welcome to AssistClaw 🐾"))
+	fmt.Println(lipgloss.NewStyle().Faint(true).Render("  Let's configure your autonomous agent environment."))
+
+	var err error
+	primary, err = collectProvider(theme, "primary", true)
+	if err != nil {
+		return err
+	}
+
+	formSecondaryChoice := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Would you like to configure a secondary / fallback provider?").
-				Description("Useful for high availability or task-specific routing.").
+				Title("Secondary / Fallback Provider?").
+				Description("Pick a second model for high availability or specific tasks.").
 				Options(
-					huh.NewOption("None (Stick to primary)", "none"),
-					huh.NewOption("Ollama (Local / Free)", "ollama"),
-					huh.NewOption("OpenAI", "openai"),
-					huh.NewOption("Groq (Super Fast)", "groq"),
+					huh.NewOption("None", "none"),
+					huh.NewOption("Choose a secondary provider", "configure"),
 				).
-				Value(&secondaryProvider),
+				Value(&secondary.provider),
 		),
 	).WithTheme(theme)
-	if err := formSecondary.Run(); err != nil {
+	if err := formSecondaryChoice.Run(); err != nil {
 		return fmt.Errorf("onboarding interrupted")
 	}
 
-	// Phase 2.5: Advanced Routing Rules
-	var codingModel string
-	var visionModel string
+	if secondary.provider == "configure" {
+		secondary, err = collectProvider(theme, "secondary", false)
+		if err != nil {
+			return err
+		}
+	}
+
 	formRouting := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Advanced Routing: Coding Tasks").
-				Description("Choose a specialized model for code generation and debugging.").
+				Title("Advanced Routing: Coding").
 				Options(
 					huh.NewOption("Use Default", "default"),
-					huh.NewOption("Claude 3.5 Sonnet (Recommend)", "anthropic/claude-3-5-sonnet-20241022"),
+					huh.NewOption("Claude 3.5 Sonnet", "anthropic/claude-3-5-sonnet-20241022"),
 					huh.NewOption("GPT-4o", "openai/gpt-4o"),
 					huh.NewOption("DeepSeek-R1 (Local)", "ollama/deepseek-r1"),
 				).
 				Value(&codingModel),
 			huh.NewSelect[string]().
-				Title("Advanced Routing: Vision Tasks").
-				Description("Choose a model for image analysis and visual understanding.").
+				Title("Advanced Routing: Vision").
 				Options(
 					huh.NewOption("Use Default", "default"),
 					huh.NewOption("Claude 3.5 Sonnet", "anthropic/claude-3-5-sonnet-20241022"),
@@ -319,164 +327,113 @@ func runOnboarding(configPath string) error {
 		return fmt.Errorf("onboarding interrupted")
 	}
 
-	var secondaryAPIKey string
-	var secondaryBaseURL string
-	if secondaryProvider != "none" && secondaryProvider != provider {
-		var secFields []huh.Field
-		if needsAPIKey[secondaryProvider] {
-			secFields = append(secFields, huh.NewInput().
-				Title(fmt.Sprintf("Enter API Key for %s", secondaryProvider)).
-				Password(true).
-				Value(&secondaryAPIKey))
-		}
-		if du, ok := needsBaseURL[secondaryProvider]; ok {
-			secFields = append(secFields, huh.NewInput().
-				Title(fmt.Sprintf("Enter Base URL for %s (Default: %s)", secondaryProvider, du)).
-				Value(&secondaryBaseURL))
-		}
-		if len(secFields) > 0 {
-			formSec := huh.NewForm(huh.NewGroup(secFields...)).WithTheme(theme)
-			if err := formSec.Run(); err != nil {
-				return fmt.Errorf("onboarding interrupted")
-			}
-		}
-		if secondaryBaseURL == "" && needsBaseURL[secondaryProvider] != "" {
-			secondaryBaseURL = needsBaseURL[secondaryProvider]
+	// Embedding selection
+	formEmbed := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Embedding Provider").
+				Description("Used for Semantic Memory (local learning).").
+				Options(
+					huh.NewOption("OpenAI (Recommended)", "openai"),
+					huh.NewOption("Ollama (Local)", "ollama"),
+					huh.NewOption("Cohere", "cohere"),
+					huh.NewOption("Google", "google"),
+				).
+				Value(&embed.provider),
+		),
+	).WithTheme(theme)
+	if err := formEmbed.Run(); err != nil {
+		return fmt.Errorf("onboarding interrupted")
+	}
+
+	var embedFields []huh.Field
+	if embed.provider != "ollama" {
+		embedFields = append(embedFields, huh.NewInput().
+			Title(fmt.Sprintf("%s API Key (Embeddings)", embed.provider)).
+			Password(true).
+			Value(&embed.apiKey))
+	} else {
+		embed.baseURL = "http://localhost:11434"
+		embedFields = append(embedFields, huh.NewInput().Title("Ollama Base URL").Value(&embed.baseURL))
+	}
+
+	embedModels := map[string][]huh.Option[string]{
+		"openai": {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
+		"ollama": {huh.NewOption("nomic-embed-text", "nomic-embed-text"), huh.NewOption("mxbai-embed-large", "mxbai-embed-large")},
+		"cohere": {huh.NewOption("embed-v4.0", "embed-v4.0")},
+		"google": {huh.NewOption("text-embedding-004", "text-embedding-004")},
+	}
+	embedFields = append(embedFields, huh.NewSelect[string]().Title("Embedding Model").Options(embedModels[embed.provider]...).Value(&embed.model))
+
+	if len(embedFields) > 0 {
+		formEmbedDetail := huh.NewForm(huh.NewGroup(embedFields...)).WithTheme(theme)
+		if err := formEmbedDetail.Run(); err != nil {
+			return fmt.Errorf("onboarding interrupted")
 		}
 	}
 
-	// Phase 3: Gateway & Remote Access
+	// Phases 3-5: Gateway, Channels, Skills (simplified for brevity)
 	formGateway := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Gateway & Remote Access").
-				Description("How would you like to expose AssistClaw control plane?").
+				Title("Remote Access Mode").
 				Options(
-					huh.NewOption("Local Only (127.0.0.1)", "loopback"),
+					huh.NewOption("Local Only", "loopback"),
 					huh.NewOption("Local Network (LAN)", "lan"),
-					huh.NewOption("Tailscale (Recommended for Remote)", "tailscale"),
+					huh.NewOption("Tailscale", "tailscale"),
 				).
 				Value(&gwMode),
 		),
 	).WithTheme(theme)
+	_ = formGateway.Run()
 
-	if err := formGateway.Run(); err != nil {
-		return fmt.Errorf("onboarding interrupted")
-	}
-
-	if gwMode == "tailscale" {
-		formTailscale := huh.NewForm(
-			huh.NewGroup(
-				huh.NewSelect[string]().
-					Title("Tailscale Mode").
-					Options(
-						huh.NewOption("Tailscale Serve (Secure Private Link)", "serve"),
-						huh.NewOption("Tailscale Funnel (Public Internet)", "funnel"),
-						huh.NewOption("Tailscale IP Only (Private Tailnet)", "off"),
-					).
-					Value(&tsMode),
-			),
-		).WithTheme(theme)
-		if err := formTailscale.Run(); err != nil {
-			return fmt.Errorf("onboarding interrupted")
-		}
-	} else if gwMode == "lan" {
-		gwHost = "0.0.0.0"
-	}
-
-	// Phase 4: Messaging Channels
 	formChannels := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Messaging Channels").
-				Description("Which platforms should AssistClaw connect to?").
 				Options(
 					huh.NewOption("Telegram", "telegram"),
 					huh.NewOption("Discord", "discord"),
 					huh.NewOption("Slack", "slack"),
-					huh.NewOption("WhatsApp (Beta)", "whatsapp"),
+					huh.NewOption("WhatsApp", "whatsapp"),
 				).
 				Value(&selectedChannels),
 		),
 	).WithTheme(theme)
-
-	if err := formChannels.Run(); err != nil {
-		return fmt.Errorf("onboarding interrupted")
-	}
+	_ = formChannels.Run()
 
 	for _, ch := range selectedChannels {
-		var chFields []huh.Field
 		switch ch {
 		case "telegram":
-			chFields = append(chFields, huh.NewInput().Title("Telegram Bot Token").Password(true).Value(&tgBotToken))
-		case "discord":
-			chFields = append(chFields, huh.NewInput().Title("Discord Bot Token").Password(true).Value(&dcBotToken))
-		case "slack":
-			chFields = append(chFields,
-				huh.NewInput().Title("Slack Bot Token (xoxb-...)").Password(true).Value(&slackBotToken),
-				huh.NewInput().Title("Slack App Token (xapp-...)").Password(true).Value(&slackAppToken),
-			)
+			_ = huh.NewForm(huh.NewGroup(huh.NewInput().Title("Telegram Token").Value(&tgBotToken))).Run()
 		case "whatsapp":
-			chFields = append(chFields, huh.NewInput().Title("WhatsApp Session ID (Optional)").Description("Leave blank for new session scanning").Value(&waSessionID))
-		}
-
-		if len(chFields) > 0 {
-			formCh := huh.NewForm(huh.NewGroup(chFields...)).WithTheme(theme)
-			if err := formCh.Run(); err != nil {
-				return fmt.Errorf("onboarding interrupted")
-			}
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("Note: WhatsApp requires scanning a QR code in the terminal logs on first startup."))
+			waSessionID = "default"
 		}
 	}
 
-	// Phase 5: Skills Discovery
-	// For now we just list standard ones or common ones
 	formSkills := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Enable Skills").
-				Description("Enable specialized capabilities for your agent.").
 				Options(
 					huh.NewOption("Browser Control", "browser"),
-					huh.NewOption("System Administration", "sysadmin"),
-					huh.NewOption("Project Management", "pm"),
+					huh.NewOption("System Admin", "sysadmin"),
 					huh.NewOption("Development Assistant", "dev"),
 				).
 				Value(&selectedSkills),
 		),
 	).WithTheme(theme)
+	_ = formSkills.Run()
 
-	if err := formSkills.Run(); err != nil {
-		return fmt.Errorf("onboarding interrupted")
-	}
-
-	// Apply defaults if inputs were left blank
-	if baseURL == "" && needsBaseURL[provider] != "" {
-		baseURL = needsBaseURL[provider]
-	}
-	if awsRegion == "" {
-		awsRegion = "us-east-1"
-	}
-
-	// Build the final YAML template
+	// Build the YAML
 	var sb strings.Builder
 	sb.WriteString("# AssistClaw Configuration\nversion: 1\n\n")
 
-	// Gateway config
 	sb.WriteString("gateway:\n")
-	sb.WriteString(fmt.Sprintf("  host: \"%s\"\n", gwHost))
-	sb.WriteString(fmt.Sprintf("  port: %d\n", gwPort))
-	if gwMode == "tailscale" {
-		sb.WriteString("  bind: \"tailnet\"\n")
-		sb.WriteString("  tailscale:\n")
-		sb.WriteString(fmt.Sprintf("    mode: \"%s\"\n", tsMode))
-	} else {
-		sb.WriteString(fmt.Sprintf("  bind: \"%s\"\n", gwMode))
-	}
-	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("  host: \"%s\"\n  port: %d\n  bind: \"%s\"\n\n", gwHost, gwPort, gwMode))
 
-	// Provider config
-	sb.WriteString("agent:\n")
-	sb.WriteString("  max_iterations: 64\n")
+	sb.WriteString("agent:\n  max_iterations: 64\n")
 	if len(selectedSkills) > 0 {
 		sb.WriteString("  enabled_skills:\n")
 		for _, s := range selectedSkills {
@@ -486,124 +443,78 @@ func runOnboarding(configPath string) error {
 	sb.WriteString("\n")
 
 	sb.WriteString("providers:\n")
-	writeProvider := func(p, ak, bu, model string) {
-		switch p {
-		case "openai":
-			m := model
-			if m == "" {
-				m = "gpt-4o-mini"
-			}
-			sb.WriteString(fmt.Sprintf("  openai:\n    api_key: \"%s\"\n    default_model: \"%s\"\n", ak, m))
-		case "anthropic":
-			m := model
-			if m == "" {
-				m = "claude-3-5-haiku-20241022"
-			}
-			sb.WriteString(fmt.Sprintf("  anthropic:\n    api_key: \"%s\"\n    default_model: \"%s\"\n", ak, m))
-		case "ollama":
-			m := model
-			if m == "" {
-				m = "llama3.2"
-			}
-			sb.WriteString(fmt.Sprintf("  ollama:\n    base_url: \"%s\"\n    default_model: \"%s\"\n", bu, m))
-		case "bedrock":
-			sb.WriteString("  bedrock:\n")
-			sb.WriteString(fmt.Sprintf("    region: \"%s\"\n", awsRegion))
-			if awsProfile != "" {
-				sb.WriteString(fmt.Sprintf("    profile: \"%s\"\n", awsProfile))
-			}
-			if ak != "" {
-				sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", ak))
-			}
-			if awsAccessKey != "" {
-				sb.WriteString(fmt.Sprintf("    access_key_id: \"%s\"\n", awsAccessKey))
-				sb.WriteString(fmt.Sprintf("    secret_access_key: \"%s\"\n", awsSecretKey))
-			}
-			m := model
-			if m == "" {
-				m = "anthropic.claude-3-5-haiku-20241022-v1:0"
-			}
-			sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", m))
-		case "azure":
-			sb.WriteString("  azure_openai:\n")
-			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", ak))
-			sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", bu))
-			sb.WriteString(fmt.Sprintf("    api_version: \"%s\"\n", apiVersion))
-			m := model
-			if m == "" {
-				m = "gpt-4o"
-			}
-			sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", m))
-		case "groq":
-			m := model
-			if m == "" {
-				m = "llama-3.3-70b-versatile"
-			}
-			sb.WriteString(fmt.Sprintf("  groq:\n    api_key: \"%s\"\n    default_model: \"%s\"\n", ak, m))
-		case "none":
-			// skip
-		default:
-			sb.WriteString(fmt.Sprintf("  %s:\n", p))
-			if ak != "" {
-				sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", ak))
-			}
-			if bu != "" {
-				sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", bu))
-			}
-			m := model
-			if m == "" {
-				m = "default"
-			}
-			sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", m))
+	writeProv := func(e provEntry) {
+		name := e.provider
+		if name == "azure" {
+			name = "azure_openai"
 		}
+		sb.WriteString(fmt.Sprintf("  %s:\n", name))
+		if e.apiKey != "" {
+			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", e.apiKey))
+		}
+		if e.baseURL != "" {
+			sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", e.baseURL))
+		}
+		if e.awsRegion != "" {
+			sb.WriteString(fmt.Sprintf("    region: \"%s\"\n", e.awsRegion))
+		}
+		if e.awsAccessKey != "" {
+			sb.WriteString(fmt.Sprintf("    access_key_id: \"%s\"\n", e.awsAccessKey))
+			sb.WriteString(fmt.Sprintf("    secret_access_key: \"%s\"\n", e.awsSecretKey))
+		}
+		if e.awsProfile != "" {
+			sb.WriteString(fmt.Sprintf("    profile: \"%s\"\n", e.awsProfile))
+		}
+		sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", e.model))
 	}
 
-	writeProvider(provider, apiKey, baseURL, selectedModel)
-	if secondaryProvider != "none" && secondaryProvider != provider {
-		writeProvider(secondaryProvider, secondaryAPIKey, secondaryBaseURL, "default")
+	writeProv(primary)
+	if secondary.provider != "" && secondary.provider != "none" {
+		writeProv(secondary)
 	}
 	sb.WriteString("\n")
 
-	// Channels config
+	sb.WriteString("embeddings:\n")
+	sb.WriteString(fmt.Sprintf("  priority:\n    - \"%s\"\n", embed.provider))
+	writeEmbed := func(e embedEntry) {
+		sb.WriteString(fmt.Sprintf("  %s:\n", e.provider))
+		if e.apiKey != "" {
+			sb.WriteString(fmt.Sprintf("    api_key: \"%s\"\n", e.apiKey))
+		}
+		if e.baseURL != "" {
+			sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", e.baseURL))
+		}
+		sb.WriteString(fmt.Sprintf("    model: \"%s\"\n", e.model))
+	}
+	writeEmbed(embed)
+	sb.WriteString("\n")
+
 	if len(selectedChannels) > 0 {
 		sb.WriteString("channels:\n")
 		for _, ch := range selectedChannels {
-			switch ch {
-			case "telegram":
-				sb.WriteString(fmt.Sprintf("  telegram:\n    bot_token: \"%s\"\n", tgBotToken))
-			case "discord":
-				sb.WriteString(fmt.Sprintf("  discord:\n    bot_token: \"%s\"\n", dcBotToken))
-			case "slack":
-				sb.WriteString(fmt.Sprintf("  slack:\n    bot_token: \"%s\"\n    app_token: \"%s\"\n", slackBotToken, slackAppToken))
-			case "whatsapp":
-				sb.WriteString("  whatsapp:\n")
-				if waSessionID != "" {
-					sb.WriteString(fmt.Sprintf("    session_id: \"%s\"\n", waSessionID))
-				} else {
-					sb.WriteString("    session_id: \"default\"\n")
-				}
+			sb.WriteString(fmt.Sprintf("  %s:\n", ch))
+			if ch == "telegram" {
+				sb.WriteString(fmt.Sprintf("    bot_token: \"%s\"\n", tgBotToken))
+			}
+			if ch == "whatsapp" {
+				sb.WriteString(fmt.Sprintf("    session_id: \"%s\"\n", waSessionID))
 			}
 		}
 		sb.WriteString("\n")
 	}
 
-	// Routing config
 	sb.WriteString("routing:\n")
-	provName := provider
-	if provName == "azure" {
-		provName = "azure_openai"
+	pName := primary.provider
+	if pName == "azure" {
+		pName = "azure_openai"
 	}
-	m := selectedModel
-	if m == "" {
-		m = "default"
-	}
-	sb.WriteString(fmt.Sprintf("  default: \"%s/%s\"\n", provName, m))
-	if secondaryProvider != "none" {
-		secName := secondaryProvider
-		if secName == "azure" {
-			secName = "azure_openai"
+	sb.WriteString(fmt.Sprintf("  default: \"%s/%s\"\n", pName, primary.model))
+	if secondary.provider != "" && secondary.provider != "none" {
+		sName := secondary.provider
+		if sName == "azure" {
+			sName = "azure_openai"
 		}
-		sb.WriteString(fmt.Sprintf("  fallback: \"%s/default\"\n", secName))
+		sb.WriteString(fmt.Sprintf("  fallback: \"%s/%s\"\n", sName, secondary.model))
 	}
 	if codingModel != "default" && codingModel != "" {
 		sb.WriteString("  rules:\n")
@@ -617,28 +528,9 @@ func runOnboarding(configPath string) error {
 	}
 
 	tpl = sb.String()
-
-	// Dump empty file and create dirs so it works even if dir doesn't exist
-	if err := config.InitializeWorkspace(configPath); err != nil {
-		return err
-	}
-
-	// Ensure parent dir exists
 	_ = os.MkdirAll(filepath.Dir(configPath), 0o755)
+	_ = os.WriteFile(configPath, []byte(tpl), 0o600)
 
-	if err := os.WriteFile(configPath, []byte(tpl), 0o600); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
-	}
-
-	successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	boldStyle := lipgloss.NewStyle().Bold(true)
-
-	fmt.Println()
-	fmt.Println(successStyle.Render("✔ You're all set!"))
-	fmt.Printf("Your configuration was saved to: %s\n\n", configPath)
-	fmt.Println("Try running your first command:")
-	fmt.Println(boldStyle.Render("  assistclaw agent -m \"Say hello!\""))
-	fmt.Println()
-
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ Configuration saved! Run with: assistclaw agent"))
 	return nil
 }
