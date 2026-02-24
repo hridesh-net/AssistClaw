@@ -34,6 +34,8 @@ func newOSMon(_ *eventbus.Bus, logf logger.Logf, m *Monitor) (osMon, error) {
 	return &devdConn{conn}, nil
 }
 
+func (c *devdConn) IsInterestingInterface(iface string) bool { return true }
+
 func (c *devdConn) Close() error {
 	return c.conn.Close()
 }

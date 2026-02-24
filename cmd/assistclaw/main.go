@@ -155,6 +155,13 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 			}
 			defer memMgr.Close()
 
+			// Start Markdown memory watcher/synchronizer
+			go func() {
+				if err := memMgr.Watch(ctx, embedReg, cfg.StateDir); err != nil {
+					log.Warn("memory watcher failed", zap.Error(err))
+				}
+			}()
+
 			// Resolve model
 			resolvedModel := model
 			if resolvedModel == "" {
@@ -203,14 +210,26 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 			}
 
 			memSearchFn := func(searchCtx context.Context, query string, limit int) ([]string, error) {
-				msgs, err := memMgr.Episodic.Search(searchCtx, query, limit)
-				if err != nil {
-					return nil, err
-				}
 				var out []string
-				for _, m := range msgs {
-					out = append(out, fmt.Sprintf("[%s] %s: %s", m.CreatedAt.Format("2006-01-02 15:04"), m.Role, m.Content))
+
+				// 1. Episodic Search (Full-Text)
+				msgs, err := memMgr.Episodic.Search(searchCtx, query, limit)
+				if err == nil {
+					for _, m := range msgs {
+						out = append(out, fmt.Sprintf("[episodic] [%s] %s: %s", m.CreatedAt.Format("2006-01-02 15:04"), m.Role, m.Content))
+					}
 				}
+
+				// 2. Semantic Search (Vector)
+				if vec, err := embedReg.EmbedQuery(searchCtx, query); err == nil {
+					docs, err := memMgr.Semantic.Search(searchCtx, vec, limit)
+					if err == nil {
+						for _, d := range docs {
+							out = append(out, fmt.Sprintf("[semantic] [%s] source=%s: %s", d.CreatedAt.Format("2006-01-02 15:04"), d.Source, d.Content))
+						}
+					}
+				}
+
 				return out, nil
 			}
 			for _, t := range tools.Default(memSearchFn) {

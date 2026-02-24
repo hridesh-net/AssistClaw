@@ -5,12 +5,10 @@ package ipnlocal
 
 import (
 	"cmp"
-	"crypto"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"runtime"
 	"slices"
 	"strings"
@@ -61,9 +59,6 @@ type profileManager struct {
 	// extHost is the bridge between [profileManager] and the registered [ipnext.Extension]s.
 	// It may be nil in tests. A nil pointer is a valid, no-op host.
 	extHost *ExtensionHost
-
-	// Override for key.NewEmptyHardwareAttestationKey used for testing.
-	newEmptyHardwareAttestationKey func() (key.HardwareAttestationKey, error)
 }
 
 // SetExtensionHost sets the [ExtensionHost] for the [profileManager].
@@ -665,23 +660,13 @@ func (pm *profileManager) loadSavedPrefs(k ipn.StateKey) (ipn.PrefsView, error) 
 
 	// if supported by the platform, create an empty hardware attestation key to use when deserializing
 	// to avoid type exceptions from json.Unmarshaling into an interface{}.
-	hw, _ := pm.newEmptyHardwareAttestationKey()
+	hw, _ := key.NewEmptyHardwareAttestationKey()
 	savedPrefs.Persist = &persist.Persist{
 		AttestationKey: hw,
 	}
 
 	if err := ipn.PrefsFromBytes(bs, savedPrefs); err != nil {
-		// Try loading again, this time ignoring the AttestationKey contents.
-		// If that succeeds, there's something wrong with the underlying
-		// attestation key mechanism (most likely the TPM changed), but we
-		// should at least proceed with client startup.
-		origErr := err
-		savedPrefs.Persist.AttestationKey = &noopAttestationKey{}
-		if err := ipn.PrefsFromBytes(bs, savedPrefs); err != nil {
-			return ipn.PrefsView{}, fmt.Errorf("parsing saved prefs: %w", err)
-		} else {
-			pm.logf("failed to parse savedPrefs with attestation key (error: %v) but parsing without the attestation key succeeded; will proceed without using the old attestation key", origErr)
-		}
+		return ipn.PrefsView{}, fmt.Errorf("parsing saved prefs: %v", err)
 	}
 	pm.logf("using backend prefs for %q: %v", k, savedPrefs.Pretty())
 
@@ -927,12 +912,11 @@ func newProfileManagerWithGOOS(store ipn.StateStore, logf logger.Logf, ht *healt
 	metricProfileCount.Set(int64(len(knownProfiles)))
 
 	pm := &profileManager{
-		goos:                           goos,
-		store:                          store,
-		knownProfiles:                  knownProfiles,
-		logf:                           logf,
-		health:                         ht,
-		newEmptyHardwareAttestationKey: key.NewEmptyHardwareAttestationKey,
+		goos:          goos,
+		store:         store,
+		knownProfiles: knownProfiles,
+		logf:          logf,
+		health:        ht,
 	}
 
 	var initialProfile ipn.LoginProfileView
@@ -1001,21 +985,3 @@ var (
 	metricMigrationError   = clientmetric.NewCounter("profiles_migration_error")
 	metricMigrationSuccess = clientmetric.NewCounter("profiles_migration_success")
 )
-
-// noopAttestationKey is a key.HardwareAttestationKey that always successfully
-// unmarshals as a zero key.
-type noopAttestationKey struct{}
-
-func (n noopAttestationKey) Public() crypto.PublicKey {
-	panic("noopAttestationKey.Public should not be called; missing IsZero check somewhere?")
-}
-
-func (n noopAttestationKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	panic("noopAttestationKey.Sign should not be called; missing IsZero check somewhere?")
-}
-
-func (n noopAttestationKey) MarshalJSON() ([]byte, error)      { return nil, nil }
-func (n noopAttestationKey) UnmarshalJSON([]byte) error        { return nil }
-func (n noopAttestationKey) Close() error                      { return nil }
-func (n noopAttestationKey) Clone() key.HardwareAttestationKey { return n }
-func (n noopAttestationKey) IsZero() bool                      { return true }

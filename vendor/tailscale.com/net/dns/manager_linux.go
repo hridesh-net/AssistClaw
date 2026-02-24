@@ -21,7 +21,6 @@ import (
 	"tailscale.com/net/netaddr"
 	"tailscale.com/types/logger"
 	"tailscale.com/util/clientmetric"
-	"tailscale.com/util/eventbus"
 	"tailscale.com/util/syspolicy/policyclient"
 	"tailscale.com/version/distro"
 )
@@ -64,7 +63,7 @@ var (
 // NewOSConfigurator created a new OS configurator.
 //
 // The health tracker may be nil; the knobs may be nil and are ignored on this platform.
-func NewOSConfigurator(logf logger.Logf, health *health.Tracker, bus *eventbus.Bus, _ policyclient.Client, _ *controlknobs.Knobs, interfaceName string) (ret OSConfigurator, err error) {
+func NewOSConfigurator(logf logger.Logf, health *health.Tracker, _ policyclient.Client, _ *controlknobs.Knobs, interfaceName string) (ret OSConfigurator, err error) {
 	if !buildfeatures.HasDNS || distro.Get() == distro.JetKVM {
 		return NewNoopManager()
 	}
@@ -101,7 +100,7 @@ func NewOSConfigurator(logf logger.Logf, health *health.Tracker, bus *eventbus.B
 	logf("dns: using %q mode", mode)
 	switch mode {
 	case "direct":
-		return newDirectManagerOnFS(logf, health, bus, env.fs), nil
+		return newDirectManagerOnFS(logf, health, env.fs), nil
 	case "systemd-resolved":
 		if f, ok := optNewResolvedManager.GetOk(); ok {
 			return f(logf, health, interfaceName)
@@ -120,7 +119,7 @@ func NewOSConfigurator(logf logger.Logf, health *health.Tracker, bus *eventbus.B
 		logf("[unexpected] detected unknown DNS mode %q, using direct manager as last resort", mode)
 	}
 
-	return newDirectManagerOnFS(logf, health, bus, env.fs), nil
+	return newDirectManagerOnFS(logf, health, env.fs), nil
 }
 
 // newOSConfigEnv are the funcs newOSConfigurator needs, pulled out for testing.

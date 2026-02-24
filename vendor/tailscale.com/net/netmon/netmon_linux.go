@@ -81,6 +81,8 @@ func newOSMon(bus *eventbus.Bus, logf logger.Logf, m *Monitor) (osMon, error) {
 	}, nil
 }
 
+func (c *nlConn) IsInterestingInterface(iface string) bool { return true }
+
 func (c *nlConn) Close() error {
 	c.busClient.Close()
 	return c.conn.Close()

@@ -7,10 +7,9 @@ import (
 	"tailscale.com/control/controlknobs"
 	"tailscale.com/health"
 	"tailscale.com/types/logger"
-	"tailscale.com/util/eventbus"
 	"tailscale.com/util/syspolicy/policyclient"
 )
 
-func NewOSConfigurator(logf logger.Logf, health *health.Tracker, bus *eventbus.Bus, _ policyclient.Client, _ *controlknobs.Knobs, iface string) (OSConfigurator, error) {
-	return newDirectManager(logf, health, bus), nil
+func NewOSConfigurator(logf logger.Logf, health *health.Tracker, _ policyclient.Client, _ *controlknobs.Knobs, iface string) (OSConfigurator, error) {
+	return newDirectManager(logf, health), nil
 }

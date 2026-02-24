@@ -10,8 +10,8 @@ package portmapper
 import (
 	"context"
 
-	"github.com/huin/goupnp"
-	"github.com/huin/goupnp/soap"
+	"github.com/tailscale/goupnp"
+	"github.com/tailscale/goupnp/soap"
 )
 
 const (
@@ -32,8 +32,8 @@ type legacyWANPPPConnection1 struct {
 	goupnp.ServiceClient
 }
 
-// AddPortMappingCtx implements upnpClient
-func (client *legacyWANPPPConnection1) AddPortMappingCtx(
+// AddPortMapping implements upnpClient
+func (client *legacyWANPPPConnection1) AddPortMapping(
 	ctx context.Context,
 	NewRemoteHost string,
 	NewExternalPort uint16,
@@ -85,11 +85,11 @@ func (client *legacyWANPPPConnection1) AddPortMappingCtx(
 	response := any(nil)
 
 	// Perform the SOAP call.
-	return client.SOAPClient.PerformActionCtx(ctx, urn_LegacyWANPPPConnection_1, "AddPortMapping", request, response)
+	return client.SOAPClient.PerformAction(ctx, urn_LegacyWANPPPConnection_1, "AddPortMapping", request, response)
 }
 
-// DeletePortMappingCtx implements upnpClient
-func (client *legacyWANPPPConnection1) DeletePortMappingCtx(ctx context.Context, NewRemoteHost string, NewExternalPort uint16, NewProtocol string) (err error) {
+// DeletePortMapping implements upnpClient
+func (client *legacyWANPPPConnection1) DeletePortMapping(ctx context.Context, NewRemoteHost string, NewExternalPort uint16, NewProtocol string) (err error) {
 	// Request structure.
 	request := &struct {
 		NewRemoteHost   string
@@ -110,11 +110,11 @@ func (client *legacyWANPPPConnection1) DeletePortMappingCtx(ctx context.Context,
 	response := any(nil)
 
 	// Perform the SOAP call.
-	return client.SOAPClient.PerformActionCtx(ctx, urn_LegacyWANPPPConnection_1, "DeletePortMapping", request, response)
+	return client.SOAPClient.PerformAction(ctx, urn_LegacyWANPPPConnection_1, "DeletePortMapping", request, response)
 }
 
-// GetExternalIPAddressCtx implements upnpClient
-func (client *legacyWANPPPConnection1) GetExternalIPAddressCtx(ctx context.Context) (NewExternalIPAddress string, err error) {
+// GetExternalIPAddress implements upnpClient
+func (client *legacyWANPPPConnection1) GetExternalIPAddress(ctx context.Context) (NewExternalIPAddress string, err error) {
 	// Request structure.
 	request := any(nil)
 
@@ -124,7 +124,7 @@ func (client *legacyWANPPPConnection1) GetExternalIPAddressCtx(ctx context.Conte
 	}{}
 
 	// Perform the SOAP call.
-	if err = client.SOAPClient.PerformActionCtx(ctx, urn_LegacyWANPPPConnection_1, "GetExternalIPAddress", request, response); err != nil {
+	if err = client.SOAPClient.PerformAction(ctx, urn_LegacyWANPPPConnection_1, "GetExternalIPAddress", request, response); err != nil {
 		return
 	}
 
@@ -134,8 +134,8 @@ func (client *legacyWANPPPConnection1) GetExternalIPAddressCtx(ctx context.Conte
 	return
 }
 
-// GetStatusInfoCtx implements upnpClient
-func (client *legacyWANPPPConnection1) GetStatusInfoCtx(ctx context.Context) (NewConnectionStatus string, NewLastConnectionError string, NewUptime uint32, err error) {
+// GetStatusInfo implements upnpClient
+func (client *legacyWANPPPConnection1) GetStatusInfo(ctx context.Context) (NewConnectionStatus string, NewLastConnectionError string, NewUptime uint32, err error) {
 	// Request structure.
 	request := any(nil)
 
@@ -147,7 +147,7 @@ func (client *legacyWANPPPConnection1) GetStatusInfoCtx(ctx context.Context) (Ne
 	}{}
 
 	// Perform the SOAP call.
-	if err = client.SOAPClient.PerformActionCtx(ctx, urn_LegacyWANPPPConnection_1, "GetStatusInfo", request, response); err != nil {
+	if err = client.SOAPClient.PerformAction(ctx, urn_LegacyWANPPPConnection_1, "GetStatusInfo", request, response); err != nil {
 		return
 	}
 
@@ -171,8 +171,8 @@ type legacyWANIPConnection1 struct {
 	goupnp.ServiceClient
 }
 
-// AddPortMappingCtx implements upnpClient
-func (client *legacyWANIPConnection1) AddPortMappingCtx(
+// AddPortMapping implements upnpClient
+func (client *legacyWANIPConnection1) AddPortMapping(
 	ctx context.Context,
 	NewRemoteHost string,
 	NewExternalPort uint16,
@@ -224,11 +224,11 @@ func (client *legacyWANIPConnection1) AddPortMappingCtx(
 	response := any(nil)
 
 	// Perform the SOAP call.
-	return client.SOAPClient.PerformActionCtx(ctx, urn_LegacyWANIPConnection_1, "AddPortMapping", request, response)
+	return client.SOAPClient.PerformAction(ctx, urn_LegacyWANIPConnection_1, "AddPortMapping", request, response)
 }
 
-// DeletePortMappingCtx implements upnpClient
-func (client *legacyWANIPConnection1) DeletePortMappingCtx(ctx context.Context, NewRemoteHost string, NewExternalPort uint16, NewProtocol string) (err error) {
+// DeletePortMapping implements upnpClient
+func (client *legacyWANIPConnection1) DeletePortMapping(ctx context.Context, NewRemoteHost string, NewExternalPort uint16, NewProtocol string) (err error) {
 	// Request structure.
 	request := &struct {
 		NewRemoteHost   string
@@ -249,11 +249,11 @@ func (client *legacyWANIPConnection1) DeletePortMappingCtx(ctx context.Context, 
 	response := any(nil)
 
 	// Perform the SOAP call.
-	return client.SOAPClient.PerformActionCtx(ctx, urn_LegacyWANIPConnection_1, "DeletePortMapping", request, response)
+	return client.SOAPClient.PerformAction(ctx, urn_LegacyWANIPConnection_1, "DeletePortMapping", request, response)
 }
 
-// GetExternalIPAddressCtx implements upnpClient
-func (client *legacyWANIPConnection1) GetExternalIPAddressCtx(ctx context.Context) (NewExternalIPAddress string, err error) {
+// GetExternalIPAddress implements upnpClient
+func (client *legacyWANIPConnection1) GetExternalIPAddress(ctx context.Context) (NewExternalIPAddress string, err error) {
 	// Request structure.
 	request := any(nil)
 
@@ -263,7 +263,7 @@ func (client *legacyWANIPConnection1) GetExternalIPAddressCtx(ctx context.Contex
 	}{}
 
 	// Perform the SOAP call.
-	if err = client.SOAPClient.PerformActionCtx(ctx, urn_LegacyWANIPConnection_1, "GetExternalIPAddress", request, response); err != nil {
+	if err = client.SOAPClient.PerformAction(ctx, urn_LegacyWANIPConnection_1, "GetExternalIPAddress", request, response); err != nil {
 		return
 	}
 
@@ -273,8 +273,8 @@ func (client *legacyWANIPConnection1) GetExternalIPAddressCtx(ctx context.Contex
 	return
 }
 
-// GetStatusInfoCtx implements upnpClient
-func (client *legacyWANIPConnection1) GetStatusInfoCtx(ctx context.Context) (NewConnectionStatus string, NewLastConnectionError string, NewUptime uint32, err error) {
+// GetStatusInfo implements upnpClient
+func (client *legacyWANIPConnection1) GetStatusInfo(ctx context.Context) (NewConnectionStatus string, NewLastConnectionError string, NewUptime uint32, err error) {
 	// Request structure.
 	request := any(nil)
 
@@ -286,7 +286,7 @@ func (client *legacyWANIPConnection1) GetStatusInfoCtx(ctx context.Context) (New
 	}{}
 
 	// Perform the SOAP call.
-	if err = client.SOAPClient.PerformActionCtx(ctx, urn_LegacyWANIPConnection_1, "GetStatusInfo", request, response); err != nil {
+	if err = client.SOAPClient.PerformAction(ctx, urn_LegacyWANIPConnection_1, "GetStatusInfo", request, response); err != nil {
 		return
 	}
 

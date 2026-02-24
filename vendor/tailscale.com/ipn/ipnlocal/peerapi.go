@@ -41,9 +41,7 @@ import (
 	"tailscale.com/wgengine/filter"
 )
 
-// initListenConfig, if non-nil, is called during peerAPIListener setup.  It is used only
-// on iOS and macOS to set socket options to bind the listener to the Tailscale interface.
-var initListenConfig func(config *net.ListenConfig, addr netip.Addr, tunIfIndex int) error
+var initListenConfig func(*net.ListenConfig, netip.Addr, *netmon.State, string) error
 
 // peerDNSQueryHandler is implemented by tsdns.Resolver.
 type peerDNSQueryHandler interface {
@@ -55,7 +53,7 @@ type peerAPIServer struct {
 	resolver peerDNSQueryHandler
 }
 
-func (s *peerAPIServer) listen(ip netip.Addr, tunIfIndex int) (ln net.Listener, err error) {
+func (s *peerAPIServer) listen(ip netip.Addr, ifState *netmon.State) (ln net.Listener, err error) {
 	// Android for whatever reason often has problems creating the peerapi listener.
 	// But since we started intercepting it with netstack, it's not even important that
 	// we have a real kernel-level listener. So just create a dummy listener on Android
@@ -71,14 +69,7 @@ func (s *peerAPIServer) listen(ip netip.Addr, tunIfIndex int) (ln net.Listener, 
 		// On iOS/macOS, this sets the lc.Control hook to
 		// setsockopt the interface index to bind to, to get
 		// out of the network sandbox.
-
-		// A zero tunIfIndex is invalid for peerapi.  A zero value will not get us
-		// out of the network sandbox.  Caller should log and retry.
-		if tunIfIndex == 0 {
-			return nil, fmt.Errorf("peerapi: cannot listen on %s with tunIfIndex 0", ipStr)
-		}
-
-		if err := initListenConfig(&lc, ip, tunIfIndex); err != nil {
+		if err := initListenConfig(&lc, ip, ifState, s.b.dialer.TUNName()); err != nil {
 			return nil, err
 		}
 		if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {

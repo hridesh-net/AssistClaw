@@ -15,8 +15,4 @@ type RWMutex struct {
 	sync.RWMutex
 }
 
-func RequiresMutex(mu *sync.Mutex) {
-	// TODO: check
-}
-
 // TODO(bradfitz): actually track stuff when in debug mode.

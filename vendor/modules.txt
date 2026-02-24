@@ -10,9 +10,6 @@ github.com/akutz/memconn
 github.com/alexbrainman/sspi
 github.com/alexbrainman/sspi/internal/common
 github.com/alexbrainman/sspi/negotiate
-# github.com/asg017/sqlite-vec-go-bindings v0.1.6
-## explicit; go 1.22.5
-github.com/asg017/sqlite-vec-go-bindings/cgo
 # github.com/atotto/clipboard v0.1.4
 ## explicit
 github.com/atotto/clipboard
@@ -277,6 +274,9 @@ github.com/elliotchance/orderedmap/v3
 # github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f
 ## explicit; go 1.16
 github.com/erikgeiser/coninput
+# github.com/fsnotify/fsnotify v1.7.0
+## explicit; go 1.17
+github.com/fsnotify/fsnotify
 # github.com/fxamacker/cbor/v2 v2.9.0
 ## explicit; go 1.20
 github.com/fxamacker/cbor/v2
@@ -334,14 +334,6 @@ github.com/gorilla/websocket
 # github.com/hdevalence/ed25519consensus v0.2.0
 ## explicit; go 1.19
 github.com/hdevalence/ed25519consensus
-# github.com/huin/goupnp v1.3.0
-## explicit; go 1.14
-github.com/huin/goupnp
-github.com/huin/goupnp/dcps/internetgateway2
-github.com/huin/goupnp/httpu
-github.com/huin/goupnp/scpd
-github.com/huin/goupnp/soap
-github.com/huin/goupnp/ssdp
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
 github.com/inconshreveable/mousetrap
@@ -449,6 +441,14 @@ github.com/tailscale/go-winio/internal/fs
 github.com/tailscale/go-winio/internal/socket
 github.com/tailscale/go-winio/internal/stringbuffer
 github.com/tailscale/go-winio/pkg/guid
+# github.com/tailscale/goupnp v1.0.1-0.20210804011211-c64d0f06ea05
+## explicit; go 1.16
+github.com/tailscale/goupnp
+github.com/tailscale/goupnp/dcps/internetgateway2
+github.com/tailscale/goupnp/httpu
+github.com/tailscale/goupnp/scpd
+github.com/tailscale/goupnp/soap
+github.com/tailscale/goupnp/ssdp
 # github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
 ## explicit; go 1.18
 github.com/tailscale/hujson
@@ -759,8 +759,8 @@ gvisor.dev/gvisor/pkg/tcpip/transport/tcp
 gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack
 gvisor.dev/gvisor/pkg/tcpip/transport/udp
 gvisor.dev/gvisor/pkg/waiter
-# tailscale.com v1.94.2
-## explicit; go 1.25.5
+# tailscale.com v1.93.0-pre
+## explicit; go 1.25.3
 tailscale.com
 tailscale.com/appc
 tailscale.com/atomicfile
@@ -785,11 +785,9 @@ tailscale.com/feature
 tailscale.com/feature/buildfeatures
 tailscale.com/feature/c2n
 tailscale.com/feature/condlite/expvar
-tailscale.com/feature/condregister/identityfederation
 tailscale.com/feature/condregister/oauthkey
 tailscale.com/feature/condregister/portmapper
 tailscale.com/feature/condregister/useproxy
-tailscale.com/feature/identityfederation
 tailscale.com/feature/oauthkey
 tailscale.com/feature/portmapper
 tailscale.com/feature/syspolicy
@@ -900,7 +898,6 @@ tailscale.com/util/checkchange
 tailscale.com/util/cibuild
 tailscale.com/util/clientmetric
 tailscale.com/util/cloudenv
-tailscale.com/util/cloudinfo
 tailscale.com/util/cmpver
 tailscale.com/util/ctxkey
 tailscale.com/util/deephash
@@ -960,4 +957,3 @@ tailscale.com/wgengine/wgcfg
 tailscale.com/wgengine/wgcfg/nmcfg
 tailscale.com/wgengine/wgint
 tailscale.com/wgengine/wglog
-tailscale.com/wif

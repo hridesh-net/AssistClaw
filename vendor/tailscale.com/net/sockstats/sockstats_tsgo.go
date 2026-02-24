@@ -271,10 +271,10 @@ func setNetMon(netMon *netmon.Monitor) {
 	}
 
 	netMon.RegisterChangeCallback(func(delta *netmon.ChangeDelta) {
-		if !delta.RebindLikelyRequired {
+		if !delta.Major {
 			return
 		}
-		state := delta.CurrentState()
+		state := delta.New
 		ifName := state.DefaultRouteInterface
 		if ifName == "" {
 			return

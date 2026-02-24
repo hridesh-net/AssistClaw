@@ -48,6 +48,7 @@ type Document struct {
 	ID        string    `json:"id"`
 	Source    string    `json:"source"` // file path, URL, session ID, etc.
 	Content   string    `json:"content"`
+	Hash      string    `json:"hash,omitempty"`
 	Embedding []float32 `json:"embedding,omitempty"`
 	Score     float32   `json:"score,omitempty"` // similarity score (populated on search)
 	CreatedAt time.Time `json:"created_at"`
@@ -309,6 +310,7 @@ func (m *SemanticMemory) migrate() error {
 			id         TEXT PRIMARY KEY,
 			source     TEXT NOT NULL,
 			content    TEXT NOT NULL,
+			hash       TEXT,
 			embedding  BLOB,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
@@ -330,8 +332,8 @@ func (m *SemanticMemory) Index(ctx context.Context, doc Document) error {
 
 	embJSON, _ := json.Marshal(doc.Embedding)
 	_, err = tx.ExecContext(ctx,
-		`INSERT OR REPLACE INTO documents (id, source, content, embedding, created_at) VALUES (?,?,?,?,?)`,
-		doc.ID, doc.Source, doc.Content, embJSON, doc.CreatedAt,
+		`INSERT OR REPLACE INTO documents (id, source, content, hash, embedding, created_at) VALUES (?,?,?,?,?,?)`,
+		doc.ID, doc.Source, doc.Content, doc.Hash, embJSON, doc.CreatedAt,
 	)
 	if err != nil {
 		return err
@@ -385,6 +387,12 @@ func (m *SemanticMemory) Search(ctx context.Context, queryVec []float32, limit i
 // Delete removes a document from all indexes.
 func (m *SemanticMemory) Delete(ctx context.Context, id string) error {
 	_, err := m.db.ExecContext(ctx, `DELETE FROM documents WHERE id=?`, id)
+	return err
+}
+
+// DeleteBySource removes all documents from all indexes for a given source.
+func (m *SemanticMemory) DeleteBySource(ctx context.Context, source string) error {
+	_, err := m.db.ExecContext(ctx, `DELETE FROM documents WHERE source=?`, source)
 	return err
 }
 

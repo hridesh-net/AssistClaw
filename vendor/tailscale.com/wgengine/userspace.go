@@ -387,7 +387,7 @@ func NewUserspaceEngine(logf logger.Logf, conf Config) (_ Engine, reterr error) 
 	conf.Dialer.SetTUNName(tunName)
 	conf.Dialer.SetNetMon(e.netMon)
 	conf.Dialer.SetBus(e.eventBus)
-	e.dns = dns.NewManager(logf, conf.DNS, e.health, conf.Dialer, fwdDNSLinkSelector{e, tunName}, conf.ControlKnobs, runtime.GOOS, e.eventBus)
+	e.dns = dns.NewManager(logf, conf.DNS, e.health, conf.Dialer, fwdDNSLinkSelector{e, tunName}, conf.ControlKnobs, runtime.GOOS)
 
 	// TODO: there's probably a better place for this
 	sockstats.SetNetMon(e.netMon)
@@ -451,7 +451,6 @@ func NewUserspaceEngine(logf logger.Logf, conf Config) (_ Engine, reterr error) 
 		cb := e.pongCallback[pong.Data]
 		e.logf("wgengine: got TSMP pong %02x, peerAPIPort=%v; cb=%v", pong.Data, pong.PeerAPIPort, cb != nil)
 		if cb != nil {
-			delete(e.pongCallback, pong.Data)
 			go cb(pong)
 		}
 	}
@@ -465,7 +464,6 @@ func NewUserspaceEngine(logf logger.Logf, conf Config) (_ Engine, reterr error) 
 			// We didn't swallow it, so let it flow to the host.
 			return false
 		}
-		delete(e.icmpEchoResponseCallback, idSeq)
 		e.logf("wgengine: got diagnostic ICMP response %02x", idSeq)
 		go cb()
 		return true
@@ -550,23 +548,6 @@ func NewUserspaceEngine(logf logger.Logf, conf Config) (_ Engine, reterr error) 
 			f()
 		}
 		e.linkChangeQueue.Add(func() { e.linkChange(&cd) })
-	})
-	eventbus.SubscribeFunc(ec, func(update tstun.DiscoKeyAdvertisement) {
-		e.logf("wgengine: got TSMP disco key advertisement from %v via eventbus", update.Src)
-		if e.magicConn == nil {
-			e.logf("wgengine: no magicConn")
-			return
-		}
-
-		pkt := packet.TSMPDiscoKeyAdvertisement{
-			Key: update.Key,
-		}
-		peer, ok := e.PeerForIP(update.Src)
-		if !ok {
-			e.logf("wgengine: no peer found for %v", update.Src)
-			return
-		}
-		e.magicConn.HandleDiscoKeyAdvertisement(peer.Node, pkt)
 	})
 	e.eventClient = ec
 	e.logf("Engine created.")
@@ -1349,18 +1330,20 @@ func (e *userspaceEngine) Done() <-chan struct{} {
 }
 
 func (e *userspaceEngine) linkChange(delta *netmon.ChangeDelta) {
-
-	up := delta.AnyInterfaceUp()
+	changed := delta.Major // TODO(bradfitz): ask more specific questions?
+	cur := delta.New
+	up := cur.AnyInterfaceUp()
 	if !up {
-		e.logf("LinkChange: all links down; pausing: %v", delta.StateDesc())
-	} else if delta.RebindLikelyRequired {
-		e.logf("LinkChange: major, rebinding: %v", delta.StateDesc())
+		e.logf("LinkChange: all links down; pausing: %v", cur)
+	} else if changed {
+		e.logf("LinkChange: major, rebinding. New state: %v", cur)
 	} else {
 		e.logf("[v1] LinkChange: minor")
 	}
 
 	e.health.SetAnyInterfaceUp(up)
-	if !up || delta.RebindLikelyRequired {
+	e.magicConn.SetNetworkUp(up)
+	if !up || changed {
 		if err := e.dns.FlushCaches(); err != nil {
 			e.logf("wgengine: dns flush failed after major link change: %v", err)
 		}
@@ -1370,20 +1353,9 @@ func (e *userspaceEngine) linkChange(delta *netmon.ChangeDelta) {
 	// suspend/resume or whenever NetworkManager is started, it
 	// nukes all systemd-resolved configs. So reapply our DNS
 	// config on major link change.
-	//
-	// On Darwin (netext), we reapply the DNS config when the interface flaps
-	// because the change in interface can potentially change the nameservers
-	// for the forwarder.  On Darwin netext clients, magicDNS is ~always the default
-	// resolver so having no nameserver to forward queries to (or one on a network we
-	// are not currently on) breaks DNS resolution system-wide.  There are notable
-	// timing issues here with Darwin's network stack.  It is not guaranteed that
-	// the forward resolver will be available immediately after the interface
-	// comes up.  We leave it to the network extension to also poke magicDNS directly
-	// via [dns.Manager.RecompileDNSConfig] when it detects any change in the
-	// nameservers.
-	//
-	// TODO: On Android, Darwin-tailscaled, and openbsd, why do we need this?
-	if delta.RebindLikelyRequired && up {
+	// TODO: explain why this is ncessary not just on Linux but also android
+	// and Apple platforms.
+	if changed {
 		switch runtime.GOOS {
 		case "linux", "android", "ios", "darwin", "openbsd":
 			e.wgLock.Lock()
@@ -1401,23 +1373,15 @@ func (e *userspaceEngine) linkChange(delta *netmon.ChangeDelta) {
 		}
 	}
 
-	e.magicConn.SetNetworkUp(up)
-
 	why := "link-change-minor"
-	if delta.RebindLikelyRequired {
+	if changed {
 		why = "link-change-major"
 		metricNumMajorChanges.Add(1)
+		e.magicConn.Rebind()
 	} else {
 		metricNumMinorChanges.Add(1)
 	}
-
-	// If we're up and it's a minor change, just send a STUN ping
-	if up {
-		if delta.RebindLikelyRequired {
-			e.magicConn.Rebind()
-		}
-		e.magicConn.ReSTUN(why)
-	}
+	e.magicConn.ReSTUN(why)
 }
 
 func (e *userspaceEngine) SetNetworkMap(nm *netmap.NetworkMap) {

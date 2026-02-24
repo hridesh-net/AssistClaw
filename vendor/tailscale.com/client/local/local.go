@@ -43,7 +43,6 @@ import (
 	"tailscale.com/types/appctype"
 	"tailscale.com/types/dnstype"
 	"tailscale.com/types/key"
-	"tailscale.com/util/clientmetric"
 	"tailscale.com/util/eventbus"
 )
 
@@ -386,14 +385,18 @@ func (lc *Client) IncrementCounter(ctx context.Context, name string, delta int) 
 	if !buildfeatures.HasClientMetrics {
 		return nil
 	}
+	type metricUpdate struct {
+		Name  string `json:"name"`
+		Type  string `json:"type"`
+		Value int    `json:"value"` // amount to increment by
+	}
 	if delta < 0 {
 		return errors.New("negative delta not allowed")
 	}
-	_, err := lc.send(ctx, "POST", "/localapi/v0/upload-client-metrics", 200, jsonBody([]clientmetric.MetricUpdate{{
+	_, err := lc.send(ctx, "POST", "/localapi/v0/upload-client-metrics", 200, jsonBody([]metricUpdate{{
 		Name:  name,
 		Type:  "counter",
 		Value: delta,
-		Op:    "add",
 	}}))
 	return err
 }
@@ -402,23 +405,15 @@ func (lc *Client) IncrementCounter(ctx context.Context, name string, delta int) 
 // metric by the given delta. If the metric has yet to exist, a new gauge
 // metric is created and initialized to delta. The delta value can be negative.
 func (lc *Client) IncrementGauge(ctx context.Context, name string, delta int) error {
-	_, err := lc.send(ctx, "POST", "/localapi/v0/upload-client-metrics", 200, jsonBody([]clientmetric.MetricUpdate{{
+	type metricUpdate struct {
+		Name  string `json:"name"`
+		Type  string `json:"type"`
+		Value int    `json:"value"` // amount to increment by
+	}
+	_, err := lc.send(ctx, "POST", "/localapi/v0/upload-client-metrics", 200, jsonBody([]metricUpdate{{
 		Name:  name,
 		Type:  "gauge",
 		Value: delta,
-		Op:    "add",
-	}}))
-	return err
-}
-
-// SetGauge sets the value of a Tailscale daemon's gauge metric to the given value.
-// If the metric has yet to exist, a new gauge metric is created and initialized to value.
-func (lc *Client) SetGauge(ctx context.Context, name string, value int) error {
-	_, err := lc.send(ctx, "POST", "/localapi/v0/upload-client-metrics", 200, jsonBody([]clientmetric.MetricUpdate{{
-		Name:  name,
-		Type:  "gauge",
-		Value: value,
-		Op:    "set",
 	}}))
 	return err
 }
@@ -444,11 +439,6 @@ func (lc *Client) TailDaemonLogs(ctx context.Context) (io.Reader, error) {
 // as a [eventbus.DebugTopics]
 func (lc *Client) EventBusGraph(ctx context.Context) ([]byte, error) {
 	return lc.get200(ctx, "/localapi/v0/debug-bus-graph")
-}
-
-// EventBusQueues returns a JSON snapshot of event bus queue depths per client.
-func (lc *Client) EventBusQueues(ctx context.Context) ([]byte, error) {
-	return lc.get200(ctx, "/localapi/v0/debug-bus-queues")
 }
 
 // StreamBusEvents returns an iterator of Tailscale bus events as they arrive.
