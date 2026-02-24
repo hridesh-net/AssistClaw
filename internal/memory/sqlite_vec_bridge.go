@@ -10,19 +10,28 @@ int assistclaw_sqlite3_vec_init(sqlite3 *db, char **pzErrMsg, const sqlite3_api_
     return sqlite3_vec_init(db, pzErrMsg, pApi);
 }
 
-void assistclaw_sqlite3_vec_auto() {
-    sqlite3_auto_extension((void (*)(void))assistclaw_sqlite3_vec_init);
+int assistclaw_sqlite3_vec_auto_with_rc() {
+    return sqlite3_auto_extension((void (*)(void))assistclaw_sqlite3_vec_init);
 }
 */
 import "C"
 
-import "github.com/mattn/go-sqlite3"
+import (
+	"fmt"
+
+	_ "github.com/mattn/go-sqlite3"
+)
 
 // Force reference to ensure C symbols from go-sqlite3 are linked
-var _ *sqlite3.SQLiteConn
+// var _ *sqlite3.SQLiteConn
 
 // AutoRegisterVec automatically registers the sqlite-vec extension on all
 // future go-sqlite3 connections created in this process.
 func AutoRegisterVec() {
-	C.assistclaw_sqlite3_vec_auto()
+	fmt.Println("[assistclaw] Auto-registering sqlite-vec extension...")
+	rc := C.assistclaw_sqlite3_vec_auto_with_rc()
+	if rc != 0 {
+		panic(fmt.Sprintf("failed to auto-register sqlite-vec: rc=%d", rc))
+	}
+	fmt.Println("[assistclaw] sqlite-vec auto-registration successful")
 }
