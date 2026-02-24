@@ -12,16 +12,10 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/mattn/go-sqlite3"
 )
 
 func init() {
-	sql.Register("sqlite3_with_vec", &sqlite3.SQLiteDriver{
-		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
-			return RegisterVec(conn)
-		},
-	})
+	AutoRegisterVec()
 }
 
 // ─────────────────────────────────────────────
@@ -154,7 +148,7 @@ type EpisodicMemory struct {
 
 // NewEpisodicMemory opens (or creates) the episodic memory database.
 func NewEpisodicMemory(dbPath string) (*EpisodicMemory, error) {
-	db, err := sql.Open("sqlite3_with_vec", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=on")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("episodic memory open: %w", err)
 	}
@@ -297,7 +291,7 @@ type SemanticMemory struct {
 
 // NewSemanticMemory opens (or creates) the semantic memory database.
 func NewSemanticMemory(dbPath string, dimensions int) (*SemanticMemory, error) {
-	db, err := sql.Open("sqlite3_with_vec", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL")
 	if err != nil {
 		return nil, fmt.Errorf("semantic memory open: %w", err)
 	}
