@@ -136,11 +136,11 @@ func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, init
 			huh.NewGroup(
 				huh.NewSelect[string]().
 					Title("AWS Bedrock Authentication").
-					Description("Tip: Ensure you have 'requested access' to models in the AWS Console.").
+					Description("Tip: Bearer Tokens are currently most stable in us-east-1. IAM keys are recommended for other regions.").
 					Options(
 						huh.NewOption("Direct IAM Keys (AccessKeyID/SecretKey)", "iam"),
 						huh.NewOption("AWS Named Profile (~/.aws/credentials)", "profile"),
-						huh.NewOption("Native Bedrock API Key", "api_key"),
+						huh.NewOption("Native Bedrock API Key (Bearer Token)", "api_key"),
 					).
 					Value(&bedrockAuthMode),
 			),

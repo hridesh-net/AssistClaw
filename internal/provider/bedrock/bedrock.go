@@ -44,7 +44,11 @@ type apiKeyTransport struct {
 }
 
 func (t *apiKeyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Set("x-api-key", t.token)
+	token := t.token
+	if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		token = "Bearer " + token
+	}
+	req.Header.Set("Authorization", token)
 	return t.base.RoundTrip(req)
 }
 
