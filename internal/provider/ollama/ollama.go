@@ -166,6 +166,41 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 	return ch, nil
 }
 
+func (p *Provider) Embed(ctx context.Context, model string, text string) ([]float32, error) {
+	if model == "" {
+		model = p.cfg.DefaultModel
+	}
+	body := struct {
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
+	}{
+		Model:  model,
+		Prompt: text,
+	}
+	rawBody, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/api/embeddings", bytes.NewReader(rawBody))
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama: embedding: http %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result.Embedding, nil
+}
+
 func (p *Provider) SupportsNativeStreaming() bool { return true }
 
 // ─────────────────────────────────────────────

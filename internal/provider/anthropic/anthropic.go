@@ -122,6 +122,10 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 	return ch, nil
 }
 
+func (p *Provider) Embed(ctx context.Context, model string, text string) ([]float32, error) {
+	return nil, fmt.Errorf("anthropic: embeddings not supported through this provider")
+}
+
 func (p *Provider) SupportsNativeStreaming() bool { return true }
 
 // ─────────────────────────────────────────────

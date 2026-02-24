@@ -25,6 +25,8 @@ type Config struct {
 	OpenRouter  *OpenRouterConfig  `yaml:"openrouter"`
 	NVIDIA      *NVIDIAConfig      `yaml:"nvidia"`
 	Cohere      *CohereConfig      `yaml:"cohere"`
+	DeepSeek    *DeepSeekConfig    `yaml:"deepseek"`
+	Perplexity  *PerplexityConfig  `yaml:"perplexity"`
 	HuggingFace *HuggingFaceConfig `yaml:"huggingface"`
 }
 
@@ -100,6 +102,16 @@ type CohereConfig struct {
 type HuggingFaceConfig struct {
 	APIKey       string `yaml:"api_key"`
 	BaseURL      string `yaml:"base_url"`
+	DefaultModel string `yaml:"default_model"`
+}
+
+type DeepSeekConfig struct {
+	APIKey       string `yaml:"api_key"`
+	DefaultModel string `yaml:"default_model"`
+}
+
+type PerplexityConfig struct {
+	APIKey       string `yaml:"api_key"`
 	DefaultModel string `yaml:"default_model"`
 }
 
@@ -236,6 +248,26 @@ func Build(cfg *Config) []provider.Provider {
 		}))
 	}
 
+	if cfg.DeepSeek != nil {
+		providers = append(providers, openaicompat.New(openaicompat.Config{
+			Name:           "deepseek",
+			BaseURL:        "https://api.deepseek.com",
+			APIKey:         cfg.DeepSeek.APIKey,
+			DefaultModel:   orDefault(cfg.DeepSeek.DefaultModel, "deepseek-chat"),
+			DiscoverModels: true,
+		}))
+	}
+
+	if cfg.Perplexity != nil {
+		providers = append(providers, openaicompat.New(openaicompat.Config{
+			Name:         "perplexity",
+			BaseURL:      "https://api.perplexity.ai",
+			APIKey:       cfg.Perplexity.APIKey,
+			DefaultModel: orDefault(cfg.Perplexity.DefaultModel, "sonar-reasoning-pro"),
+			StaticModels: perplexityModels(),
+		}))
+	}
+
 	return providers
 }
 
@@ -289,5 +321,16 @@ func cohereModels() []provider.ModelInfo {
 		{ID: "command-r-plus-08-2024", Name: "Command R+ (Aug 2024)", Provider: "cohere", Capabilities: caps, ContextWindow: 128000, InputCostPerM: 2.5, OutputCostPerM: 10},
 		{ID: "command-r-08-2024", Name: "Command R (Aug 2024)", Provider: "cohere", Capabilities: caps, ContextWindow: 128000, InputCostPerM: 0.15, OutputCostPerM: 0.6},
 		{ID: "command-a-03-2025", Name: "Command A", Provider: "cohere", Capabilities: caps, ContextWindow: 256000},
+	}
+}
+
+func perplexityModels() []provider.ModelInfo {
+	caps := []provider.Capability{provider.CapabilityStreaming}
+	reason := append(caps, provider.CapabilityReasoning)
+	return []provider.ModelInfo{
+		{ID: "sonar-reasoning-pro", Name: "Sonar Reasoning Pro", Provider: "perplexity", Capabilities: reason, ContextWindow: 128000},
+		{ID: "sonar-reasoning", Name: "Sonar Reasoning", Provider: "perplexity", Capabilities: reason, ContextWindow: 128000},
+		{ID: "sonar-pro", Name: "Sonar Pro", Provider: "perplexity", Capabilities: caps, ContextWindow: 128000},
+		{ID: "sonar", Name: "Sonar", Provider: "perplexity", Capabilities: caps, ContextWindow: 128000},
 	}
 }

@@ -18,6 +18,7 @@ import (
 const (
 	defaultBaseURL    = "https://api.openai.com/v1"
 	completionsPath   = "/chat/completions"
+	embeddingsPath    = "/embeddings"
 	modelsPath        = "/models"
 	defaultTimeout    = 120 * time.Second
 	providerName      = "openai"
@@ -177,6 +178,52 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 		p.readSSE(ctx, httpResp, ch)
 	}()
 	return ch, nil
+}
+
+// Embed generates a vector representation using OpenAI's embedding API.
+func (p *Provider) Embed(ctx context.Context, model string, text string) ([]float32, error) {
+	if model == "" {
+		model = "text-embedding-3-small"
+	}
+
+	body := struct {
+		Model string `json:"model"`
+		Input string `json:"input"`
+	}{
+		Model: model,
+		Input: text,
+	}
+
+	rawBody, _ := json.Marshal(body)
+	req, err := p.newRequest(ctx, http.MethodPost, embeddingsPath, rawBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, parseErrorResponse(p.Name(), resp)
+	}
+
+	var result struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	if len(result.Data) == 0 {
+		return nil, fmt.Errorf("openai: no embedding returned")
+	}
+
+	return result.Data[0].Embedding, nil
 }
 
 // SupportsNativeStreaming always returns true for OpenAI.

@@ -256,6 +256,10 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 	return ch, nil
 }
 
+func (p *Provider) Embed(ctx context.Context, model string, text string) ([]float32, error) {
+	return nil, fmt.Errorf("bedrock: embeddings not supported through this provider yet")
+}
+
 func (p *Provider) SupportsNativeStreaming() bool { return true }
 
 // ─────────────────────────────────────────────

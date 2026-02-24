@@ -220,6 +220,46 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 	return ch, nil
 }
 
+func (p *Provider) Embed(ctx context.Context, model string, text string) ([]float32, error) {
+	if model == "" {
+		model = p.cfg.DefaultModel
+	}
+	body := struct {
+		Model string `json:"model"`
+		Input string `json:"input"`
+	}{
+		Model: model,
+		Input: text,
+	}
+	rawBody, _ := json.Marshal(body)
+	req, err := p.newRequest(ctx, http.MethodPost, "/embeddings", rawBody)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, parseError(p.Name(), resp)
+	}
+
+	var result struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if len(result.Data) == 0 {
+		return nil, fmt.Errorf("openaicompat: no embedding returned")
+	}
+	return result.Data[0].Embedding, nil
+}
+
 func (p *Provider) SupportsNativeStreaming() bool { return true }
 
 // ─────────────────────────────────────────────

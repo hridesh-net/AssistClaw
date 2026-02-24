@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/assistclaw/assistclaw/internal/embeddings"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 // ─────────────────────────────────────────────
@@ -548,11 +551,308 @@ func (e *azureEmbedder) Embed(ctx context.Context, req *embeddings.EmbedRequest)
 }
 
 // ─────────────────────────────────────────────
-// Bedrock Embeddings
+// Voyage AI Embeddings
 // ─────────────────────────────────────────────
 
-// NOTE: Bedrock embeddings are handled via the AWS SDK in a separate file or
-// via raw HTTP if we want to avoid complex dependency cycles here.
-// Given Bedrock's complex SigV4 signing, using the SDK is much better.
-// I will add a placeholder here and implement it properly if I can import bedrockruntime.
-// For now, let's assume we implement it in a way that avoids circular imports.
+type voyageEmbedder struct {
+	apiKey  string
+	baseURL string
+	client  *http.Client
+}
+
+// NewVoyage creates a Voyage AI embedding provider.
+func NewVoyage(apiKey, baseURL string) embeddings.Embedder {
+	if baseURL == "" {
+		baseURL = "https://api.voyageai.com/v1"
+	}
+	return &voyageEmbedder{
+		apiKey:  apiKey,
+		baseURL: strings.TrimRight(baseURL, "/"),
+		client:  &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+func (e *voyageEmbedder) Name() string                        { return "voyage" }
+func (e *voyageEmbedder) DefaultModel() string                { return "voyage-3" }
+func (e *voyageEmbedder) HealthCheck(_ context.Context) error { return nil }
+
+func (e *voyageEmbedder) ListModels(_ context.Context) ([]embeddings.ModelInfo, error) {
+	return []embeddings.ModelInfo{
+		{ID: "voyage-3", Name: "Voyage 3 (Latest)", Provider: "voyage", Dimensions: 1024},
+		{ID: "voyage-3-lite", Name: "Voyage 3 Lite", Provider: "voyage", Dimensions: 512},
+		{ID: "voyage-2", Name: "Voyage 2", Provider: "voyage", Dimensions: 1024},
+		{ID: "voyage-code-2", Name: "Voyage Code 2", Provider: "voyage", Dimensions: 1536},
+		{ID: "voyage-law-2", Name: "Voyage Law 2", Provider: "voyage", Dimensions: 1024},
+		{ID: "voyage-multilingual-2", Name: "Voyage Multilingual 2", Provider: "voyage", Dimensions: 1024},
+	}, nil
+}
+
+func (e *voyageEmbedder) Embed(ctx context.Context, req *embeddings.EmbedRequest) (*embeddings.EmbedResponse, error) {
+	model := req.Model
+	if model == "" {
+		model = e.DefaultModel()
+	}
+	inputType := "document"
+	if req.InputType == embeddings.InputTypeQuery {
+		inputType = "query"
+	}
+	body, _ := json.Marshal(map[string]any{
+		"model":      model,
+		"input":      req.Texts,
+		"input_type": inputType,
+	})
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.baseURL+"/embeddings", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+e.apiKey)
+
+	resp, err := e.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("voyage embeddings: http %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+			Index     int       `json:"index"`
+		} `json:"data"`
+		Usage struct {
+			TotalTokens int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	vecs := make([][]float32, len(result.Data))
+	for _, d := range result.Data {
+		vecs[d.Index] = d.Embedding
+	}
+	dim := 0
+	if len(vecs) > 0 {
+		dim = len(vecs[0])
+	}
+	return &embeddings.EmbedResponse{
+		Embeddings: vecs,
+		Dimensions: dim,
+		Model:      model,
+		TokensUsed: result.Usage.TotalTokens,
+	}, nil
+}
+
+// ─────────────────────────────────────────────
+// Mistral Native Embeddings
+// ─────────────────────────────────────────────
+
+type mistralEmbedder struct {
+	apiKey  string
+	baseURL string
+	client  *http.Client
+}
+
+// NewMistral creates a Mistral AI embedding provider.
+func NewMistral(apiKey, baseURL string) embeddings.Embedder {
+	if baseURL == "" {
+		baseURL = "https://api.mistral.ai/v1"
+	}
+	return &mistralEmbedder{
+		apiKey:  apiKey,
+		baseURL: strings.TrimRight(baseURL, "/"),
+		client:  &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+func (e *mistralEmbedder) Name() string                        { return "mistral-embed" }
+func (e *mistralEmbedder) DefaultModel() string                { return "mistral-embed" }
+func (e *mistralEmbedder) HealthCheck(_ context.Context) error { return nil }
+
+func (e *mistralEmbedder) ListModels(_ context.Context) ([]embeddings.ModelInfo, error) {
+	return []embeddings.ModelInfo{
+		{ID: "mistral-embed", Name: "Mistral Embed", Provider: "mistral-embed", Dimensions: 1024},
+	}, nil
+}
+
+func (e *mistralEmbedder) Embed(ctx context.Context, req *embeddings.EmbedRequest) (*embeddings.EmbedResponse, error) {
+	model := req.Model
+	if model == "" {
+		model = e.DefaultModel()
+	}
+	body, _ := json.Marshal(map[string]any{
+		"model": model,
+		"input": req.Texts,
+	})
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.baseURL+"/embeddings", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+e.apiKey)
+
+	resp, err := e.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mistral embeddings: http %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+			Index     int       `json:"index"`
+		} `json:"data"`
+		Usage struct {
+			TotalTokens int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	vecs := make([][]float32, len(result.Data))
+	for _, d := range result.Data {
+		vecs[d.Index] = d.Embedding
+	}
+	dim := 0
+	if len(vecs) > 0 {
+		dim = len(vecs[0])
+	}
+	return &embeddings.EmbedResponse{
+		Embeddings: vecs,
+		Dimensions: dim,
+		Model:      model,
+		TokensUsed: result.Usage.TotalTokens,
+	}, nil
+}
+
+// ─────────────────────────────────────────────
+// Vertex AI Embeddings
+// ─────────────────────────────────────────────
+
+type vertexEmbedder struct {
+	projectID string
+	location  string
+	client    *http.Client
+	ts        oauth2.TokenSource
+}
+
+// NewVertex creates a Vertex AI embedding provider.
+func NewVertex(ctx context.Context, projectID, location, credentials string) (embeddings.Embedder, error) {
+	if location == "" {
+		location = "us-central1"
+	}
+
+	var ts oauth2.TokenSource
+	if credentials != "" {
+		data, err := os.ReadFile(credentials)
+		if err != nil {
+			return nil, fmt.Errorf("vertex-embed: read credentials: %w", err)
+		}
+		creds, err := google.CredentialsFromJSON(ctx, data, "https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			return nil, fmt.Errorf("vertex-embed: parse credentials: %w", err)
+		}
+		ts = creds.TokenSource
+	} else {
+		creds, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
+		if err == nil {
+			ts = creds.TokenSource
+		}
+	}
+
+	return &vertexEmbedder{
+		projectID: projectID,
+		location:  location,
+		client:    &http.Client{Timeout: 30 * time.Second},
+		ts:        ts,
+	}, nil
+}
+
+func (e *vertexEmbedder) Name() string         { return "vertex" }
+func (e *vertexEmbedder) DefaultModel() string { return "text-embedding-004" }
+func (e *vertexEmbedder) HealthCheck(_ context.Context) error {
+	if e.ts == nil {
+		return fmt.Errorf("vertex-embed: no credentials")
+	}
+	return nil
+}
+
+func (e *vertexEmbedder) ListModels(_ context.Context) ([]embeddings.ModelInfo, error) {
+	return []embeddings.ModelInfo{
+		{ID: "text-embedding-004", Name: "Text Embedding 004", Provider: "vertex", Dimensions: 768},
+		{ID: "text-multilingual-embedding-002", Name: "Text Multilingual Embedding 002", Provider: "vertex", Dimensions: 768},
+	}, nil
+}
+
+func (e *vertexEmbedder) Embed(ctx context.Context, req *embeddings.EmbedRequest) (*embeddings.EmbedResponse, error) {
+	model := req.Model
+	if model == "" {
+		model = e.DefaultModel()
+	}
+
+	url := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:predict",
+		e.location, e.projectID, e.location, model)
+
+	type instance struct {
+		TaskType string `json:"taskType,omitempty"`
+		Content  string `json:"content"`
+	}
+	taskType := "RETRIEVAL_DOCUMENT"
+	if req.InputType == embeddings.InputTypeQuery {
+		taskType = "RETRIEVAL_QUERY"
+	}
+
+	instances := make([]instance, len(req.Texts))
+	for i, text := range req.Texts {
+		instances[i] = instance{TaskType: taskType, Content: text}
+	}
+
+	body, _ := json.Marshal(map[string]any{"instances": instances})
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := e.ts.Token()
+	if err != nil {
+		return nil, fmt.Errorf("vertex-embed: get token: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := e.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("vertex-embed: http %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Predictions []struct {
+			Embeddings struct {
+				Values []float32 `json:"values"`
+			} `json:"embeddings"`
+		} `json:"predictions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	vecs := make([][]float32, len(result.Predictions))
+	for i, p := range result.Predictions {
+		vecs[i] = p.Embeddings.Values
+	}
+	dim := 0
+	if len(vecs) > 0 {
+		dim = len(vecs[0])
+	}
+	return &embeddings.EmbedResponse{Embeddings: vecs, Dimensions: dim, Model: model}, nil
+}

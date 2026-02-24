@@ -57,6 +57,16 @@ type Document struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Lesson represents a "corrective memory" entry.
+type Lesson struct {
+	ID        string    `json:"id"`
+	Query     string    `json:"query"` // The task/query that triggered this lesson
+	Insights  string    `json:"insights"`
+	Success   bool      `json:"success"`
+	Embedding []float32 `json:"embedding,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // ─────────────────────────────────────────────
 // Tier 1: Working Memory (in-RAM)
 // ─────────────────────────────────────────────
@@ -329,7 +339,20 @@ func (m *SemanticMemory) migrate() error {
 		CREATE VIRTUAL TABLE IF NOT EXISTS vec_documents USING vec0(
 			embedding float[%d]
 		);
-	`, m.dimensions))
+
+		CREATE TABLE IF NOT EXISTS lessons (
+			id         TEXT PRIMARY KEY,
+			query      TEXT NOT NULL,
+			insights   TEXT NOT NULL,
+			success    BOOLEAN,
+			embedding  BLOB,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE VIRTUAL TABLE IF NOT EXISTS vec_lessons USING vec0(
+			embedding float[%d]
+		);
+	`, m.dimensions, m.dimensions))
 	return err
 }
 
@@ -424,6 +447,65 @@ func (m *SemanticMemory) SearchWithModel(ctx context.Context, queryVec []float32
 		docs = append(docs, doc)
 	}
 	return docs, rows.Err()
+}
+
+// SaveLesson persists a lesson to semantic memory.
+func (m *SemanticMemory) SaveLesson(ctx context.Context, lesson Lesson) error {
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	embJSON, _ := json.Marshal(lesson.Embedding)
+	_, err = tx.ExecContext(ctx,
+		`INSERT OR REPLACE INTO lessons (id, query, insights, success, embedding, created_at) VALUES (?,?,?,?,?,?)`,
+		lesson.ID, lesson.Query, lesson.Insights, lesson.Success, embJSON, lesson.CreatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	if len(lesson.Embedding) == m.dimensions {
+		_, err = tx.ExecContext(ctx,
+			`INSERT OR REPLACE INTO vec_lessons (rowid, embedding)
+			 SELECT rowid, ? FROM lessons WHERE id = ?`,
+			embJSON, lesson.ID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// SearchLessons finds relevant lessons from history.
+func (m *SemanticMemory) SearchLessons(ctx context.Context, queryVec []float32, limit int) ([]Lesson, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	queryJSON, _ := json.Marshal(queryVec)
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT l.id, l.query, l.insights, l.success, l.created_at
+		FROM vec_lessons vl
+		JOIN lessons l ON l.rowid = vl.rowid
+		WHERE vl.embedding MATCH ? AND k = ?
+		ORDER BY vl.distance ASC
+	`, queryJSON, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var lessons []Lesson
+	for rows.Next() {
+		var l Lesson
+		if err := rows.Scan(&l.ID, &l.Query, &l.Insights, &l.Success, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		lessons = append(lessons, l)
+	}
+	return lessons, rows.Err()
 }
 
 // Delete removes a document from all indexes.

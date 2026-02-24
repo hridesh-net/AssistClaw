@@ -31,6 +31,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/provider/ollama"
 	"github.com/assistclaw/assistclaw/internal/provider/openai"
 	"github.com/assistclaw/assistclaw/internal/provider/openaicompat"
+	"github.com/assistclaw/assistclaw/internal/provider/vertex"
 	"github.com/assistclaw/assistclaw/internal/skills"
 	"github.com/assistclaw/assistclaw/internal/tools"
 
@@ -697,6 +698,31 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 			DefaultModel: prov.HuggingFace.DefaultModel,
 		}))
 	}
+	if prov.DeepSeek != nil {
+		register(openaicompat.New(openaicompat.Config{
+			Name: "deepseek", BaseURL: "https://api.deepseek.com", APIKey: prov.DeepSeek.APIKey,
+			DefaultModel: prov.DeepSeek.DefaultModel, DiscoverModels: true,
+		}))
+	}
+	if prov.Perplexity != nil {
+		register(openaicompat.New(openaicompat.Config{
+			Name: "perplexity", BaseURL: "https://api.perplexity.ai", APIKey: prov.Perplexity.APIKey,
+			DefaultModel: prov.Perplexity.DefaultModel,
+		}))
+	}
+	if prov.Vertex != nil {
+		v, err := vertex.New(ctx, vertex.Config{
+			ProjectID:    prov.Vertex.ProjectID,
+			Location:     prov.Vertex.Location,
+			Credentials:  prov.Vertex.Credentials,
+			DefaultModel: prov.Vertex.DefaultModel,
+		})
+		if err != nil {
+			log.Warn("vertex init failed", zap.Error(err))
+		} else {
+			register(v)
+		}
+	}
 	return nil
 }
 
@@ -755,6 +781,29 @@ func registerEmbedders(ctx context.Context, cfg *config.Config, reg *embeddings.
 		case "huggingface":
 			if ec.HuggingFace != nil {
 				register(embedproviders.NewHuggingFace(ec.HuggingFace.APIKey, ec.HuggingFace.BaseURL, ec.HuggingFace.Model))
+			}
+		case "voyage":
+			if ec.Voyage != nil {
+				register(embedproviders.NewVoyage(ec.Voyage.APIKey, ec.Voyage.BaseURL))
+			} else if cfg.Providers.Voyage != nil {
+				register(embedproviders.NewVoyage(cfg.Providers.Voyage.APIKey, cfg.Providers.Voyage.BaseURL))
+			}
+		case "mistral":
+			if ec.Mistral != nil {
+				register(embedproviders.NewMistral(ec.Mistral.APIKey, ec.Mistral.BaseURL))
+			} else if cfg.Providers.Mistral != nil {
+				register(embedproviders.NewMistral(cfg.Providers.Mistral.APIKey, ""))
+			}
+		case "vertex":
+			v := ec.Vertex
+			if v == nil && cfg.Providers.Vertex != nil {
+				v = cfg.Providers.Vertex
+			}
+			if v != nil {
+				e, err := embedproviders.NewVertex(ctx, v.ProjectID, v.Location, v.Credentials)
+				if err == nil {
+					register(e)
+				}
 			}
 		}
 	}

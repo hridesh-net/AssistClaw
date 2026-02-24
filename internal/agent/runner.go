@@ -72,6 +72,9 @@ type Config struct {
 	SystemPrompt        string
 	Model               string
 	ActiveSkillsContext string
+	EnablePlanning      bool
+	EnableReflection    bool
+	EmbeddingModel      string
 }
 
 // Runner is the main agent execution loop.
@@ -109,6 +112,73 @@ func NewRunner(
 	}
 }
 
+// plan generates a multi-step execution plan for the given query.
+func (r *Runner) plan(ctx context.Context, query string) (string, error) {
+	prompt := fmt.Sprintf(`
+You are in the **PLANNING PHASE**. Your goal is to break down the user's request into a series of logical, executable milestones.
+Request: "%%s"
+
+Please provide:
+1. A concise summary of the goal.
+2. A numbered list of milestones.
+3. Potential risks or edge cases to watch for.
+
+Format your response inside <planning> tags. 
+Do NOT call any tools yet. Just plan.
+`, query)
+
+	req := &provider.CompletionRequest{
+		Model:        r.cfg.Model,
+		SystemPrompt: r.buildSystemPrompt(ctx, query),
+		Messages: []provider.Message{
+			provider.NewTextMessage(provider.RoleUser, prompt),
+		},
+		MaxTokens: 2048,
+	}
+
+	resp, err := r.provider.Complete(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return resp.Text(), nil
+}
+
+// reflect critiques the agent's work against the original plan.
+func (r *Runner) reflect(ctx context.Context, query string, plan string) (string, bool, error) {
+	prompt := fmt.Sprintf(`
+You are in the **REFLECTION PHASE**. Your goal is to critique your own work.
+Original Request: "%%s"
+Original Plan:
+%%s
+
+Review the conversation history above. Did you successfully achieve the goal? 
+Provide:
+1. **Self-Critique**: What went well? what failed?
+2. **Status**: Return EXACTLY "SUCCESS" if the task is fully complete, or "RETRY" if more work is needed.
+3. **Lesson Learned**: If something failed or was unexpectedly complex, provide a concise lesson for your future self inside <lesson_learned> tags.
+
+Format your response inside <reflexion> tags.
+`, query, plan)
+
+	req := &provider.CompletionRequest{
+		Model:        r.cfg.Model,
+		SystemPrompt: r.buildSystemPrompt(ctx, query),
+		Messages:     r.convertMessages(r.memory.Working.Messages()), // Use helper
+		MaxTokens:    2048,
+	}
+	// Append the reflection prompt as the last user message
+	req.Messages = append(req.Messages, provider.NewTextMessage(provider.RoleUser, prompt))
+
+	resp, err := r.provider.Complete(ctx, req)
+	if err != nil {
+		return "", false, err
+	}
+
+	text := resp.Text()
+	success := strings.Contains(text, "SUCCESS")
+	return text, success, nil
+}
+
 // SessionID returns the current session ID.
 func (r *Runner) SessionID() string { return r.sessionID }
 
@@ -139,6 +209,24 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 	var totalUsage provider.TokenUsage
 	iterations := 0
 
+	// V3: Planning Phase
+	plan := ""
+	if r.cfg.EnablePlanning {
+		r.log.Info("entering planning phase")
+		var err error
+		plan, err = r.plan(ctx, userMessage)
+		if err != nil {
+			r.log.Warn("planning failed", zap.Error(err))
+		} else {
+			// Add plan to working memory
+			planMsg := memory.Message{
+				ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleSystem,
+				Content: "[PLAN]\n" + plan, CreatedAt: time.Now(),
+			}
+			r.memory.Working.Append(planMsg)
+		}
+	}
+
 	// Check if we need to flush memory before starting.
 	// We'll perform one "proactive flush turn" if budget is tight.
 	if r.shouldFlush() {
@@ -149,7 +237,7 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 		iterations++
 
 		// Build the completion request from working memory.
-		req := r.buildRequest()
+		req := r.buildRequestV3(ctx, userMessage)
 
 		r.log.Debug("running completion",
 			zap.String("model", r.cfg.Model),
@@ -221,7 +309,45 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 		}
 	}
 
+	// V3: Reflection Phase
+	if r.cfg.EnableReflection {
+		r.log.Info("entering reflection phase")
+		critique, success, err := r.reflect(ctx, userMessage, plan)
+		if err == nil {
+			if !success && iterations < r.cfg.MaxIterations {
+				r.log.Info("self-critique requested retry", zap.String("critique", critique))
+				// Optionally append critique and keep going, but for now we just return
+			}
+
+			// Store any lessons learned
+			if strings.Contains(critique, "<lesson_learned>") && r.cfg.EmbeddingModel != "" {
+				lessonText := extractTag(critique, "lesson_learned")
+				if lessonText != "" {
+					emb, _ := r.provider.Embed(ctx, r.cfg.EmbeddingModel, userMessage)
+					_ = r.memory.Semantic.SaveLesson(ctx, memory.Lesson{
+						ID: uuid.New().String(), Query: userMessage, Insights: lessonText,
+						Success: success, Embedding: emb, CreatedAt: time.Now(),
+					})
+				}
+			}
+		}
+	}
+
 	return nil, fmt.Errorf("agent: exceeded max iterations (%d)", r.cfg.MaxIterations)
+}
+
+func extractTag(text, tag string) string {
+	startTag := "<" + tag + ">"
+	endTag := "</" + tag + ">"
+	start := strings.Index(text, startTag)
+	if start == -1 {
+		return ""
+	}
+	end := strings.Index(text, endTag)
+	if end == -1 || end <= start+len(startTag) {
+		return ""
+	}
+	return text[start+len(startTag) : end]
 }
 
 // executeTool runs a single tool call and returns the result string.
@@ -259,8 +385,7 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 }
 
 // buildRequest converts working memory messages to a provider request.
-func (r *Runner) buildRequest() *provider.CompletionRequest {
-	msgs := r.memory.Working.Messages()
+func (r *Runner) convertMessages(msgs []memory.Message) []provider.Message {
 	providerMsgs := make([]provider.Message, 0, len(msgs))
 	for _, m := range msgs {
 		role := provider.Role(m.Role)
@@ -271,18 +396,33 @@ func (r *Runner) buildRequest() *provider.CompletionRequest {
 			},
 		})
 	}
+	return providerMsgs
+}
 
+func (r *Runner) buildRequestV3(ctx context.Context, query string) *provider.CompletionRequest {
 	return &provider.CompletionRequest{
 		Model:        r.cfg.Model,
-		Messages:     providerMsgs,
-		SystemPrompt: r.buildSystemPrompt(),
+		Messages:     r.convertMessages(r.memory.Working.Messages()),
+		SystemPrompt: r.buildSystemPrompt(ctx, query),
 		Tools:        r.tools.Definitions(),
 		MaxTokens:    8096,
 		Stream:       true,
 	}
 }
 
-func (r *Runner) buildSystemPrompt() string {
+// buildRequest converts working memory messages to a provider request.
+func (r *Runner) buildRequest() *provider.CompletionRequest {
+	return &provider.CompletionRequest{
+		Model:        r.cfg.Model,
+		Messages:     r.convertMessages(r.memory.Working.Messages()),
+		SystemPrompt: r.buildSystemPrompt(context.TODO(), ""), // default/empty
+		Tools:        r.tools.Definitions(),
+		MaxTokens:    8096,
+		Stream:       true,
+	}
+}
+
+func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 	base := "You are AssistClaw, a powerful AI assistant with hardware integration and autonomous tool generation capabilities."
 
 	var parts []string
@@ -290,6 +430,22 @@ func (r *Runner) buildSystemPrompt() string {
 
 	if r.cfg.SystemPrompt != "" {
 		parts = append(parts, r.cfg.SystemPrompt)
+	}
+
+	// Add Corrective Memory (Lessons Learned)
+	if query != "" && r.cfg.EmbeddingModel != "" {
+		emb, err := r.provider.Embed(ctx, r.cfg.EmbeddingModel, query)
+		if err == nil {
+			lessons, err := r.memory.Semantic.SearchLessons(ctx, emb, 3)
+			if err == nil && len(lessons) > 0 {
+				var sb strings.Builder
+				sb.WriteString("\n## Corrective Memory (Lessons from past tasks)\n")
+				for _, l := range lessons {
+					sb.WriteString(fmt.Sprintf("- RELEVANT PAST TASK: %s\n  INSIGHT: %s\n", l.Query, l.Insights))
+				}
+				parts = append(parts, sb.String())
+			}
+		}
 	}
 
 	// Add Memory storage instructions for parity with OpenClaw
@@ -341,6 +497,26 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 	var fullResponse strings.Builder
 	iterations := 0
 
+	// V3: Planning Phase
+	plan := ""
+	if r.cfg.EnablePlanning {
+		r.log.Info("entering planning phase (stream)")
+		handler.OnToken("🤔 **Planning...**\n")
+		var err error
+		plan, err = r.plan(ctx, userMessage)
+		if err != nil {
+			r.log.Warn("planning failed", zap.Error(err))
+		} else {
+			// Add plan to working memory
+			planMsg := memory.Message{
+				ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleSystem,
+				Content: "[PLAN]\n" + plan, CreatedAt: time.Now(),
+			}
+			r.memory.Working.Append(planMsg)
+			handler.OnToken("\n<details>\n<summary>Execution Plan</summary>\n\n" + plan + "\n\n</details>\n\n")
+		}
+	}
+
 	// Pre-compaction flush for streaming
 	if r.shouldFlush() {
 		r.doFlushStream(ctx, handler, &totalUsage)
@@ -350,7 +526,8 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 		iterations++
 		fullResponse.Reset()
 
-		stream, err := r.provider.Stream(ctx, r.buildRequest())
+		// V3: Use buildRequestV3 with query context
+		stream, err := r.provider.Stream(ctx, r.buildRequestV3(ctx, userMessage))
 		if err != nil {
 			handler.OnError(fmt.Errorf("agent: stream: %w", err))
 			return
@@ -409,6 +586,31 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 			}
 			r.memory.Working.Append(toolMsg)
 			_ = r.memory.Episodic.Save(ctx, toolMsg)
+		}
+	}
+
+	// V3: Reflection Phase
+	if r.cfg.EnableReflection {
+		r.log.Info("entering reflection phase (stream)")
+		handler.OnToken("\n\n🧐 **Reflecting...**\n")
+		critique, success, err := r.reflect(ctx, userMessage, plan)
+		if err == nil {
+			handler.OnToken("\n<details>\n<summary>Self-Critique</summary>\n\n" + critique + "\n\n</details>\n")
+			if !success && iterations < r.cfg.MaxIterations {
+				r.log.Info("self-critique requested retry", zap.String("critique", critique))
+			}
+
+			// Store any lessons learned
+			if strings.Contains(critique, "<lesson_learned>") && r.cfg.EmbeddingModel != "" {
+				lessonText := extractTag(critique, "lesson_learned")
+				if lessonText != "" {
+					emb, _ := r.provider.Embed(ctx, r.cfg.EmbeddingModel, userMessage)
+					_ = r.memory.Semantic.SaveLesson(ctx, memory.Lesson{
+						ID: uuid.New().String(), Query: userMessage, Insights: lessonText,
+						Success: success, Embedding: emb, CreatedAt: time.Now(),
+					})
+				}
+			}
 		}
 	}
 

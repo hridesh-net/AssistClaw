@@ -77,6 +77,9 @@ type ProvidersConfig struct {
 	OpenRouter  *OpenRouterCreds  `yaml:"openrouter"`
 	NVIDIA      *ProviderCreds    `yaml:"nvidia"`
 	Cohere      *ProviderCreds    `yaml:"cohere"`
+	DeepSeek    *ProviderCreds    `yaml:"deepseek"`
+	Perplexity  *ProviderCreds    `yaml:"perplexity"`
+	Voyage      *ProviderCreds    `yaml:"voyage"`
 	HuggingFace *HuggingFaceCreds `yaml:"huggingface"`
 }
 
@@ -142,6 +145,9 @@ type EmbeddingsConfig struct {
 	Google      *ProviderCreds    `yaml:"google"`
 	OllamaEmbed *LocalCreds       `yaml:"ollama"`
 	Bedrock     *BedrockCreds     `yaml:"bedrock"`
+	Voyage      *ProviderCreds    `yaml:"voyage"`
+	Mistral     *ProviderCreds    `yaml:"mistral"`
+	Vertex      *VertexCreds      `yaml:"vertex"`
 	HuggingFace *HuggingFaceCreds `yaml:"huggingface"`
 }
 
@@ -341,7 +347,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Agent.SkillsDir = filepath.Join(cfg.StateDir, "skills")
 	}
 	if len(cfg.Embeddings.Priority) == 0 {
-		cfg.Embeddings.Priority = []string{"openai", "ollama", "cohere", "google", "huggingface"}
+		cfg.Embeddings.Priority = []string{"openai", "ollama", "cohere", "voyage", "mistral", "google", "huggingface"}
 	}
 }
 

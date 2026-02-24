@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/assistclaw/assistclaw/internal/config"
+	"github.com/assistclaw/assistclaw/internal/skills"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -21,6 +22,9 @@ type provEntry struct {
 	awsProfile   string
 	awsAccessKey string
 	awsSecretKey string
+	vertexProj   string
+	vertexLoc    string
+	vertexCreds  string
 	model        string
 }
 
@@ -60,8 +64,10 @@ func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, init
 			huh.NewOption("LM Studio (Local)", "lmstudio"),
 			huh.NewOption("Groq", "groq"),
 			huh.NewOption("Mistral", "mistral"),
-			huh.NewOption("OpenRouter", "openrouter"),
 			huh.NewOption("Azure OpenAI", "azure"),
+			huh.NewOption("DeepSeek", "deepseek"),
+			huh.NewOption("Perplexity", "perplexity"),
+			huh.NewOption("Google Vertex AI", "vertex"),
 		}
 	} else {
 		providerOptions = []huh.Option[string]{
@@ -72,7 +78,10 @@ func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, init
 			huh.NewOption("Mistral", "mistral"),
 			huh.NewOption("OpenRouter", "openrouter"),
 			huh.NewOption("Azure OpenAI", "azure"),
+			huh.NewOption("DeepSeek", "deepseek"),
+			huh.NewOption("Perplexity", "perplexity"),
 			huh.NewOption("AWS Bedrock", "bedrock"),
+			huh.NewOption("Google Vertex AI", "vertex"),
 			huh.NewOption("vLLM (Local / Custom)", "vllm"),
 			huh.NewOption("LM Studio (Local)", "lmstudio"),
 		}
@@ -100,6 +109,9 @@ func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, init
 		"mistral":    true,
 		"openrouter": true,
 		"azure":      true,
+		"deepseek":   true,
+		"perplexity": true,
+		"voyage":     true,
 	}
 
 	needsBaseURL := map[string]string{
@@ -165,6 +177,14 @@ func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, init
 		}
 	}
 
+	if entry.provider == "vertex" {
+		fields = append(fields,
+			huh.NewInput().Title("GCP Project ID").Value(&entry.vertexProj),
+			huh.NewInput().Title("GCP Location (e.g. us-central1)").Value(&entry.vertexLoc),
+			huh.NewInput().Title("Service Account JSON Path (Optional)").Value(&entry.vertexCreds),
+		)
+	}
+
 	if len(fields) > 0 {
 		formDetails := huh.NewForm(huh.NewGroup(fields...)).WithTheme(theme)
 		if err := formDetails.Run(); err != nil {
@@ -201,6 +221,23 @@ func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, init
 			huh.NewOption("Llama 3.3 70B Versatile", "llama-3.3-70b-versatile"),
 			huh.NewOption("Mixtral 8x7B", "mixtral-8x7b-32768"),
 			huh.NewOption("DeepSeek-R1 70B", "deepseek-r1-distill-llama-70b"),
+			huh.NewOption("Other / Custom...", "custom"),
+		},
+		"deepseek": {
+			huh.NewOption("DeepSeek Chat", "deepseek-chat"),
+			huh.NewOption("DeepSeek Reasoner (R1)", "deepseek-reasoner"),
+			huh.NewOption("Other / Custom...", "custom"),
+		},
+		"perplexity": {
+			huh.NewOption("Sonar Reasoning Pro", "sonar-reasoning-pro"),
+			huh.NewOption("Sonar Pro", "sonar-pro"),
+			huh.NewOption("Sonar Reasoning", "sonar-reasoning"),
+			huh.NewOption("Other / Custom...", "custom"),
+		},
+		"vertex": {
+			huh.NewOption("Gemini 1.5 Pro", "gemini-1.5-pro"),
+			huh.NewOption("Gemini 1.5 Flash", "gemini-1.5-flash"),
+			huh.NewOption("Gemini 2.0 Flash Exp", "gemini-2.0-flash-exp"),
 			huh.NewOption("Other / Custom...", "custom"),
 		},
 	}
@@ -356,6 +393,23 @@ func runOnboarding(configPath string) error {
 					primary.apiKey = existing.Providers.OpenRouter.APIKey
 					primary.model = existing.Providers.OpenRouter.DefaultModel
 				}
+			case "deepseek":
+				if existing.Providers.DeepSeek != nil {
+					primary.apiKey = existing.Providers.DeepSeek.APIKey
+					primary.model = existing.Providers.DeepSeek.DefaultModel
+				}
+			case "perplexity":
+				if existing.Providers.Perplexity != nil {
+					primary.apiKey = existing.Providers.Perplexity.APIKey
+					primary.model = existing.Providers.Perplexity.DefaultModel
+				}
+			case "vertex":
+				if existing.Providers.Vertex != nil {
+					primary.vertexProj = existing.Providers.Vertex.ProjectID
+					primary.vertexLoc = existing.Providers.Vertex.Location
+					primary.vertexCreds = existing.Providers.Vertex.Credentials
+					primary.model = existing.Providers.Vertex.DefaultModel
+				}
 			}
 		}
 
@@ -428,6 +482,23 @@ func runOnboarding(configPath string) error {
 						secondary.apiKey = existing.Providers.OpenRouter.APIKey
 						secondary.model = existing.Providers.OpenRouter.DefaultModel
 					}
+				case "deepseek":
+					if existing.Providers.DeepSeek != nil {
+						secondary.apiKey = existing.Providers.DeepSeek.APIKey
+						secondary.model = existing.Providers.DeepSeek.DefaultModel
+					}
+				case "perplexity":
+					if existing.Providers.Perplexity != nil {
+						secondary.apiKey = existing.Providers.Perplexity.APIKey
+						secondary.model = existing.Providers.Perplexity.DefaultModel
+					}
+				case "vertex":
+					if existing.Providers.Vertex != nil {
+						secondary.vertexProj = existing.Providers.Vertex.ProjectID
+						secondary.vertexLoc = existing.Providers.Vertex.Location
+						secondary.vertexCreds = existing.Providers.Vertex.Credentials
+						secondary.model = existing.Providers.Vertex.DefaultModel
+					}
 				}
 			}
 		}
@@ -471,6 +542,20 @@ func runOnboarding(configPath string) error {
 				if existing.Embeddings.Google != nil {
 					embed.apiKey = existing.Embeddings.Google.APIKey
 					embed.model = existing.Embeddings.Google.DefaultModel
+				}
+			case "voyage":
+				if existing.Embeddings.Voyage != nil {
+					embed.apiKey = existing.Embeddings.Voyage.APIKey
+					embed.model = existing.Embeddings.Voyage.DefaultModel
+				}
+			case "mistral":
+				if existing.Embeddings.Mistral != nil {
+					embed.apiKey = existing.Embeddings.Mistral.APIKey
+					embed.model = existing.Embeddings.Mistral.DefaultModel
+				}
+			case "vertex":
+				if existing.Embeddings.Vertex != nil {
+					embed.model = existing.Embeddings.Vertex.DefaultModel
 				}
 			}
 		}
@@ -585,7 +670,10 @@ func runOnboarding(configPath string) error {
 					huh.NewOption("Ollama (Local)", "ollama"),
 					huh.NewOption("AWS Bedrock", "bedrock"),
 					huh.NewOption("Cohere", "cohere"),
-					huh.NewOption("Google", "google"),
+					huh.NewOption("Google Generative AI", "google"),
+					huh.NewOption("Voyage AI", "voyage"),
+					huh.NewOption("Mistral Native", "mistral"),
+					huh.NewOption("Google Vertex AI", "vertex"),
 				).
 				Value(&embed.provider),
 		),
@@ -619,8 +707,11 @@ func runOnboarding(configPath string) error {
 			huh.NewOption("Titan Text Embed v1", "amazon.titan-embed-text-v1"),
 			huh.NewOption("Cohere English v3", "cohere.embed-english-v3"),
 		},
-		"cohere": {huh.NewOption("embed-v4.0", "embed-v4.0")},
-		"google": {huh.NewOption("text-embedding-004", "text-embedding-004")},
+		"cohere":  {huh.NewOption("embed-v4.0", "embed-v4.0")},
+		"google":  {huh.NewOption("text-embedding-004", "text-embedding-004")},
+		"voyage":  {huh.NewOption("voyage-3", "voyage-3"), huh.NewOption("voyage-3-lite", "voyage-3-lite")},
+		"mistral": {huh.NewOption("mistral-embed", "mistral-embed")},
+		"vertex":  {huh.NewOption("text-embedding-004", "text-embedding-004"), huh.NewOption("text-multilingual-embedding-002", "text-multilingual-embedding-002")},
 	}
 	embedFields = append(embedFields, huh.NewSelect[string]().Title("Embedding Model").Options(embedModels[embed.provider]...).Value(&embed.model))
 
@@ -671,15 +762,57 @@ func runOnboarding(configPath string) error {
 		}
 	}
 
+	// Dynamic Skill Discovery
+	var skillOptions []huh.Option[string]
+	skillReg := skills.NewRegistry()
+
+	// 1. Check current directory
+	availableSkills, _ := skillReg.Discover("./skills")
+	// 2. Check default state directory (~/.assistclaw/skills)
+	if home, err := os.UserHomeDir(); err == nil {
+		homeSkills := filepath.Join(home, ".assistclaw", "skills")
+		if homeSkills != "./skills" { // avoid double-counting if we are IN ~/.assistclaw
+			more, _ := skillReg.Discover(homeSkills)
+			availableSkills = append(availableSkills, more...)
+		}
+	}
+
+	// Deduplicate by name
+	seen := make(map[string]bool)
+	var finalSkills []skills.SkillInfo
+	for _, s := range availableSkills {
+		if !seen[s.Name] {
+			seen[s.Name] = true
+			finalSkills = append(finalSkills, s)
+		}
+	}
+
+	for _, s := range finalSkills {
+		label := s.Name
+		if s.Emoji != "" {
+			label = s.Emoji + " " + s.Name
+		}
+		if !s.Eligible {
+			label = "❗ " + label + " (Missing: " + strings.Join(s.Missing, ", ") + ")"
+		}
+		skillOptions = append(skillOptions, huh.NewOption(label, s.Name))
+	}
+
+	// Fallback if no skills found on disk
+	if len(skillOptions) == 0 {
+		skillOptions = []huh.Option[string]{
+			huh.NewOption("Browser Control", "browser"),
+			huh.NewOption("System Admin", "sysadmin"),
+			huh.NewOption("Development Assistant", "dev"),
+		}
+	}
+
 	formSkills := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Enable Skills").
-				Options(
-					huh.NewOption("Browser Control", "browser"),
-					huh.NewOption("System Admin", "sysadmin"),
-					huh.NewOption("Development Assistant", "dev"),
-				).
+				Description("Choose specialized capabilities for your agent.").
+				Options(skillOptions...).
 				Value(&selectedSkills),
 		),
 	).WithTheme(theme)
@@ -723,6 +856,15 @@ func runOnboarding(configPath string) error {
 		}
 		if e.awsProfile != "" {
 			sb.WriteString(fmt.Sprintf("    profile: \"%s\"\n", e.awsProfile))
+		}
+		if e.vertexProj != "" {
+			sb.WriteString(fmt.Sprintf("    project_id: \"%s\"\n", e.vertexProj))
+		}
+		if e.vertexLoc != "" {
+			sb.WriteString(fmt.Sprintf("    location: \"%s\"\n", e.vertexLoc))
+		}
+		if e.vertexCreds != "" {
+			sb.WriteString(fmt.Sprintf("    credentials: \"%s\"\n", e.vertexCreds))
 		}
 		sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", e.model))
 	}

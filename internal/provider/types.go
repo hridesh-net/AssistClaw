@@ -248,6 +248,9 @@ type Provider interface {
 
 	// HealthCheck verifies the provider is reachable and credentials are valid.
 	HealthCheck(ctx context.Context) error
+
+	// Embed generates a vector representation of the given text.
+	Embed(ctx context.Context, model string, text string) ([]float32, error)
 }
 
 // StreamingProvider optionally indicates the provider supports streaming in

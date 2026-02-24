@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -59,6 +60,35 @@ func (l *loader) List() []Skill {
 	return out
 }
 
+func (l *loader) Discover(dir string) ([]SkillInfo, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	var out []SkillInfo
+	err := filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Base(path) == "SKILL.md" {
+			skill, err := l.parseSkillFile(path)
+			if err != nil {
+				return nil
+			}
+			met, missing := l.CheckRequirements(skill)
+			out = append(out, SkillInfo{
+				Name:        skill.Name,
+				Description: skill.Description,
+				Emoji:       skill.Metadata.OpenClaw.Emoji,
+				Eligible:    met,
+				Missing:     missing,
+			})
+		}
+		return nil
+	})
+	return out, err
+}
+
 func (l *loader) BuildContext(activeSkillNames []string) string {
 	if len(activeSkillNames) == 0 {
 		return ""
@@ -73,13 +103,59 @@ func (l *loader) BuildContext(activeSkillNames []string) string {
 		if !ok {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("\n<skill name=\"%s\">\n", s.Name))
+
+		// Check requirements
+		met, missing := l.CheckRequirements(s)
+		if !met {
+			sb.WriteString(fmt.Sprintf("\n<skill name=\"%s\" status=\"error\" error=\"missing dependencies: %s\">\n", s.Name, strings.Join(missing, ", ")))
+			sb.WriteString("This skill is missing required dependencies and cannot be used.")
+			sb.WriteString("\n</skill>\n")
+			continue
+		}
+
+		path := l.compactPath(s.FilePath)
+		sb.WriteString(fmt.Sprintf("\n<skill name=\"%s\" file=\"%s\">\n", s.Name, path))
 		sb.WriteString(s.Instructions)
 		sb.WriteString("\n</skill>\n")
 	}
 
 	sb.WriteString("</active_skills>\n")
 	return sb.String()
+}
+
+func (l *loader) CheckRequirements(skill *Skill) (bool, []string) {
+	var missing []string
+
+	// Check bins
+	for _, bin := range skill.Metadata.OpenClaw.Requires.Bins {
+		if _, err := exec.LookPath(bin); err != nil {
+			missing = append(missing, bin)
+		}
+	}
+
+	// Check anyBins (at least one must exist)
+	if len(skill.Metadata.OpenClaw.Requires.AnyBins) > 0 {
+		found := false
+		for _, bin := range skill.Metadata.OpenClaw.Requires.AnyBins {
+			if _, err := exec.LookPath(bin); err == nil {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, fmt.Sprintf("one of (%s)", strings.Join(skill.Metadata.OpenClaw.Requires.AnyBins, ", ")))
+		}
+	}
+
+	return len(missing) == 0, missing
+}
+
+func (l *loader) compactPath(p string) string {
+	home, _ := os.UserHomeDir()
+	if home != "" && strings.HasPrefix(p, home) {
+		return "~" + strings.TrimPrefix(p, home)
+	}
+	return p
 }
 
 // parseSkillFile reads a SKILL.md file, extracting YAML frontmatter and the Markdown body.
@@ -110,6 +186,7 @@ func (l *loader) parseSkillFile(path string) (*Skill, error) {
 		skill.Instructions = strings.TrimSpace(string(data))
 	}
 
+	skill.FilePath = path
 	if skill.Name == "" {
 		skill.Name = filepath.Base(filepath.Dir(path))
 	}
