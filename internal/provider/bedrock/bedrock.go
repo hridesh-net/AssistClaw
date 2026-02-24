@@ -131,8 +131,7 @@ func (p *Provider) ListModels(_ context.Context) ([]provider.ModelInfo, error) {
 	return bedrockModelCatalog(p.Name()), nil
 }
 
-// Complete performs a blocking Bedrock inference call. Automatically selects
-// the correct request format based on the model family.
+// Complete performs a blocking Bedrock inference call using the unified Converse API.
 func (p *Provider) Complete(ctx context.Context, req *provider.CompletionRequest) (*provider.CompletionResponse, error) {
 	start := time.Now()
 	model := req.Model
@@ -143,76 +142,84 @@ func (p *Provider) Complete(ctx context.Context, req *provider.CompletionRequest
 		model = "anthropic.claude-3-5-haiku-20241022-v1:0"
 	}
 
-	// Route to correct format based on model family prefix.
-	var bodyBytes []byte
-	var err error
-
-	switch {
-	case strings.HasPrefix(model, "anthropic."):
-		bodyBytes, err = buildAnthropicBody(req)
-	case strings.HasPrefix(model, "meta."):
-		bodyBytes, err = buildMetaBody(req)
-	case strings.HasPrefix(model, "mistral."):
-		bodyBytes, err = buildMistralBody(req)
-	case strings.HasPrefix(model, "amazon."):
-		bodyBytes, err = buildTitanBody(req)
-	default:
-		bodyBytes, err = buildAnthropicBody(req) // safe default
-	}
+	messages, system, err := buildConverseMessages(req)
 	if err != nil {
-		return nil, fmt.Errorf("bedrock: build request: %w", err)
+		return nil, fmt.Errorf("bedrock: build messages: %w", err)
 	}
 
-	output, err := p.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
-		ModelId:     aws.String(model),
-		Body:        bodyBytes,
-		ContentType: aws.String("application/json"),
-	})
+	input := &bedrockruntime.ConverseInput{
+		ModelId:  aws.String(model),
+		Messages: messages,
+		System:   system,
+	}
+	if req.MaxTokens > 0 {
+		input.InferenceConfig = &types.InferenceConfiguration{
+			MaxTokens: aws.Int32(int32(req.MaxTokens)),
+		}
+	}
+
+	output, err := p.client.Converse(ctx, input)
 	if err != nil {
-		msg := "invoke model"
+		msg := "converse"
 		if strings.Contains(err.Error(), "AccessDeniedException") || strings.Contains(err.Error(), "403") {
-			msg = "access denied: ensure you have 'requested access' to this model in the AWS Bedrock Console for this region"
+			msg = "access denied: ensure you have 'requested access' to this model in the AWS Bedrock Console for the configured region (" + p.cfg.Region + ")"
 		}
 		return nil, &provider.ProviderError{Provider: providerName, Message: msg, Err: err, Retryable: true}
 	}
 
-	resp, err := parseBedrockResponse(model, output.Body)
-	if err != nil {
-		return nil, err
+	resp := &provider.CompletionResponse{
+		Model:   model,
+		Latency: time.Since(start),
 	}
-	resp.Model = model
-	resp.Latency = time.Since(start)
+
+	if content, ok := output.Output.(*types.ConverseOutputMemberMessage); ok {
+		for _, b := range content.Value.Content {
+			if t, ok := b.(*types.ContentBlockMemberText); ok {
+				resp.Content = append(resp.Content, provider.ContentPart{Type: provider.ContentTypeText, Text: t.Value})
+			}
+		}
+		resp.FinishReason = provider.FinishReasonStop
+	}
+
+	if output.Usage != nil {
+		resp.Usage = provider.TokenUsage{
+			PromptTokens:     int(*output.Usage.InputTokens),
+			CompletionTokens: int(*output.Usage.OutputTokens),
+			TotalTokens:      int(*output.Usage.TotalTokens),
+		}
+	}
+
 	return resp, nil
 }
 
-// Stream performs a streaming Bedrock inference using InvokeModelWithResponseStream.
+// Stream performs a streaming Bedrock inference using ConverseStream.
 func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) (<-chan provider.StreamEvent, error) {
 	model := req.Model
 	if model == "" {
 		model = p.cfg.DefaultModel
 	}
 
-	var bodyBytes []byte
-	var err error
-	switch {
-	case strings.HasPrefix(model, "anthropic."):
-		bodyBytes, err = buildAnthropicBody(req)
-	default:
-		bodyBytes, err = buildAnthropicBody(req)
-	}
+	messages, system, err := buildConverseMessages(req)
 	if err != nil {
 		return nil, err
 	}
 
-	output, err := p.client.InvokeModelWithResponseStream(ctx, &bedrockruntime.InvokeModelWithResponseStreamInput{
-		ModelId:     aws.String(model),
-		Body:        bodyBytes,
-		ContentType: aws.String("application/json"),
-	})
+	input := &bedrockruntime.ConverseStreamInput{
+		ModelId:  aws.String(model),
+		Messages: messages,
+		System:   system,
+	}
+	if req.MaxTokens > 0 {
+		input.InferenceConfig = &types.InferenceConfiguration{
+			MaxTokens: aws.Int32(int32(req.MaxTokens)),
+		}
+	}
+
+	output, err := p.client.ConverseStream(ctx, input)
 	if err != nil {
-		msg := "stream invoke"
+		msg := "converse stream"
 		if strings.Contains(err.Error(), "AccessDeniedException") || strings.Contains(err.Error(), "403") {
-			msg = "access denied: ensure you have 'requested access' to this model in the AWS Bedrock Console for this region"
+			msg = "access denied: ensure you have 'requested access' to this model in the AWS Bedrock Console for the configured region (" + p.cfg.Region + ")"
 		}
 		return nil, &provider.ProviderError{Provider: providerName, Message: msg, Err: err, Retryable: true}
 	}
@@ -223,22 +230,15 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 		stream := output.GetStream()
 		defer stream.Close()
 		for event := range stream.Events() {
-			if v, ok := event.(*types.ResponseStreamMemberChunk); ok {
-				var chunk struct {
-					Type  string `json:"type"`
-					Delta struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
-					} `json:"delta"`
+			switch v := event.(type) {
+			case *types.ConverseStreamOutputMemberContentBlockDelta:
+				if d, ok := v.Value.Delta.(*types.ContentBlockDeltaMemberText); ok {
+					ch <- provider.StreamEvent{Type: provider.StreamEventText, Text: d.Value}
 				}
-				if err := json.Unmarshal(v.Value.Bytes, &chunk); err == nil {
-					if chunk.Type == "content_block_delta" && chunk.Delta.Text != "" {
-						ch <- provider.StreamEvent{Type: provider.StreamEventText, Text: chunk.Delta.Text}
-					}
-					if chunk.Type == "message_stop" {
-						ch <- provider.StreamEvent{Type: provider.StreamEventDone}
-					}
-				}
+			case *types.ConverseStreamOutputMemberMessageStop:
+				ch <- provider.StreamEvent{Type: provider.StreamEventDone}
+			case *types.ConverseStreamOutputMemberMetadata:
+				// Optional: handle usage
 			}
 		}
 	}()
@@ -248,7 +248,38 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 func (p *Provider) SupportsNativeStreaming() bool { return true }
 
 // ─────────────────────────────────────────────
-// Request builders per model family
+// Unified Converse Message Builders
+// ─────────────────────────────────────────────
+
+func buildConverseMessages(req *provider.CompletionRequest) ([]types.Message, []types.SystemContentBlock, error) {
+	var messages []types.Message
+	for _, m := range req.Messages {
+		role := types.ConversationRoleUser
+		if m.Role == provider.RoleAssistant {
+			role = types.ConversationRoleAssistant
+		}
+		var content []types.ContentBlock
+		for _, cp := range m.Content {
+			if cp.Type == provider.ContentTypeText {
+				content = append(content, &types.ContentBlockMemberText{Value: cp.Text})
+			}
+		}
+		messages = append(messages, types.Message{
+			Role:    role,
+			Content: content,
+		})
+	}
+
+	var system []types.SystemContentBlock
+	if req.SystemPrompt != "" {
+		system = append(system, &types.SystemContentBlockMemberText{Value: req.SystemPrompt})
+	}
+
+	return messages, system, nil
+}
+
+// ─────────────────────────────────────────────
+// Legacy Request builders (falling back if needed)
 // ─────────────────────────────────────────────
 
 func buildAnthropicBody(req *provider.CompletionRequest) ([]byte, error) {
