@@ -115,7 +115,7 @@ build_binary_from_source() {
     local go_version
     go_version="$(go version | awk '{print $3}' | tr -d 'go')"
     log "Building with go $go_version..."
-    (cd "$REPO_ROOT" && go build -ldflags "-s -w" -o /tmp/assistclaw-build ./cmd/assistclaw)
+    (cd "$REPO_ROOT" && go build -mod=vendor -tags fts5 -ldflags "-s -w" -o /tmp/assistclaw-build ./cmd/assistclaw)
     
     if [[ ! -w "$INSTALL_DIR" ]]; then
       warn "Cannot write to $INSTALL_DIR (permission denied). Changing INSTALL_DIR to $HOME/.local/bin"
