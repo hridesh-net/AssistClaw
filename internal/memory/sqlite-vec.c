@@ -19,7 +19,7 @@
 #include "sqlite3ext.h"
 SQLITE_EXTENSION_INIT1
 #else
-#include "sqlite3.h"
+#include "../../vendor/github.com/mattn/go-sqlite3/sqlite3-binding.h"
 #endif
 
 #ifndef UINT32_TYPE

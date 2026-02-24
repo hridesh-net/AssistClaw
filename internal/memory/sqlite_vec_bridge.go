@@ -3,7 +3,7 @@ package memory
 /*
 #cgo CFLAGS: -I${SRCDIR} -I${SRCDIR}/../../vendor/github.com/mattn/go-sqlite3 -DSQLITE_CORE
 #cgo linux LDFLAGS: -lm
-#include "sqlite3.h"
+#include "../../vendor/github.com/mattn/go-sqlite3/sqlite3-binding.h"
 #include "sqlite-vec.h"
 
 int assistclaw_sqlite3_vec_init(sqlite3 *db, char **pzErrMsg, const sqlite3_api_routines *pApi) {

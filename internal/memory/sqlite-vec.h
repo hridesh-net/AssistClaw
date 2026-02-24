@@ -4,7 +4,7 @@
 #ifndef SQLITE_CORE
 #include "sqlite3ext.h"
 #else
-#include "sqlite3.h"
+#include "../../vendor/github.com/mattn/go-sqlite3/sqlite3-binding.h"
 #endif
 
 #ifdef SQLITE_VEC_STATIC
