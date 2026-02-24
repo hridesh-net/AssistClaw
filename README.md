@@ -15,25 +15,24 @@ AssistClaw is a polyglot, production-grade AI assistant system written in Go. It
 
 ---
 
-## Quick Installation
-
-AssistClaw distributes highly-optimized pre-compiled binaries for **Linux**, **macOS**, and **Windows**. You do not need Go installed on your machine.
-
-### Linux / macOS
-Run the automated installation script to download the latest binary for your architecture and set up your workspace:
+### Automated Installation (Linux / macOS)
+The fastest way to install AssistClaw is via our one-liner script. This detects your architecture, downloads the correct binary, and sets up your workspace:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
 ```
 
-### Windows
-Open PowerShell as Administrator and run:
+### Manual Installation (All Platforms)
+If you prefer to install manually or are on a restricted environment:
 
-```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.ps1" -OutFile "install.ps1"; .\install.ps1
-```
+1. **Download**: Grab the latest binary for your platform from the [GitHub Releases](https://github.com/hridesh-net/AssistClaw/releases) page.
+2. **Rename & Move**:
+   - **Linux/macOS**: Rename to `assistclaw`, make it executable (`chmod +x`), and move it to your path (e.g., `/usr/local/bin` or `~/.local/bin`).
+   - **Windows**: Rename to `assistclaw.exe` and move it to a folder in your PATH.
+3. **Verify**: Run `assistclaw version` to ensure it's installed correctly.
 
-Once complete, the `assistclaw` command will be available in your PATH, and your configuration workspace will be generated automatically at `~/.assistclaw/`.
+### ARM64 / Raspberry Pi Optimized
+AssistClaw is optimized for the Raspberry Pi 5. Our ARM64 binaries are statically linked with `musl`, ensuring they run on any Linux distribution (Ubuntu, Debian, Raspberry Pi OS) without managed library dependencies.
 
 ### Interactive Setup
 
@@ -107,23 +106,28 @@ assistclaw agent --log-level debug
 
 ## Uninstallation
 
-If you wish to completely remove AssistClaw from your system, you just need to delete the executable and the configuration workspace.
+To completely remove AssistClaw from your system, follow these steps to delete the binary and your local configuration.
 
-### Linux / macOS
+### 1. Identify and Remove Binary
+Find where the executable is located:
 ```bash
-# Remove the configuration workspace, downloaded tools, and local memory
-rm -rf ~/.assistclaw
-
-# Remove the executable
-rm -f ~/.local/bin/assistclaw
-sudo rm -f /usr/local/bin/assistclaw
+which assistclaw
+```
+Then remove it (you may need `sudo` if it's in `/usr/local/bin`):
+```bash
+# Example for Linux/macOS
+rm $(which assistclaw)  
+# OR explicitly:
+rm ~/.local/bin/assistclaw
+sudo rm /usr/local/bin/assistclaw
 ```
 
-### Windows (PowerShell)
-```powershell
-# Remove the configuration workspace
-Remove-Item -Recurse -Force "$env:USERPROFILE\.assistclaw"
+### 2. Wipe Configuration & State
+Delete the hidden workspace directory. **WARNING**: This permanently deletes your conversation history and memories.
+```bash
+# Linux / macOS
+rm -rf ~/.assistclaw
 
-# Remove the executable (if installed to default location)
-Remove-Item -Force "$env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\assistclaw.exe"
+# Windows (PowerShell)
+Remove-Item -Recurse -Force "$env:USERPROFILE\.assistclaw"
 ```
