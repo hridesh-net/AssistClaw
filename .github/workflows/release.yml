@@ -62,14 +62,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsqlite3-dev
 
-      - name: Install Linux ARM64 Toolchain
+      - name: Setup Zig
         if: matrix.target == 'linux-arm64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            libc6-dev-arm64-cross
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
           
       - name: Build Binary (Native)
         if: matrix.target != 'linux-arm64'
@@ -82,17 +79,18 @@ jobs:
           mkdir -p dist
           go build -mod=vendor -tags fts5 -ldflags "-s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
 
-      - name: Build Binary (Linux ARM64 Cross-Compile)
+      - name: Build Binary (Linux ARM64 Cross-Compile with Zig)
         if: matrix.target == 'linux-arm64'
         env:
           CGO_ENABLED: 1
           GOOS: linux
           GOARCH: arm64
-          CC: aarch64-linux-gnu-gcc
-          CXX: aarch64-linux-gnu-g++
+          CC: zig cc -target aarch64-linux-musl
+          CXX: zig c++ -target aarch64-linux-musl
         run: |
           mkdir -p dist
-          go build -mod=vendor -tags fts5 -ldflags "-s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
+          # Use -extldflags "-static" to ensure no glibc dependencies
+          go build -mod=vendor -tags fts5 -ldflags "-s -w -extldflags '-static'" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

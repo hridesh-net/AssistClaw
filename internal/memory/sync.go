@@ -29,7 +29,22 @@ func (m *Manager) SyncFiles(ctx context.Context, registry *embeddings.Registry, 
 	}
 
 	// 3. Cleanup stale entries (documents whose source file is gone)
-	// TODO: implement cleanup logic
+	rows, err := m.Semantic.db.QueryContext(ctx, "SELECT DISTINCT source FROM documents")
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var source string
+			if err := rows.Scan(&source); err != nil {
+				continue
+			}
+			// Check if source file exists
+			absPath := filepath.Join(workspaceDir, source)
+			if _, err := os.Stat(absPath); os.IsNotExist(err) {
+				fmt.Printf("[memory] cleaning up stale source: %s\n", source)
+				_ = m.Semantic.DeleteBySource(ctx, source)
+			}
+		}
+	}
 
 	return nil
 }
@@ -94,6 +109,7 @@ func (m *Manager) syncFile(ctx context.Context, registry *embeddings.Registry, w
 			Source:    relPath,
 			Content:   c.Content,
 			Hash:      hash, // Use the full file hash for all chunks
+			Model:     resp.Model,
 			Embedding: resp.Embeddings[i],
 			CreatedAt: time.Now(),
 		}

@@ -82,7 +82,8 @@ type Runner struct {
 	memory   *memory.Manager
 	log      *zap.Logger
 
-	sessionID string
+	sessionID    string
+	workspaceDir string
 }
 
 // NewRunner creates a new agent runner.
@@ -92,17 +93,19 @@ func NewRunner(
 	tools *ToolRegistry,
 	mem *memory.Manager,
 	log *zap.Logger,
+	workspaceDir string,
 ) *Runner {
 	if cfg.MaxIterations == 0 {
 		cfg.MaxIterations = 64
 	}
 	return &Runner{
-		cfg:       cfg,
-		provider:  p,
-		tools:     tools,
-		memory:    mem,
-		log:       log,
-		sessionID: uuid.New().String(),
+		cfg:          cfg,
+		provider:     p,
+		tools:        tools,
+		memory:       mem,
+		log:          log,
+		sessionID:    uuid.New().String(),
+		workspaceDir: workspaceDir,
 	}
 }
 
@@ -135,6 +138,12 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 
 	var totalUsage provider.TokenUsage
 	iterations := 0
+
+	// Check if we need to flush memory before starting.
+	// We'll perform one "proactive flush turn" if budget is tight.
+	if r.shouldFlush() {
+		r.doFlush(ctx, &totalUsage)
+	}
 
 	for iterations < r.cfg.MaxIterations {
 		iterations++
@@ -282,6 +291,18 @@ func (r *Runner) buildSystemPrompt() string {
 	if r.cfg.SystemPrompt != "" {
 		parts = append(parts, r.cfg.SystemPrompt)
 	}
+
+	// Add Memory storage instructions for parity with OpenClaw
+	today := time.Now().Format("2006-01-02")
+	memoryInstr := fmt.Sprintf(`
+## Memory Storage
+Your long-term memory is stored in Markdown files within your workspace at: %s
+- Global memory: MEMORY.md
+- Daily logs: memory/%s.md (and other YYYY-MM-DD.md files)
+You should proactively use 'write_file' to store important, durable information to these files during the "Memory Flush" turn or whenever you learn something worth keeping.
+`, r.workspaceDir, today)
+	parts = append(parts, memoryInstr)
+
 	if r.cfg.ActiveSkillsContext != "" {
 		parts = append(parts, r.cfg.ActiveSkillsContext)
 	}
@@ -319,6 +340,11 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 	var totalUsage provider.TokenUsage
 	var fullResponse strings.Builder
 	iterations := 0
+
+	// Pre-compaction flush for streaming
+	if r.shouldFlush() {
+		r.doFlushStream(ctx, handler, &totalUsage)
+	}
 
 	for iterations < r.cfg.MaxIterations {
 		iterations++
@@ -430,6 +456,119 @@ func (h *channelStreamHandler) OnDone(_ *RunResult) {
 
 func (h *channelStreamHandler) OnError(err error) {
 	_ = h.replyFn(fmt.Sprintf("\n[Error: %v]", err))
+}
+
+func (r *Runner) shouldFlush() bool {
+	budget := r.memory.Working.MaxTokens()
+	current := r.memory.Working.TotalTokens()
+	// Flush if we are at 80% capacity
+	return current > int(float64(budget)*0.8)
+}
+
+func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
+	date := time.Now().Format("2006-01-02")
+	prompt := fmt.Sprintf("MEMORY NEAR CAPACITY. Store important info to MEMORY.md or memory/%s.md now if needed. Reply with [SILENT] if nothing to store.", date)
+
+	// Inject a system-like user message for the flush turn
+	flushMsg := memory.Message{
+		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleUser,
+		Content: prompt, CreatedAt: time.Now(),
+	}
+	r.memory.Working.Append(flushMsg)
+
+	req := r.buildRequest()
+	stream, err := r.provider.Stream(ctx, req)
+	if err != nil {
+		r.log.Warn("memory flush turn failed", zap.Error(err))
+		return
+	}
+
+	resp, err := provider.CollectStream(ctx, stream)
+	if err != nil {
+		r.log.Warn("memory flush turn collect failed", zap.Error(err))
+		return
+	}
+
+	usage.PromptTokens += resp.Usage.PromptTokens
+	usage.CompletionTokens += resp.Usage.CompletionTokens
+	usage.TotalTokens += resp.Usage.TotalTokens
+
+	assistantMsg := memory.Message{
+		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
+		Content: resp.Text(), Model: r.cfg.Model, Tokens: resp.Usage.CompletionTokens, CreatedAt: time.Now(),
+	}
+	r.memory.Working.Append(assistantMsg)
+
+	// Execute any tools (like write_file) requested during flush.
+	for _, tc := range resp.ToolCalls() {
+		result := r.executeTool(ctx, tc)
+		toolMsg := memory.Message{
+			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
+			Content: result, CreatedAt: time.Now(),
+		}
+		r.memory.Working.Append(toolMsg)
+	}
+}
+
+func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage *provider.TokenUsage) {
+	date := time.Now().Format("2006-01-02")
+	prompt := fmt.Sprintf("MEMORY NEAR CAPACITY. Store important info to MEMORY.md or memory/%s.md now if needed. Reply with [SILENT] if nothing to store.", date)
+
+	flushMsg := memory.Message{
+		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleUser,
+		Content: prompt, CreatedAt: time.Now(),
+	}
+	r.memory.Working.Append(flushMsg)
+
+	stream, err := r.provider.Stream(ctx, r.buildRequest())
+	if err != nil {
+		handler.OnError(fmt.Errorf("agent: flush stream: %w", err))
+		return
+	}
+
+	var fullResponse strings.Builder
+	var toolCalls []provider.ContentPart
+
+	for event := range stream {
+		switch event.Type {
+		case provider.StreamEventText:
+			handler.OnToken(event.Text)
+			fullResponse.WriteString(event.Text)
+		case provider.StreamEventToolUse:
+			if event.ToolUse != nil {
+				toolCalls = append(toolCalls, *event.ToolUse)
+			}
+		case provider.StreamEventDone:
+			if event.Usage != nil {
+				usage.PromptTokens += event.Usage.PromptTokens
+				usage.CompletionTokens += event.Usage.CompletionTokens
+				usage.TotalTokens += event.Usage.TotalTokens
+			}
+		case provider.StreamEventError:
+			handler.OnError(event.Err)
+			return
+		}
+	}
+
+	assistantMsg := memory.Message{
+		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
+		Content: fullResponse.String(), Model: r.cfg.Model,
+		Tokens: usage.CompletionTokens, CreatedAt: time.Now(),
+	}
+	r.memory.Working.Append(assistantMsg)
+
+	for _, tc := range toolCalls {
+		inputJSON, _ := json.Marshal(tc.ToolInput)
+		handler.OnToolCall(tc.ToolName, inputJSON)
+		result := r.executeTool(ctx, tc)
+		handler.OnToolResult(tc.ToolName, result)
+
+		toolMsg := memory.Message{
+			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
+			Content: result, CreatedAt: time.Now(),
+		}
+		r.memory.Working.Append(toolMsg)
+	}
 }
 
 func truncate(s string, n int) string {

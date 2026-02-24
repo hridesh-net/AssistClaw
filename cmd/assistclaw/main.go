@@ -41,9 +41,10 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 )
 
-const version = "2026.1.0"
+const version = "v1.0.28-debug"
 
 func main() {
+	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
 	if err := rootCmd().Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -222,17 +223,25 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 
 				// 2. Semantic Search (Vector)
 				if vec, err := embedReg.EmbedQuery(searchCtx, query); err == nil {
-					docs, err := memMgr.Semantic.Search(searchCtx, vec, limit)
+					docs, err := memMgr.Semantic.SearchWithModel(searchCtx, vec, limit)
 					if err == nil {
 						for _, d := range docs {
-							out = append(out, fmt.Sprintf("[semantic] [%s] source=%s: %s", d.CreatedAt.Format("2006-01-02 15:04"), d.Source, d.Content))
+							out = append(out, fmt.Sprintf("[semantic] [score:%.2f] [%s / %s] source=%s: %s", d.Score, d.Model, d.CreatedAt.Format("2006-01-02 15:04"), d.Source, d.Content))
 						}
 					}
 				}
 
 				return out, nil
 			}
-			for _, t := range tools.Default(memSearchFn) {
+			memSnippetFn := func(snippetCtx context.Context, source string, startLine, endLine int) (string, error) {
+				// If source doesn't exist, try resolving it relative to workspace
+				path := source
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					path = filepath.Join(cfg.StateDir, source) // cfg.StateDir is workspace dir for now
+				}
+				return memMgr.Semantic.GetSnippet(snippetCtx, path, startLine, endLine)
+			}
+			for _, t := range tools.Default(memSearchFn, memSnippetFn) {
 				if tool, ok := t.(agent.Tool); ok {
 					toolReg.Register(tool)
 				}
@@ -242,7 +251,7 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 				MaxIterations:       cfg.Agent.MaxIterations,
 				Model:               modelInfo.ID,
 				ActiveSkillsContext: skillsCtx,
-			}, p, toolReg, memMgr, log)
+			}, p, toolReg, memMgr, log, cfg.StateDir)
 
 			if sessionID != "" {
 				// Restore session history into working memory

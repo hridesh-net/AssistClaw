@@ -27,11 +27,12 @@ type Daemon struct {
 	jobs []Job
 
 	// Dependencies for spinning up agents
-	provider provider.Provider
-	toolReg  *agent.ToolRegistry
-	memMgr   *memory.Manager
-	agentCfg agent.Config
-	log      *zap.Logger
+	provider     provider.Provider
+	toolReg      *agent.ToolRegistry
+	memMgr       *memory.Manager
+	agentCfg     agent.Config
+	log          *zap.Logger
+	workspaceDir string
 
 	mu sync.Mutex
 }
@@ -43,15 +44,17 @@ func NewDaemon(
 	mem *memory.Manager,
 	cfg agent.Config,
 	logger *zap.Logger,
+	workspaceDir string,
 ) *Daemon {
 	return &Daemon{
-		cron:     cron.New(cron.WithSeconds()), // Standard cron with seconds precision optional
-		jobs:     jobs,
-		provider: p,
-		toolReg:  tools,
-		memMgr:   mem,
-		agentCfg: cfg,
-		log:      logger,
+		cron:         cron.New(cron.WithSeconds()), // Standard cron with seconds precision optional
+		jobs:         jobs,
+		provider:     p,
+		toolReg:      tools,
+		memMgr:       mem,
+		agentCfg:     cfg,
+		log:          logger,
+		workspaceDir: workspaceDir,
 	}
 }
 
@@ -66,7 +69,7 @@ func (d *Daemon) Start() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
 
-			runner := agent.NewRunner(d.agentCfg, d.provider, d.toolReg, d.memMgr, d.log)
+			runner := agent.NewRunner(d.agentCfg, d.provider, d.toolReg, d.memMgr, d.log, d.workspaceDir)
 
 			// Run in background without streaming to UI
 			res, err := runner.Run(ctx, job.Prompt)

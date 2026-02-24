@@ -335,8 +335,9 @@ func (t MemorySearchTool) Definition() provider.ToolDef {
 
 func (t MemorySearchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var args struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
+		Query    string  `json:"query"`
+		Limit    int     `json:"limit"`
+		MinScore float32 `json:"min_score"`
 	}
 	if err := json.Unmarshal(input, &args); err != nil {
 		return "", err
@@ -348,10 +349,57 @@ func (t MemorySearchTool) Execute(ctx context.Context, input json.RawMessage) (s
 	if err != nil {
 		return fmt.Sprintf("memory search error: %v", err), nil
 	}
+
+	// Note: t.SearchFn currently returns episodic results.
+	// The implementation in main.go handles merging episodic and semantic.
+	// We'll rely on that for now, but we've added MinScore placeholder for semantic filtering.
+
 	if len(results) == 0 {
 		return "No results found.", nil
 	}
 	return strings.Join(results, "\n---\n"), nil
+}
+
+// ─────────────────────────────────────────────
+// Memory get tool
+// ─────────────────────────────────────────────
+
+// MemoryGetTool reads specific lines from a memory file.
+type MemoryGetTool struct {
+	SnippetFn func(ctx context.Context, source string, startLine, endLine int) (string, error)
+}
+
+func (t MemoryGetTool) Definition() provider.ToolDef {
+	return provider.ToolDef{
+		Name:        "memory_get",
+		Description: "Read a specific line range from a memory file (MEMORY.md or memory/*.md). Use after memory_search to pull only the needed lines.",
+		InputSchema: provider.ToolParameter{
+			Type: "object",
+			Properties: map[string]any{
+				"path":       map[string]any{"type": "string", "description": "Path to the file (from memory_search results)"},
+				"start_line": map[string]any{"type": "integer", "description": "Start line (1-indexed)"},
+				"end_line":   map[string]any{"type": "integer", "description": "End line (inclusive)"},
+			},
+			Required: []string{"path"},
+		},
+	}
+}
+
+func (t MemoryGetTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	var args struct {
+		Path      string `json:"path"`
+		StartLine int    `json:"start_line"`
+		EndLine   int    `json:"end_line"`
+	}
+	if err := json.Unmarshal(input, &args); err != nil {
+		return "", err
+	}
+
+	content, err := t.SnippetFn(ctx, args.Path, args.StartLine, args.EndLine)
+	if err != nil {
+		return fmt.Sprintf("memory get error: %v", err), nil
+	}
+	return content, nil
 }
 
 // ─────────────────────────────────────────────
@@ -360,7 +408,10 @@ func (t MemorySearchTool) Execute(ctx context.Context, input json.RawMessage) (s
 
 // Default registers all built-in tools into a registry.
 // Pass a memSearchFn to wire up memory search.
-func Default(memSearchFn func(ctx context.Context, query string, limit int) ([]string, error)) []interface{ Definition() provider.ToolDef } {
+func Default(
+	memSearchFn func(ctx context.Context, query string, limit int) ([]string, error),
+	memSnippetFn func(ctx context.Context, source string, startLine, endLine int) (string, error),
+) []interface{ Definition() provider.ToolDef } {
 	return []interface{ Definition() provider.ToolDef }{
 		ReadFileTool{},
 		WriteFileTool{},
@@ -369,6 +420,7 @@ func Default(memSearchFn func(ctx context.Context, query string, limit int) ([]s
 		BashTool{MaxTimeout: 300 * time.Second},
 		WebFetchTool{},
 		MemorySearchTool{SearchFn: memSearchFn},
+		MemoryGetTool{SnippetFn: memSnippetFn},
 		BrowserNavigate{},
 		BrowserScreenshot{},
 	}

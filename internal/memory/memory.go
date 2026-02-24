@@ -10,6 +10,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -49,6 +51,7 @@ type Document struct {
 	Source    string    `json:"source"` // file path, URL, session ID, etc.
 	Content   string    `json:"content"`
 	Hash      string    `json:"hash,omitempty"`
+	Model     string    `json:"model,omitempty"` // embedding model that generated this vector
 	Embedding []float32 `json:"embedding,omitempty"`
 	Score     float32   `json:"score,omitempty"` // similarity score (populated on search)
 	CreatedAt time.Time `json:"created_at"`
@@ -72,6 +75,13 @@ func NewWorkingMemory(maxTokens int) *WorkingMemory {
 		maxTokens = 100_000
 	}
 	return &WorkingMemory{maxTokens: maxTokens}
+}
+
+// MaxTokens returns the token budget.
+func (w *WorkingMemory) MaxTokens() int {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.maxTokens
 }
 
 // Append adds a message to the working memory.
@@ -311,6 +321,7 @@ func (m *SemanticMemory) migrate() error {
 			source     TEXT NOT NULL,
 			content    TEXT NOT NULL,
 			hash       TEXT,
+			model      TEXT,
 			embedding  BLOB,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
@@ -332,8 +343,8 @@ func (m *SemanticMemory) Index(ctx context.Context, doc Document) error {
 
 	embJSON, _ := json.Marshal(doc.Embedding)
 	_, err = tx.ExecContext(ctx,
-		`INSERT OR REPLACE INTO documents (id, source, content, hash, embedding, created_at) VALUES (?,?,?,?,?,?)`,
-		doc.ID, doc.Source, doc.Content, doc.Hash, embJSON, doc.CreatedAt,
+		`INSERT OR REPLACE INTO documents (id, source, content, hash, model, embedding, created_at) VALUES (?,?,?,?,?,?,?)`,
+		doc.ID, doc.Source, doc.Content, doc.Hash, doc.Model, embJSON, doc.CreatedAt,
 	)
 	if err != nil {
 		return err
@@ -384,6 +395,37 @@ func (m *SemanticMemory) Search(ctx context.Context, queryVec []float32, limit i
 	return docs, rows.Err()
 }
 
+// SearchWithModel finds top-k documents and also returns the model that generated them.
+func (m *SemanticMemory) SearchWithModel(ctx context.Context, queryVec []float32, limit int) ([]Document, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	queryJSON, _ := json.Marshal(queryVec)
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT d.id, d.source, d.content, d.model, d.created_at, vd.distance
+		FROM vec_documents vd
+		JOIN documents d ON d.rowid = vd.rowid
+		WHERE vd.embedding MATCH ? AND k = ?
+		ORDER BY vd.distance ASC
+	`, queryJSON, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var docs []Document
+	for rows.Next() {
+		var doc Document
+		var dist float32
+		if err := rows.Scan(&doc.ID, &doc.Source, &doc.Content, &doc.Model, &doc.CreatedAt, &dist); err != nil {
+			return nil, err
+		}
+		doc.Score = 1 - dist
+		docs = append(docs, doc)
+	}
+	return docs, rows.Err()
+}
+
 // Delete removes a document from all indexes.
 func (m *SemanticMemory) Delete(ctx context.Context, id string) error {
 	_, err := m.db.ExecContext(ctx, `DELETE FROM documents WHERE id=?`, id)
@@ -398,6 +440,36 @@ func (m *SemanticMemory) DeleteBySource(ctx context.Context, source string) erro
 
 // Close closes the database.
 func (m *SemanticMemory) Close() error { return m.db.Close() }
+
+// GetSnippet returns a piece of content from a given source source, optionally restricted by line range.
+func (m *SemanticMemory) GetSnippet(ctx context.Context, source string, startLine, endLine int) (string, error) {
+	// If the source exists on disk, read it.
+	data, err := os.ReadFile(source)
+	if err == nil {
+		content := string(data)
+		if startLine > 0 || endLine > 0 {
+			lines := strings.Split(content, "\n")
+			start := startLine - 1
+			if start < 0 {
+				start = 0
+			}
+			end := endLine
+			if end <= 0 || end > len(lines) {
+				end = len(lines)
+			}
+			if start >= len(lines) {
+				return "", nil
+			}
+			return strings.Join(lines[start:end], "\n"), nil
+		}
+		return content, nil
+	}
+
+	// Fallback: Query the database for the content of the document.
+	// Since we only store chunks, we'll try to find the one that matches or contains the range.
+	// For now, let's just return an error if file read fails, as Markdown memory is file-based.
+	return "", fmt.Errorf("could not read source %q: %w", source, err)
+}
 
 // ─────────────────────────────────────────────
 // Manager — unified facade over all three tiers

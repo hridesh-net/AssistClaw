@@ -1,9 +1,9 @@
 package memory
 
 /*
-#cgo CFLAGS: -I${SRCDIR} -I${SRCDIR}/../../vendor/github.com/mattn/go-sqlite3 -DSQLITE_CORE
+#cgo CFLAGS: -I${SRCDIR}/../../vendor/github.com/mattn/go-sqlite3 -DSQLITE_CORE
 #cgo linux LDFLAGS: -lm
-#include "sqlite3.h"
+#include "sqlite3-binding.h"
 #include "sqlite-vec.h"
 
 int assistclaw_sqlite3_vec_init(sqlite3 *db, char **pzErrMsg, const sqlite3_api_routines *pApi) {
@@ -18,20 +18,20 @@ import "C"
 
 import (
 	"fmt"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// Force reference to ensure C symbols from go-sqlite3 are linked
-// var _ *sqlite3.SQLiteConn
-
 // AutoRegisterVec automatically registers the sqlite-vec extension on all
 // future go-sqlite3 connections created in this process.
 func AutoRegisterVec() {
-	fmt.Println("[assistclaw] Auto-registering sqlite-vec extension...")
+	fmt.Fprintf(os.Stderr, "[assistclaw] Auto-registering sqlite-vec extension...\n")
 	rc := C.assistclaw_sqlite3_vec_auto_with_rc()
 	if rc != 0 {
-		panic(fmt.Sprintf("failed to auto-register sqlite-vec: rc=%d", rc))
+		fmt.Fprintf(os.Stderr, "[assistclaw] CRITICAL: failed to auto-register sqlite-vec: rc=%d\n", rc)
+		// We don't panic here to let the app try to start, but it will likely fail later.
+	} else {
+		fmt.Fprintf(os.Stderr, "[assistclaw] sqlite-vec auto-registration successful\n")
 	}
-	fmt.Println("[assistclaw] sqlite-vec auto-registration successful")
 }
