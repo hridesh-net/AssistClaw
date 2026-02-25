@@ -41,7 +41,9 @@ func New(dbPath string, sessionID string, dmMode string, allowFrom []string, log
 
 	dbLog := waLog.Stdout("Database", waLevel, true)
 	// Context, Dialect, DSN, Logger
-	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath), dbLog)
+	// Add WAL mode and optimized synchronous settings for stability
+	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=on", dbPath)
+	container, err := sqlstore.New(context.Background(), "sqlite3", dsn, dbLog)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +55,7 @@ func New(dbPath string, sessionID string, dmMode string, allowFrom []string, log
 
 	clientLog := waLog.Stdout("WhatsApp", waLevel, true)
 	client := whatsmeow.NewClient(deviceStore, clientLog)
+
 	return &Channel{
 		client:    client,
 		sessionID: sessionID,
@@ -172,6 +175,10 @@ func (c *Channel) Connect(ctx context.Context) error {
 	fmt.Fprintln(os.Stderr, strings.Repeat("*", 40)+"\n")
 	log.Println("channels/whatsapp: connected and listening")
 	return nil
+}
+
+func (c *Channel) IsLinked() bool {
+	return c.client.Store.ID != nil
 }
 
 func (c *Channel) Stop() error {
