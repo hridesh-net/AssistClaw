@@ -24,8 +24,20 @@ type Channel struct {
 	allowFrom []string
 }
 
-func New(dbPath string, sessionID string, dmMode string, allowFrom []string) (*Channel, error) {
-	dbLog := waLog.Stdout("Database", "DEBUG", true)
+func New(dbPath string, sessionID string, dmMode string, allowFrom []string, logLevel string) (*Channel, error) {
+	waLevel := "WARN"
+	switch strings.ToLower(logLevel) {
+	case "debug":
+		waLevel = "DEBUG"
+	case "info":
+		waLevel = "INFO"
+	case "warn":
+		waLevel = "WARN"
+	case "error":
+		waLevel = "ERROR"
+	}
+
+	dbLog := waLog.Stdout("Database", waLevel, true)
 	// Context, Dialect, DSN, Logger
 	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath), dbLog)
 	if err != nil {
@@ -37,7 +49,8 @@ func New(dbPath string, sessionID string, dmMode string, allowFrom []string) (*C
 		return nil, err
 	}
 
-	client := whatsmeow.NewClient(deviceStore, dbLog)
+	clientLog := waLog.Stdout("WhatsApp", waLevel, true)
+	client := whatsmeow.NewClient(deviceStore, clientLog)
 	return &Channel{
 		client:    client,
 		sessionID: sessionID,

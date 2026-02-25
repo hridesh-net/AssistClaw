@@ -42,7 +42,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 )
 
-const version = "v3.0.0"
+const version = "v3.0.1"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -582,7 +582,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 	if cfg.Channels.WhatsApp != nil {
-		wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID, cfg.Channels.WhatsApp.DMMode, cfg.Channels.WhatsApp.AllowFrom)
+		wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID, cfg.Channels.WhatsApp.DMMode, cfg.Channels.WhatsApp.AllowFrom, gf.logLevel)
 		if err == nil {
 			go wa.Start(ctx, runner.HandleChannelMessage)
 			log.Info("WhatsApp channel active")
@@ -624,10 +624,12 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 }
 
 func buildLogger(level string) *zap.Logger {
-	lvl := zap.InfoLevel
+	lvl := zap.WarnLevel
 	switch strings.ToLower(level) {
 	case "debug":
 		lvl = zap.DebugLevel
+	case "info":
+		lvl = zap.InfoLevel
 	case "warn":
 		lvl = zap.WarnLevel
 	case "error":

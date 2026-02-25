@@ -953,10 +953,11 @@ func runOnboarding(configPath string) (bool, error) {
 				if home, err := os.UserHomeDir(); err == nil {
 					dbPath = filepath.Join(home, ".assistclaw", "whatsapp.db")
 				}
-				wa, err := whatsapp.New(dbPath, waSessionID, waDMMode, allowFrom)
+				wa, err := whatsapp.New(dbPath, waSessionID, waDMMode, allowFrom, "INFO")
 				if err == nil {
 					fmt.Println("\n--- WhatsApp Pairing ---")
 					_ = wa.Connect(context.Background())
+					_ = wa.Stop() // Terminate onboarding connection to avoid conflict with agent
 					fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ WhatsApp Linked! Continuing setup..."))
 				} else {
 					fmt.Printf("Error initializing WhatsApp for pairing: %v\n", err)
