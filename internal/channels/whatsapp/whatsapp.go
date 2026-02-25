@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/mdp/qrterminal/v3"
@@ -87,10 +88,21 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 		}
 		for evt := range qrChan {
 			if evt.Event == "code" {
-				fmt.Println("\n--- WHATSAPP LOGIN REQUIRED ---")
-				qrterminal.Generate(evt.Code, qrterminal.L, os.Stdout)
-				fmt.Println("\nTo login, scan the code above with your phone.")
-				fmt.Println("--------------------------------\n")
+				fmt.Fprintln(os.Stderr, "\n"+strings.Repeat("=", 40))
+				fmt.Fprintln(os.Stderr, "WHATSAPP LOGIN REQUIRED")
+				fmt.Fprintln(os.Stderr, strings.Repeat("=", 40))
+
+				// Generate terminal QR code
+				qrterminal.Generate(evt.Code, qrterminal.L, os.Stderr)
+
+				fmt.Fprintln(os.Stderr, "\n1. Open WhatsApp on your phone.")
+				fmt.Fprintln(os.Stderr, "2. Tap Menu or Settings and select Linked Devices.")
+				fmt.Fprintln(os.Stderr, "3. Tap on Link a Device.")
+				fmt.Fprintln(os.Stderr, "4. Point your phone to this screen to capture the code.")
+				fmt.Fprintln(os.Stderr, strings.Repeat("=", 40)+"\n")
+
+				// Fallback log for environments where SSH/Terminal might mangle the QR
+				log.Printf("WhatsApp QR Raw Code (Backup): %s", evt.Code)
 			} else {
 				log.Printf("WhatsApp login event: %s", evt.Event)
 			}
