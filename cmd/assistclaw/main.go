@@ -42,7 +42,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 )
 
-const version = "v1.0.30"
+const version = "v3.0.0"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -558,7 +558,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	// Start Messaging Channels
 	activeChannels := 0
 	if cfg.Channels.Telegram != nil {
-		tg, err := telegram.New(cfg.Channels.Telegram.BotToken)
+		tg, err := telegram.New(cfg.Channels.Telegram.BotToken, cfg.Channels.Telegram.DMMode, cfg.Channels.Telegram.AllowFrom)
 		if err == nil {
 			go tg.Start(ctx, runner.HandleChannelMessage)
 			log.Info("Telegram channel active")
@@ -566,7 +566,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 	if cfg.Channels.Discord != nil {
-		dc, err := discord.New(cfg.Channels.Discord.BotToken)
+		dc, err := discord.New(cfg.Channels.Discord.BotToken, cfg.Channels.Discord.DMMode, cfg.Channels.Discord.AllowFrom)
 		if err == nil {
 			go dc.Start(ctx, runner.HandleChannelMessage)
 			log.Info("Discord channel active")
@@ -574,7 +574,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 	if cfg.Channels.Slack != nil {
-		sl, err := slack.New(cfg.Channels.Slack.BotToken, cfg.Channels.Slack.AppToken)
+		sl, err := slack.New(cfg.Channels.Slack.BotToken, cfg.Channels.Slack.AppToken, cfg.Channels.Slack.DMMode, cfg.Channels.Slack.AllowFrom)
 		if err == nil {
 			go sl.Start(ctx, runner.HandleChannelMessage)
 			log.Info("Slack channel active")
@@ -582,7 +582,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 	if cfg.Channels.WhatsApp != nil {
-		wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID)
+		wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID, cfg.Channels.WhatsApp.DMMode, cfg.Channels.WhatsApp.AllowFrom)
 		if err == nil {
 			go wa.Start(ctx, runner.HandleChannelMessage)
 			log.Info("WhatsApp channel active")

@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/skills"
 	"github.com/charmbracelet/huh"
@@ -306,7 +309,18 @@ func runOnboarding(configPath string) (bool, error) {
 		tsMode           string = "off"
 		selectedChannels []string
 		tgBotToken       string
+		tgDMMode         string = "pairing"
+		tgAllowFromRaw   string
+		dcBotToken       string
+		dcDMMode         string = "pairing"
+		dcAllowFromRaw   string
+		slBotToken       string
+		slAppToken       string
+		slDMMode         string = "pairing"
+		slAllowFromRaw   string
 		waSessionID      string
+		waDMMode         string = "pairing"
+		waAllowFromRaw   string
 		selectedSkills   []string
 		codingModel      string
 		visionModel      string
@@ -596,16 +610,39 @@ func runOnboarding(configPath string) (bool, error) {
 		if existing.Channels.Telegram != nil {
 			selectedChannels = append(selectedChannels, "telegram")
 			tgBotToken = existing.Channels.Telegram.BotToken
+			tgDMMode = existing.Channels.Telegram.DMMode
+			if tgDMMode == "" {
+				tgDMMode = "pairing"
+			}
+			tgAllowFromRaw = strings.Join(existing.Channels.Telegram.AllowFrom, ", ")
 		}
 		if existing.Channels.WhatsApp != nil {
 			selectedChannels = append(selectedChannels, "whatsapp")
 			waSessionID = existing.Channels.WhatsApp.SessionID
+			waDMMode = existing.Channels.WhatsApp.DMMode
+			if waDMMode == "" {
+				waDMMode = "pairing"
+			}
+			waAllowFromRaw = strings.Join(existing.Channels.WhatsApp.AllowFrom, ", ")
 		}
 		if existing.Channels.Discord != nil {
 			selectedChannels = append(selectedChannels, "discord")
+			dcBotToken = existing.Channels.Discord.BotToken
+			dcDMMode = existing.Channels.Discord.DMMode
+			if dcDMMode == "" {
+				dcDMMode = "pairing"
+			}
+			dcAllowFromRaw = strings.Join(existing.Channels.Discord.AllowFrom, ", ")
 		}
 		if existing.Channels.Slack != nil {
 			selectedChannels = append(selectedChannels, "slack")
+			slBotToken = existing.Channels.Slack.BotToken
+			slAppToken = existing.Channels.Slack.AppToken
+			slDMMode = existing.Channels.Slack.DMMode
+			if slDMMode == "" {
+				slDMMode = "pairing"
+			}
+			slAllowFromRaw = strings.Join(existing.Channels.Slack.AllowFrom, ", ")
 		}
 
 		// Pre-populate Skills
@@ -767,6 +804,11 @@ func runOnboarding(configPath string) (bool, error) {
 	formGateway := huh.NewForm(huh.NewGroup(gatewayFields...)).WithTheme(theme)
 	_ = formGateway.Run()
 
+	if gwToken == "" {
+		gwToken = randomToken(24)
+		fmt.Printf("\n🔑 No security token provided. Generated a secure one for you:\n   %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true).Render(gwToken))
+	}
+
 	if gwMode == "tailscale" {
 		formTS := huh.NewForm(
 			huh.NewGroup(
@@ -801,7 +843,68 @@ func runOnboarding(configPath string) (bool, error) {
 	for _, ch := range selectedChannels {
 		switch ch {
 		case "telegram":
-			_ = huh.NewForm(huh.NewGroup(huh.NewInput().Title("Telegram Token").Value(&tgBotToken))).Run()
+			_ = huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("Telegram Bot Token").
+					Value(&tgBotToken),
+				huh.NewSelect[string]().
+					Title("Telegram Security Mode").
+					Description("pairing: Approve new chatters. allowlist: Only whitelisted. open: Public.").
+					Options(
+						huh.NewOption("Pairing (Recommended)", "pairing"),
+						huh.NewOption("Allowlist only", "allowlist"),
+						huh.NewOption("Open (Public)", "open"),
+						huh.NewOption("Disabled", "disabled"),
+					).
+					Value(&tgDMMode),
+				huh.NewInput().
+					Title("Whitelisted Telegram IDs").
+					Description("Comma-separated (numeric IDs or @usernames). Only for Allowlist mode.").
+					Value(&tgAllowFromRaw),
+			)).WithTheme(theme).Run()
+		case "discord":
+			_ = huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("Discord Bot Token").
+					Value(&dcBotToken),
+				huh.NewSelect[string]().
+					Title("Discord Security Mode").
+					Description("pairing: Approve new chatters. allowlist: Only whitelisted. open: Public.").
+					Options(
+						huh.NewOption("Pairing (Recommended)", "pairing"),
+						huh.NewOption("Allowlist only", "allowlist"),
+						huh.NewOption("Open (Public)", "open"),
+						huh.NewOption("Disabled", "disabled"),
+					).
+					Value(&dcDMMode),
+				huh.NewInput().
+					Title("Whitelisted Discord IDs").
+					Description("Comma-separated numeric IDs. Only for Allowlist mode.").
+					Value(&dcAllowFromRaw),
+			)).WithTheme(theme).Run()
+		case "slack":
+			_ = huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("Slack Bot Token").
+					Value(&slBotToken),
+				huh.NewInput().
+					Title("Slack App Token").
+					Value(&slAppToken),
+				huh.NewSelect[string]().
+					Title("Slack Security Mode").
+					Description("pairing: Approve new chatters. allowlist: Only whitelisted. open: Public.").
+					Options(
+						huh.NewOption("Pairing (Recommended)", "pairing"),
+						huh.NewOption("Allowlist only", "allowlist"),
+						huh.NewOption("Open (Public)", "open"),
+						huh.NewOption("Disabled", "disabled"),
+					).
+					Value(&slDMMode),
+				huh.NewInput().
+					Title("Whitelisted Slack IDs").
+					Description("Comma-separated numeric IDs. Only for Allowlist mode.").
+					Value(&slAllowFromRaw),
+			)).WithTheme(theme).Run()
 		case "whatsapp":
 			waSessionID = "personal"
 			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("\n--- WhatsApp Integration ---"))
@@ -813,7 +916,52 @@ func runOnboarding(configPath string) (bool, error) {
 					Title("WhatsApp Session ID").
 					Description("A name for this session (e.g. 'personal')").
 					Value(&waSessionID),
+				huh.NewSelect[string]().
+					Title("WhatsApp Security Mode").
+					Description("pairing: Approve new chatters. allowlist: Only whitelisted. open: Public.").
+					Options(
+						huh.NewOption("Pairing (Recommended)", "pairing"),
+						huh.NewOption("Allowlist only", "allowlist"),
+						huh.NewOption("Open (Public)", "open"),
+						huh.NewOption("Disabled", "disabled"),
+					).
+					Value(&waDMMode),
+				huh.NewInput().
+					Title("Whitelisted Numbers").
+					Description("Comma-separated (e.g. '1234567890, 9876543210'). Only for Allowlist mode.").
+					Value(&waAllowFromRaw),
 			)).WithTheme(theme).Run()
+
+			var linkNow bool
+			_ = huh.NewForm(huh.NewGroup(
+				huh.NewConfirm().
+					Title("Link WhatsApp now (QR code)?").
+					Description("Recommended: Scan the QR code now to complete setup.").
+					Value(&linkNow),
+			)).WithTheme(theme).Run()
+
+			if linkNow {
+				parts := strings.Split(waAllowFromRaw, ",")
+				var allowFrom []string
+				for _, p := range parts {
+					p = strings.TrimSpace(p)
+					if p != "" {
+						allowFrom = append(allowFrom, p)
+					}
+				}
+				dbPath := filepath.Join(config.DefaultConfigPath(), "..", "whatsapp.db")
+				if home, err := os.UserHomeDir(); err == nil {
+					dbPath = filepath.Join(home, ".assistclaw", "whatsapp.db")
+				}
+				wa, err := whatsapp.New(dbPath, waSessionID, waDMMode, allowFrom)
+				if err == nil {
+					fmt.Println("\n--- WhatsApp Pairing ---")
+					_ = wa.Connect(context.Background())
+					fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ WhatsApp Linked! Continuing setup..."))
+				} else {
+					fmt.Printf("Error initializing WhatsApp for pairing: %v\n", err)
+				}
+			}
 		}
 	}
 
@@ -999,9 +1147,60 @@ func runOnboarding(configPath string) (bool, error) {
 			sb.WriteString(fmt.Sprintf("  %s:\n", ch))
 			if ch == "telegram" {
 				sb.WriteString(fmt.Sprintf("    bot_token: \"%s\"\n", tgBotToken))
+				sb.WriteString(fmt.Sprintf("    dm_mode: \"%s\"\n", tgDMMode))
+				if tgAllowFromRaw != "" {
+					sb.WriteString("    allow_from:\n")
+					parts := strings.Split(tgAllowFromRaw, ",")
+					for _, p := range parts {
+						p = strings.TrimSpace(p)
+						if p != "" {
+							sb.WriteString(fmt.Sprintf("      - \"%s\"\n", p))
+						}
+					}
+				}
+			}
+			if ch == "discord" {
+				sb.WriteString(fmt.Sprintf("    bot_token: \"%s\"\n", dcBotToken))
+				sb.WriteString(fmt.Sprintf("    dm_mode: \"%s\"\n", dcDMMode))
+				if dcAllowFromRaw != "" {
+					sb.WriteString("    allow_from:\n")
+					parts := strings.Split(dcAllowFromRaw, ",")
+					for _, p := range parts {
+						p = strings.TrimSpace(p)
+						if p != "" {
+							sb.WriteString(fmt.Sprintf("      - \"%s\"\n", p))
+						}
+					}
+				}
+			}
+			if ch == "slack" {
+				sb.WriteString(fmt.Sprintf("    bot_token: \"%s\"\n", slBotToken))
+				sb.WriteString(fmt.Sprintf("    app_token: \"%s\"\n", slAppToken))
+				sb.WriteString(fmt.Sprintf("    dm_mode: \"%s\"\n", slDMMode))
+				if slAllowFromRaw != "" {
+					sb.WriteString("    allow_from:\n")
+					parts := strings.Split(slAllowFromRaw, ",")
+					for _, p := range parts {
+						p = strings.TrimSpace(p)
+						if p != "" {
+							sb.WriteString(fmt.Sprintf("      - \"%s\"\n", p))
+						}
+					}
+				}
 			}
 			if ch == "whatsapp" {
 				sb.WriteString(fmt.Sprintf("    session_id: \"%s\"\n", waSessionID))
+				sb.WriteString(fmt.Sprintf("    dm_mode: \"%s\"\n", waDMMode))
+				if waAllowFromRaw != "" {
+					sb.WriteString("    allow_from:\n")
+					parts := strings.Split(waAllowFromRaw, ",")
+					for _, p := range parts {
+						p = strings.TrimSpace(p)
+						if p != "" {
+							sb.WriteString(fmt.Sprintf("      - \"%s\"\n", p))
+						}
+					}
+				}
 			}
 		}
 		sb.WriteString("\n")
@@ -1055,4 +1254,12 @@ func runOnboarding(configPath string) (bool, error) {
 	}
 
 	return startAgent, nil
+}
+
+func randomToken(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
 }

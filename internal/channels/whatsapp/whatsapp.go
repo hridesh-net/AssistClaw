@@ -20,9 +20,11 @@ import (
 type Channel struct {
 	client    *whatsmeow.Client
 	sessionID string
+	dmMode    string
+	allowFrom []string
 }
 
-func New(dbPath string, sessionID string) (*Channel, error) {
+func New(dbPath string, sessionID string, dmMode string, allowFrom []string) (*Channel, error) {
 	dbLog := waLog.Stdout("Database", "DEBUG", true)
 	// Context, Dialect, DSN, Logger
 	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath), dbLog)
@@ -39,6 +41,8 @@ func New(dbPath string, sessionID string) (*Channel, error) {
 	return &Channel{
 		client:    client,
 		sessionID: sessionID,
+		dmMode:    dmMode,
+		allowFrom: allowFrom,
 	}, nil
 }
 
@@ -54,6 +58,29 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 				return
 			}
 
+			sender := v.Info.Sender.String()
+			remoteJID := v.Info.Sender.ToNonAD().String()
+
+			// Enforce security policies
+			if c.dmMode == "disabled" {
+				return
+			}
+
+			if c.dmMode == "allowlist" {
+				allowed := false
+				for _, allowedNum := range c.allowFrom {
+					// Check if sender contains the allowed number (e.g. 1234567890 in 1234567890@s.whatsapp.net)
+					if strings.Contains(sender, allowedNum) || strings.Contains(remoteJID, allowedNum) {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					log.Printf("WhatsApp: blocked message from unauthorized sender: %s", sender)
+					return
+				}
+			}
+
 			txt := v.Message.GetConversation()
 			if txt == "" {
 				return
@@ -61,7 +88,7 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 
 			msg := channels.Message{
 				ChannelID: c.Name(),
-				SessionID: v.Info.Sender.String(),
+				SessionID: sender,
 				Text:      txt,
 			}
 
@@ -79,6 +106,10 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 		}
 	})
 
+	return c.Connect(ctx)
+}
+
+func (c *Channel) Connect(ctx context.Context) error {
 	if c.client.Store.ID == nil {
 		// New login needed
 		qrChan, _ := c.client.GetQRChannel(ctx)
@@ -105,6 +136,9 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 				log.Printf("WhatsApp QR Raw Code (Backup): %s", evt.Code)
 			} else {
 				log.Printf("WhatsApp login event: %s", evt.Event)
+				if evt.Event == "success" || evt.Event == "timeout" {
+					break
+				}
 			}
 		}
 	} else {

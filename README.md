@@ -13,6 +13,15 @@ AssistClaw is a polyglot, production-grade AI assistant system written in Go. It
 - **Browser Automation**: True headless browsing and page screenshot capability using `chromedp`.
 - **Background Cron**: Schedule the agent to execute autonomous jobs periodically.
 
+## Documentation
+
+For a comprehensive understanding of the system architecture, logic, and how to replicate it, please refer to our **[Master Guide](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/master_guide.md)**.
+
+Additionally, explore our technical deep-dive series:
+- **[The Autonomous Execution Loop](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/execution-loop.md)**
+- **[Dynamic Skills & Autonomous Tools](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/skills-and-tools.md)**
+- **[Providers, Routing & Channels](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/providers-and-routing.md)**
+
 ---
 
 ### Automated Installation (Linux / macOS)
@@ -106,28 +115,32 @@ assistclaw agent --log-level debug
 
 ## Uninstallation
 
-To completely remove AssistClaw from your system, follow these steps to delete the binary and your local configuration.
+To completely remove AssistClaw from your system, follow these steps to delete the binary and your local state data.
 
-### 1. Identify and Remove Binary
-Find where the executable is located:
+### 1. Remove Executable
+Find where the AssistClaw binary is located:
 ```bash
 which assistclaw
 ```
-Then remove it (you may need `sudo` if it's in `/usr/local/bin`):
+Remove the file (use `sudo` if installed in a system directory like `/usr/local/bin`):
 ```bash
-# Example for Linux/macOS
-rm $(which assistclaw)  
-# OR explicitly:
-rm ~/.local/bin/assistclaw
-sudo rm /usr/local/bin/assistclaw
+# macOS / Linux
+rm $(which assistclaw)
 ```
 
 ### 2. Wipe Configuration & State
-Delete the hidden workspace directory. **WARNING**: This permanently deletes your conversation history and memories.
+Delete the state directory. **WARNING**: This action is irreversible and will permanently delete your conversation history, memories, and saved tools.
+
+By default, data is stored in `~/.assistclaw`. If you have configured a custom path via `ASSISTCLAW_STATE_DIR`, remove that directory instead.
+
 ```bash
-# Linux / macOS
+# macOS / Linux
 rm -rf ~/.assistclaw
 
 # Windows (PowerShell)
 Remove-Item -Recurse -Force "$env:USERPROFILE\.assistclaw"
 ```
+
+---
+
+*AssistClaw — The Autonomous Edge Intelligence System.*

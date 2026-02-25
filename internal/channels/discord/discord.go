@@ -13,10 +13,12 @@ import (
 
 // Channel implements channels.Channel for Discord
 type Channel struct {
-	session *discordgo.Session
+	session   *discordgo.Session
+	dmMode    string
+	allowFrom []string
 }
 
-func New(token string) (*Channel, error) {
+func New(token string, dmMode string, allowFrom []string) (*Channel, error) {
 	if token == "" {
 		return nil, fmt.Errorf("discord bot token is required")
 	}
@@ -28,7 +30,11 @@ func New(token string) (*Channel, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Channel{session: dg}, nil
+	return &Channel{
+		session:   dg,
+		dmMode:    dmMode,
+		allowFrom: allowFrom,
+	}, nil
 }
 
 func (c *Channel) Name() string {
@@ -43,6 +49,26 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 		}
 
 		sessionID := fmt.Sprintf("discord:%s:%s", m.GuildID, m.ChannelID)
+		authorID := m.Author.ID
+
+		// Enforce security policies
+		if c.dmMode == "disabled" {
+			return
+		}
+
+		if c.dmMode == "allowlist" {
+			allowed := false
+			for _, allowedNum := range c.allowFrom {
+				if authorID == allowedNum {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				log.Printf("Discord: blocked message from unauthorized sender: %s", authorID)
+				return
+			}
+		}
 
 		s.ChannelTyping(m.ChannelID)
 

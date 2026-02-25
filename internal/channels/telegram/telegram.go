@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -12,11 +13,13 @@ import (
 
 // Channel implements channels.Channel for Telegram
 type Channel struct {
-	bot    *tgbotapi.BotAPI
-	stopCh chan struct{}
+	bot       *tgbotapi.BotAPI
+	stopCh    chan struct{}
+	dmMode    string
+	allowFrom []string
 }
 
-func New(apiKey string) (*Channel, error) {
+func New(apiKey string, dmMode string, allowFrom []string) (*Channel, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("telegram API key is required")
 	}
@@ -25,8 +28,10 @@ func New(apiKey string) (*Channel, error) {
 		return nil, err
 	}
 	return &Channel{
-		bot:    bot,
-		stopCh: make(chan struct{}),
+		bot:       bot,
+		stopCh:    make(chan struct{}),
+		dmMode:    dmMode,
+		allowFrom: allowFrom,
 	}, nil
 }
 
@@ -54,6 +59,28 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 
 				chatID := update.Message.Chat.ID
 				sessionID := fmt.Sprintf("tg:%d", chatID)
+				senderID := fmt.Sprintf("%d", update.Message.From.ID)
+				username := update.Message.From.UserName
+
+				// Enforce security policies
+				if c.dmMode == "disabled" {
+					continue
+				}
+
+				if c.dmMode == "allowlist" {
+					allowed := false
+					for _, allowedNum := range c.allowFrom {
+						// Check if sender ID or username matches
+						if senderID == allowedNum || (username != "" && username == strings.TrimPrefix(allowedNum, "@")) {
+							allowed = true
+							break
+						}
+					}
+					if !allowed {
+						log.Printf("Telegram: blocked message from unauthorized sender: %s (@%s)", senderID, username)
+						continue
+					}
+				}
 
 				// Send typing indicator
 				c.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping))

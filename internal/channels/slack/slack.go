@@ -14,11 +14,13 @@ import (
 
 // Channel implements channels.Channel for Slack using SocketMode
 type Channel struct {
-	client *socketmode.Client
-	stopCh chan struct{}
+	client    *socketmode.Client
+	stopCh    chan struct{}
+	dmMode    string
+	allowFrom []string
 }
 
-func New(botToken, appToken string) (*Channel, error) {
+func New(botToken, appToken string, dmMode string, allowFrom []string) (*Channel, error) {
 	if botToken == "" || appToken == "" {
 		return nil, fmt.Errorf("slack bot token and app token are required")
 	}
@@ -31,8 +33,10 @@ func New(botToken, appToken string) (*Channel, error) {
 	client := socketmode.New(api)
 
 	return &Channel{
-		client: client,
-		stopCh: make(chan struct{}),
+		client:    client,
+		stopCh:    make(chan struct{}),
+		dmMode:    dmMode,
+		allowFrom: allowFrom,
 	}, nil
 }
 
@@ -70,6 +74,26 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 							sessionID := fmt.Sprintf("slack:%s:%s", ev.Channel, ev.ThreadTimeStamp)
 							if ev.ThreadTimeStamp == "" {
 								sessionID = fmt.Sprintf("slack:%s", ev.Channel)
+							}
+							user := ev.User
+
+							// Enforce security policies
+							if c.dmMode == "disabled" {
+								break
+							}
+
+							if c.dmMode == "allowlist" {
+								allowed := false
+								for _, allowedNum := range c.allowFrom {
+									if user == allowedNum {
+										allowed = true
+										break
+									}
+								}
+								if !allowed {
+									log.Printf("Slack: blocked message from unauthorized user: %s", user)
+									break
+								}
 							}
 
 							msg := channels.Message{

@@ -226,20 +226,28 @@ type ChannelsConfig struct {
 }
 
 type WhatsAppConfig struct {
-	SessionID string `yaml:"session_id"`
+	SessionID string   `yaml:"session_id"`
+	DMMode    string   `yaml:"dm_mode"`    // open, pairing, allowlist, disabled
+	AllowFrom []string `yaml:"allow_from"` // Whitelisted numbers
 }
 
 type TelegramConfig struct {
-	BotToken string `yaml:"bot_token"`
+	BotToken  string   `yaml:"bot_token"`
+	DMMode    string   `yaml:"dm_mode"`    // open, pairing, allowlist, disabled
+	AllowFrom []string `yaml:"allow_from"` // Whitelisted IDs/Usernames
 }
 
 type DiscordConfig struct {
-	BotToken string `yaml:"bot_token"`
+	BotToken  string   `yaml:"bot_token"`
+	DMMode    string   `yaml:"dm_mode"`    // open, pairing, allowlist, disabled
+	AllowFrom []string `yaml:"allow_from"` // Whitelisted IDs/Usernames
 }
 
 type SlackConfig struct {
-	BotToken string `yaml:"bot_token"`
-	AppToken string `yaml:"app_token"`
+	BotToken  string   `yaml:"bot_token"`
+	AppToken  string   `yaml:"app_token"`
+	DMMode    string   `yaml:"dm_mode"`    // open, pairing, allowlist, disabled
+	AllowFrom []string `yaml:"allow_from"` // Whitelisted IDs/Usernames
 }
 
 // ─────────────────────────────────────────────
@@ -319,8 +327,12 @@ func LoadFromEnv() *Config {
 // applyDefaults fills in default values for missing configuration.
 func applyDefaults(cfg *Config) {
 	if cfg.StateDir == "" {
-		home, _ := os.UserHomeDir()
-		cfg.StateDir = filepath.Join(home, ".assistclaw")
+		if env := os.Getenv("ASSISTCLAW_STATE_DIR"); env != "" {
+			cfg.StateDir = env
+		} else {
+			home, _ := os.UserHomeDir()
+			cfg.StateDir = filepath.Join(home, ".assistclaw")
+		}
 	}
 	if cfg.Gateway.Host == "" {
 		cfg.Gateway.Host = "127.0.0.1"
