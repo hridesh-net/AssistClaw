@@ -42,7 +42,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 )
 
-const version = "v3.0.2"
+const version = "v3.1.0"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -85,6 +85,10 @@ func rootCmd() *cobra.Command {
 
 	root.AddCommand(
 		agentCmd(flags),
+		startCmd(flags),
+		stopCmd(flags),
+		statusCmd(flags),
+		restartCmd(flags),
 		providersCmd(flags),
 		embeddingsCmd(flags),
 		memoryCmd(flags),
@@ -123,6 +127,89 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&sessionID, "session", "", "Resume an existing session by ID")
 	cmd.Flags().BoolVarP(&serve, "serve", "s", false, "Run in background mode with Gateway and messaging channels active")
 	return cmd
+}
+
+// ─────────────────────────────────────────────
+// start / stop / status / restart commands
+// ─────────────────────────────────────────────
+
+func startCmd(gf *globalFlags) *cobra.Command {
+	var daemon bool
+	cmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start AssistClaw in background mode",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if daemon {
+				return Detach("start")
+			}
+			return runAgent(gf, gf.configPath, "", "", "", true, false)
+		},
+	}
+	cmd.Flags().BoolVarP(&daemon, "daemon", "d", false, "Run detached in the background")
+	return cmd
+}
+
+func stopCmd(gf *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the background AssistClaw process",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log := buildLogger(gf.logLevel)
+			cfg, err := loadConfig(gf.configPath, log)
+			if err != nil {
+				return err
+			}
+			pidFile := PidFile(cfg.StateDir)
+			pid, err := ReadPID(pidFile)
+			if err != nil {
+				return fmt.Errorf("agent not running (no PID file)")
+			}
+			if !CheckPID(pid) {
+				_ = os.Remove(pidFile)
+				return fmt.Errorf("agent not running (stale PID file)")
+			}
+			process, _ := os.FindProcess(pid)
+			if err := process.Signal(syscall.SIGTERM); err != nil {
+				return fmt.Errorf("failed to stop agent: %w", err)
+			}
+			fmt.Printf("Stopping AssistClaw (PID: %d)...\n", pid)
+			_ = os.Remove(pidFile)
+			return nil
+		},
+	}
+}
+
+func statusCmd(gf *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Check the status of the AssistClaw process",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log := buildLogger(gf.logLevel)
+			cfg, err := loadConfig(gf.configPath, log)
+			if err != nil {
+				return err
+			}
+			pid, err := ReadPID(PidFile(cfg.StateDir))
+			if err != nil || !CheckPID(pid) {
+				fmt.Println("AssistClaw is NOT running.")
+				return nil
+			}
+			fmt.Printf("AssistClaw is RUNNING (PID: %d)\n", pid)
+			return nil
+		},
+	}
+}
+
+func restartCmd(gf *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the background AssistClaw process",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = stopCmd(gf).RunE(cmd, args)
+			time.Sleep(1 * time.Second)
+			return startCmd(gf).RunE(cmd, args)
+		},
+	}
 }
 
 // ─────────────────────────────────────────────
@@ -592,9 +679,20 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 
 	// If --serve is active, start the Gateway too and wait
 	if serve {
+		pidFile := PidFile(cfg.StateDir)
+		if oldPid, err := ReadPID(pidFile); err == nil && CheckPID(oldPid) {
+			return fmt.Errorf("AssistClaw is already running (PID: %d). Stop it first with 'assistclaw stop'.", oldPid)
+		}
+
+		if err := WritePID(pidFile); err != nil {
+			log.Warn("failed to write PID file", zap.Error(err))
+		}
+		defer os.Remove(pidFile)
+
 		log.Info("Background mode active (v3 core engine)",
 			zap.Bool("gateway", true),
 			zap.Int("channels", activeChannels),
+			zap.Int("pid", os.Getpid()),
 		)
 
 		srv := gateway.NewServer(cfg.Gateway.Port)

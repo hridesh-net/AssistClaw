@@ -53,8 +53,8 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 				return err
 			}
 			if shouldStart {
-				fmt.Println("\n🚀 Starting agent as requested...")
-				return runAgent(gf, path, "", "", "", true, false)
+				fmt.Println("\n🚀 Starting AssistClaw in background mode...")
+				return Detach("start")
 			}
 			return nil
 		},
