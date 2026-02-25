@@ -85,8 +85,11 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 		}
 		for evt := range qrChan {
 			if evt.Event == "code" {
-				log.Printf("WhatsApp QR Code: %s", evt.Code)
-				log.Println("Scan this code with your phone to login.")
+				fmt.Println("\n--- WHATSAPP LOGIN REQUIRED ---")
+				fmt.Printf("WhatsApp QR Code: %s\n", evt.Code)
+				fmt.Println("To login, visit https://web.whatsapp.com and scan this code,")
+				fmt.Println("or use a QR code generator for: " + evt.Code)
+				fmt.Println("--------------------------------\n")
 			} else {
 				log.Printf("WhatsApp login event: %s", evt.Event)
 			}

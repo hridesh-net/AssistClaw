@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -291,6 +292,8 @@ func runOnboarding(configPath string) error {
 		gwMode           string
 		gwPort           int    = 18790
 		gwHost           string = "127.0.0.1"
+		gwToken          string
+		tsMode           string = "off"
 		selectedChannels []string
 		tgBotToken       string
 		waSessionID      string
@@ -568,6 +571,8 @@ func runOnboarding(configPath string) error {
 		if existing.Gateway.Port != 0 {
 			gwPort = existing.Gateway.Port
 		}
+		gwToken = existing.Gateway.Token
+		tsMode = existing.Gateway.Tailscale.Mode
 		for _, r := range existing.Routing.Rules {
 			if r.Task == "coding" {
 				codingModel = r.Model
@@ -723,19 +728,50 @@ func runOnboarding(configPath string) error {
 	}
 
 	// Phases 3-5: Gateway, Channels, Skills (simplified for brevity)
-	formGateway := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Remote Access Mode").
-				Options(
-					huh.NewOption("Local Only", "loopback"),
-					huh.NewOption("Local Network (LAN)", "lan"),
-					huh.NewOption("Tailscale", "tailscale"),
-				).
-				Value(&gwMode),
-		),
-	).WithTheme(theme)
+	var gatewayFields []huh.Field
+	gatewayFields = append(gatewayFields,
+		huh.NewSelect[string]().
+			Title("Remote Access Mode").
+			Options(
+				huh.NewOption("Local Only (127.0.0.1)", "loopback"),
+				huh.NewOption("Local Network (LAN - 0.0.0.0)", "lan"),
+				huh.NewOption("Tailscale (Secure VPN)", "tailscale"),
+			).
+			Value(&gwMode),
+		huh.NewInput().Title("Gateway Host").Value(&gwHost),
+		func() huh.Field {
+			portStr := fmt.Sprint(gwPort)
+			return huh.NewInput().Title("Gateway Port").Value(&portStr).Validate(func(s string) error {
+				var p int
+				_, err := fmt.Sscan(s, &p)
+				if err != nil || p < 1 || p > 65535 {
+					return fmt.Errorf("invalid port")
+				}
+				gwPort = p
+				return nil
+			})
+		}(),
+		huh.NewInput().Title("Security Token").Description("Password to protect your Gateway API. Leave empty for none.").Value(&gwToken),
+	)
+
+	formGateway := huh.NewForm(huh.NewGroup(gatewayFields...)).WithTheme(theme)
 	_ = formGateway.Run()
+
+	if gwMode == "tailscale" {
+		formTS := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Tailscale Mode").
+					Options(
+						huh.NewOption("Off", "off"),
+						huh.NewOption("Serve (Local Tailnet)", "serve"),
+						huh.NewOption("Funnel (Public Internet via Tailscale)", "funnel"),
+					).
+					Value(&tsMode),
+			),
+		).WithTheme(theme)
+		_ = formTS.Run()
+	}
 
 	formChannels := huh.NewForm(
 		huh.NewGroup(
@@ -757,8 +793,17 @@ func runOnboarding(configPath string) error {
 		case "telegram":
 			_ = huh.NewForm(huh.NewGroup(huh.NewInput().Title("Telegram Token").Value(&tgBotToken))).Run()
 		case "whatsapp":
-			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("Note: WhatsApp requires scanning a QR code in the terminal logs on first startup."))
-			waSessionID = "default"
+			waSessionID = "personal"
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("\n--- WhatsApp Integration ---"))
+			fmt.Println("AssistClaw acts as a standalone WhatsApp account.")
+			fmt.Println("You will need to scan a QR code using 'Linked Devices' on your phone.")
+
+			_ = huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("WhatsApp Session ID").
+					Description("A name for this session (e.g. 'personal')").
+					Value(&waSessionID),
+			)).WithTheme(theme).Run()
 		}
 	}
 
@@ -818,12 +863,56 @@ func runOnboarding(configPath string) error {
 	).WithTheme(theme)
 	_ = formSkills.Run()
 
+	// Handle installation for missing dependencies
+	for _, name := range selectedSkills {
+		s, ok := skillReg.Get(name)
+		if !ok {
+			// Try to load it fully if discovered but not yet in registry
+			// Actually Discover doesn't put them in the registry, it just returns info.
+			// Let's reload everything from expected dirs to be sure.
+			_ = skillReg.LoadAll(context.Background(), "./skills")
+			if home, err := os.UserHomeDir(); err == nil {
+				_ = skillReg.LoadAll(context.Background(), filepath.Join(home, ".assistclaw", "skills"))
+			}
+			s, ok = skillReg.Get(name)
+		}
+
+		if ok {
+			met, missing := skillReg.CheckRequirements(s)
+			if !met && len(s.Metadata.OpenClaw.Install) > 0 {
+				var confirmInstall bool
+				huh.NewForm(huh.NewGroup(
+					huh.NewConfirm().
+						Title(fmt.Sprintf("Install dependencies for %s (%s)?", s.Name, strings.Join(missing, ", "))).
+						Description("This will run brew or go install as specified in the skill metadata.").
+						Value(&confirmInstall),
+				)).WithTheme(theme).Run()
+
+				if confirmInstall {
+					if err := skillReg.InstallDependency(context.Background(), s); err != nil {
+						fmt.Printf("Skill installation failed: %v\n", err)
+					} else {
+						fmt.Printf("✔ Successfully installed dependencies for %s\n", s.Name)
+					}
+				}
+			}
+		}
+	}
+
 	// Build the YAML
 	var sb strings.Builder
 	sb.WriteString("# AssistClaw Configuration\nversion: 1\n\n")
 
 	sb.WriteString("gateway:\n")
-	sb.WriteString(fmt.Sprintf("  host: \"%s\"\n  port: %d\n  bind: \"%s\"\n\n", gwHost, gwPort, gwMode))
+	sb.WriteString(fmt.Sprintf("  host: \"%s\"\n  port: %d\n  bind: \"%s\"\n", gwHost, gwPort, gwMode))
+	if gwToken != "" {
+		sb.WriteString(fmt.Sprintf("  token: \"%s\"\n", gwToken))
+	}
+	if gwMode == "tailscale" {
+		sb.WriteString("  tailscale:\n")
+		sb.WriteString(fmt.Sprintf("    mode: \"%s\"\n", tsMode))
+	}
+	sb.WriteString("\n")
 
 	sb.WriteString("agent:\n  max_iterations: 64\n")
 	if len(selectedSkills) > 0 {
@@ -936,6 +1025,10 @@ func runOnboarding(configPath string) error {
 	_ = os.MkdirAll(filepath.Dir(configPath), 0o755)
 	_ = os.WriteFile(configPath, []byte(tpl), 0o600)
 
-	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ Configuration saved! Run with: assistclaw agent"))
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ Configuration saved!"))
+	fmt.Println("\nNext Steps:")
+	fmt.Println("1. Run 'assistclaw agent' to start your assistant.")
+	fmt.Println("2. If you enabled WhatsApp, watch the terminal for a QR code on the first run.")
+	fmt.Println("3. Scan the code with your phone (Linked Devices) to authorize the agent.")
 	return nil
 }

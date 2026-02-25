@@ -76,4 +76,7 @@ type Registry interface {
 
 	// CheckRequirements verifies if the skill's dependencies are met.
 	CheckRequirements(skill *Skill) (bool, []string)
+
+	// InstallDependency attempts to install missing dependencies for a skill.
+	InstallDependency(ctx context.Context, skill *Skill) error
 }

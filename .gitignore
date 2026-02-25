@@ -45,7 +45,7 @@ assistclaw.yaml
 *.sqlite3
 .assistclaw/
 /memory/
-/skills/
+# /skills/
 /tools/
 /bin/
 /dist/

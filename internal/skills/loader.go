@@ -123,6 +123,61 @@ func (l *loader) BuildContext(activeSkillNames []string) string {
 	return sb.String()
 }
 
+func (l *loader) InstallDependency(ctx context.Context, skill *Skill) error {
+	if skill.Metadata.OpenClaw.Install == nil {
+		return fmt.Errorf("no installation instructions for skill %s", skill.Name)
+	}
+
+	// Try each installation method until one succeeds or we run out
+	var lastErr error
+	for _, inst := range skill.Metadata.OpenClaw.Install {
+		kind, _ := inst["kind"].(string)
+		label, _ := inst["label"].(string)
+
+		fmt.Printf("Attempting: %s...\n", label)
+
+		var cmd *exec.Cmd
+		switch kind {
+		case "brew":
+			formula, _ := inst["formula"].(string)
+			cmd = exec.CommandContext(ctx, "brew", "install", formula)
+		case "go":
+			module, _ := inst["module"].(string)
+			cmd = exec.CommandContext(ctx, "go", "install", module)
+		case "apt":
+			pkg, _ := inst["package"].(string)
+			cmd = exec.CommandContext(ctx, "sudo", "apt-get", "install", "-y", pkg)
+		case "python", "pip":
+			pkg, _ := inst["package"].(string)
+			cmd = exec.CommandContext(ctx, "pip", "install", pkg)
+		default:
+			continue
+		}
+
+		if cmd == nil {
+			continue
+		}
+
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			lastErr = err
+			fmt.Printf("Failed: %v\n", err)
+			continue
+		}
+
+		// Double check if requirement is met now
+		if met, _ := l.CheckRequirements(skill); met {
+			return nil
+		}
+	}
+
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("failed to install dependencies for %s using any available method", skill.Name)
+}
+
 func (l *loader) CheckRequirements(skill *Skill) (bool, []string) {
 	var missing []string
 

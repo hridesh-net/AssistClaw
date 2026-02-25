@@ -75,6 +75,7 @@ type Config struct {
 	EnablePlanning      bool
 	EnableReflection    bool
 	EmbeddingModel      string
+	SessionID           string // The persistent session ID for this runner
 }
 
 // Runner is the main agent execution loop.
@@ -83,6 +84,7 @@ type Runner struct {
 	provider provider.Provider
 	tools    *ToolRegistry
 	memory   *memory.Manager
+	working  *memory.WorkingMemory // Added working memory field
 	log      *zap.Logger
 
 	sessionID    string
@@ -101,13 +103,19 @@ func NewRunner(
 	if cfg.MaxIterations == 0 {
 		cfg.MaxIterations = 64
 	}
+	sessionID := cfg.SessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
+
 	return &Runner{
 		cfg:          cfg,
 		provider:     p,
 		tools:        tools,
 		memory:       mem,
+		working:      mem.GetWorking(sessionID),
 		log:          log,
-		sessionID:    uuid.New().String(),
+		sessionID:    sessionID,
 		workspaceDir: workspaceDir,
 	}
 }
@@ -116,7 +124,7 @@ func NewRunner(
 func (r *Runner) plan(ctx context.Context, query string) (string, error) {
 	prompt := fmt.Sprintf(`
 You are in the **PLANNING PHASE**. Your goal is to break down the user's request into a series of logical, executable milestones.
-Request: "%%s"
+Request: "%s"
 
 Please provide:
 1. A concise summary of the goal.
@@ -147,9 +155,9 @@ Do NOT call any tools yet. Just plan.
 func (r *Runner) reflect(ctx context.Context, query string, plan string) (string, bool, error) {
 	prompt := fmt.Sprintf(`
 You are in the **REFLECTION PHASE**. Your goal is to critique your own work.
-Original Request: "%%s"
+Original Request: "%s"
 Original Plan:
-%%s
+%s
 
 Review the conversation history above. Did you successfully achieve the goal? 
 Provide:
@@ -163,7 +171,7 @@ Format your response inside <reflexion> tags.
 	req := &provider.CompletionRequest{
 		Model:        r.cfg.Model,
 		SystemPrompt: r.buildSystemPrompt(ctx, query),
-		Messages:     r.convertMessages(r.memory.Working.Messages()), // Use helper
+		Messages:     r.convertMessages(r.working.Messages()), // Use helper
 		MaxTokens:    2048,
 	}
 	// Append the reflection prompt as the last user message
@@ -177,6 +185,20 @@ Format your response inside <reflexion> tags.
 	text := resp.Text()
 	success := strings.Contains(text, "SUCCESS")
 	return text, success, nil
+}
+
+// WithSession returns a new Runner clone for a specific session ID.
+func (r *Runner) WithSession(sessionID string) *Runner {
+	return &Runner{
+		cfg:          r.cfg,
+		provider:     r.provider,
+		tools:        r.tools,
+		memory:       r.memory,
+		working:      r.memory.GetWorking(sessionID),
+		log:          r.log,
+		sessionID:    sessionID,
+		workspaceDir: r.workspaceDir,
+	}
 }
 
 // SessionID returns the current session ID.
@@ -201,7 +223,7 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 		Content:   userMessage,
 		CreatedAt: time.Now(),
 	}
-	r.memory.Working.Append(userMsg)
+	r.working.Append(userMsg)
 	if err := r.memory.Episodic.Save(ctx, userMsg); err != nil {
 		r.log.Warn("episodic save failed", zap.Error(err))
 	}
@@ -223,7 +245,7 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 				ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleSystem,
 				Content: "[PLAN]\n" + plan, CreatedAt: time.Now(),
 			}
-			r.memory.Working.Append(planMsg)
+			r.working.Append(planMsg)
 		}
 	}
 
@@ -273,7 +295,7 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 			Tokens:    resp.Usage.CompletionTokens,
 			CreatedAt: time.Now(),
 		}
-		r.memory.Working.Append(assistantMsg)
+		r.working.Append(assistantMsg)
 		if err := r.memory.Episodic.Save(ctx, assistantMsg); err != nil {
 			r.log.Warn("episodic save failed", zap.Error(err))
 		}
@@ -281,7 +303,7 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 		// If no tool calls, we're done.
 		if len(toolCalls) == 0 || resp.FinishReason == provider.FinishReasonStop {
 			// Compact working memory if over budget.
-			r.memory.Working.Compact(r.memory.Working.TotalTokens())
+			r.working.Compact(r.working.TotalTokens())
 
 			return &RunResult{
 				SessionID:  r.sessionID,
@@ -302,7 +324,7 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 				Content:   result,
 				CreatedAt: time.Now(),
 			}
-			r.memory.Working.Append(toolResultMsg)
+			r.working.Append(toolResultMsg)
 			if err := r.memory.Episodic.Save(ctx, toolResultMsg); err != nil {
 				r.log.Warn("episodic save failed", zap.Error(err))
 			}
@@ -402,7 +424,7 @@ func (r *Runner) convertMessages(msgs []memory.Message) []provider.Message {
 func (r *Runner) buildRequestV3(ctx context.Context, query string) *provider.CompletionRequest {
 	return &provider.CompletionRequest{
 		Model:        r.cfg.Model,
-		Messages:     r.convertMessages(r.memory.Working.Messages()),
+		Messages:     r.convertMessages(r.working.Messages()),
 		SystemPrompt: r.buildSystemPrompt(ctx, query),
 		Tools:        r.tools.Definitions(),
 		MaxTokens:    8096,
@@ -414,7 +436,7 @@ func (r *Runner) buildRequestV3(ctx context.Context, query string) *provider.Com
 func (r *Runner) buildRequest() *provider.CompletionRequest {
 	return &provider.CompletionRequest{
 		Model:        r.cfg.Model,
-		Messages:     r.convertMessages(r.memory.Working.Messages()),
+		Messages:     r.convertMessages(r.working.Messages()),
 		SystemPrompt: r.buildSystemPrompt(context.TODO(), ""), // default/empty
 		Tools:        r.tools.Definitions(),
 		MaxTokens:    8096,
@@ -490,7 +512,7 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 		Content:   userMessage,
 		CreatedAt: time.Now(),
 	}
-	r.memory.Working.Append(userMsg)
+	r.working.Append(userMsg)
 	_ = r.memory.Episodic.Save(ctx, userMsg)
 
 	var totalUsage provider.TokenUsage
@@ -512,7 +534,7 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 				ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleSystem,
 				Content: "[PLAN]\n" + plan, CreatedAt: time.Now(),
 			}
-			r.memory.Working.Append(planMsg)
+			r.working.Append(planMsg)
 			handler.OnToken("\n<details>\n<summary>Execution Plan</summary>\n\n" + plan + "\n\n</details>\n\n")
 		}
 	}
@@ -563,7 +585,7 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 			Content: fullResponse.String(), Model: r.cfg.Model,
 			Tokens: totalUsage.CompletionTokens, CreatedAt: time.Now(),
 		}
-		r.memory.Working.Append(assistantMsg)
+		r.working.Append(assistantMsg)
 		_ = r.memory.Episodic.Save(ctx, assistantMsg)
 
 		if len(toolCalls) == 0 || finishReason == provider.FinishReasonStop {
@@ -584,7 +606,7 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 				ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
 				Content: result, CreatedAt: time.Now(),
 			}
-			r.memory.Working.Append(toolMsg)
+			r.working.Append(toolMsg)
 			_ = r.memory.Episodic.Save(ctx, toolMsg)
 		}
 	}
@@ -628,11 +650,14 @@ func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message,
 	// Note: In a production system, we would resolve a dedicated Runner instance per SessionID
 	// to maintain separate working memories. For now, we share the runner's session logic.
 
+	// Use a dedicated runner instance for this session ID to ensure isolation.
+	sessionRunner := r.WithSession(msg.SessionID)
+
 	handler := &channelStreamHandler{
 		replyFn: replyFn,
 	}
 
-	r.RunStream(ctx, msg.Text, handler)
+	sessionRunner.RunStream(ctx, msg.Text, handler)
 }
 
 // channelStreamHandler routes agent tokens back to a messaging channel.
@@ -661,8 +686,8 @@ func (h *channelStreamHandler) OnError(err error) {
 }
 
 func (r *Runner) shouldFlush() bool {
-	budget := r.memory.Working.MaxTokens()
-	current := r.memory.Working.TotalTokens()
+	budget := r.working.MaxTokens()
+	current := r.working.TotalTokens()
 	// Flush if we are at 80% capacity
 	return current > int(float64(budget)*0.8)
 }
@@ -676,7 +701,7 @@ func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
 		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleUser,
 		Content: prompt, CreatedAt: time.Now(),
 	}
-	r.memory.Working.Append(flushMsg)
+	r.working.Append(flushMsg)
 
 	req := r.buildRequest()
 	stream, err := r.provider.Stream(ctx, req)
@@ -699,7 +724,7 @@ func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
 		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
 		Content: resp.Text(), Model: r.cfg.Model, Tokens: resp.Usage.CompletionTokens, CreatedAt: time.Now(),
 	}
-	r.memory.Working.Append(assistantMsg)
+	r.working.Append(assistantMsg)
 
 	// Execute any tools (like write_file) requested during flush.
 	for _, tc := range resp.ToolCalls() {
@@ -708,7 +733,7 @@ func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
 			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
 			Content: result, CreatedAt: time.Now(),
 		}
-		r.memory.Working.Append(toolMsg)
+		r.working.Append(toolMsg)
 	}
 }
 
@@ -720,7 +745,7 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleUser,
 		Content: prompt, CreatedAt: time.Now(),
 	}
-	r.memory.Working.Append(flushMsg)
+	r.working.Append(flushMsg)
 
 	stream, err := r.provider.Stream(ctx, r.buildRequest())
 	if err != nil {
@@ -757,7 +782,7 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 		Content: fullResponse.String(), Model: r.cfg.Model,
 		Tokens: usage.CompletionTokens, CreatedAt: time.Now(),
 	}
-	r.memory.Working.Append(assistantMsg)
+	r.working.Append(assistantMsg)
 
 	for _, tc := range toolCalls {
 		inputJSON, _ := json.Marshal(tc.ToolInput)
@@ -769,7 +794,7 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
 			Content: result, CreatedAt: time.Now(),
 		}
-		r.memory.Working.Append(toolMsg)
+		r.working.Append(toolMsg)
 	}
 }
 

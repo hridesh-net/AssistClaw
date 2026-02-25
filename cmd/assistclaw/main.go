@@ -258,8 +258,9 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 				// Restore session history into working memory
 				msgs, err := memMgr.Episodic.GetSession(ctx, sessionID, 200)
 				if err == nil {
+					wm := memMgr.GetWorking(sessionID)
 					for _, m := range msgs {
-						memMgr.Working.Append(m)
+						wm.Append(m)
 					}
 				}
 			}

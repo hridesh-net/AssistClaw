@@ -559,15 +559,30 @@ func (m *SemanticMemory) GetSnippet(ctx context.Context, source string, startLin
 
 // Manager provides a single interface over all memory tiers.
 type Manager struct {
-	Working  *WorkingMemory
+	mu       sync.RWMutex
+	sessions map[string]*WorkingMemory
+	budget   int
+
 	Episodic *EpisodicMemory
 	Semantic *SemanticMemory
 }
 
+// Working returns the working memory for a specific session.
+func (m *Manager) GetWorking(sessionID string) *WorkingMemory {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if wm, ok := m.sessions[sessionID]; ok {
+		return wm
+	}
+
+	wm := NewWorkingMemory(m.budget)
+	m.sessions[sessionID] = wm
+	return wm
+}
+
 // NewManager creates a Manager with all three tiers initialized.
 func NewManager(cfg ManagerConfig) (*Manager, error) {
-	working := NewWorkingMemory(cfg.WorkingTokenBudget)
-
 	episodic, err := NewEpisodicMemory(cfg.EpisodicDBPath)
 	if err != nil {
 		return nil, fmt.Errorf("episodic memory: %w", err)
@@ -580,7 +595,8 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	}
 
 	return &Manager{
-		Working:  working,
+		sessions: make(map[string]*WorkingMemory),
+		budget:   cfg.WorkingTokenBudget,
 		Episodic: episodic,
 		Semantic: semantic,
 	}, nil
