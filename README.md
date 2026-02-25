@@ -32,6 +32,14 @@
 
 ---
 
+## ✅ Verified & Working
+AssistClaw has been rigorously tested in the field. The following core integrations are confirmed stable:
+- **Language Models**: AWS Bedrock (Claude 3.5 Sonnet / Haiku), OpenAI (GPT-4o), Anthropic (Opus), and Ollama.
+- **Messaging**: WhatsApp (multi-device pairing), Telegram (Bot API), and the high-performance Gateway.
+- **Environment**: Raspberry Pi 5 (ARM64), Linux (AMD64), macOS (Darwin), and Windows (v3.1.1+).
+
+---
+
 ## 🦞 The Claw Ecosystem
 
 AssistClaw is part of a broader lineage of "Claw" projects. Here is how it compares to its cousins:
@@ -43,6 +51,13 @@ AssistClaw is part of a broader lineage of "Claw" projects. Here is how it compa
 | **Core Focus** | Breadth & Extensions | Security & Minimalism | Performance Framework | **Edge Intelligence** |
 | **Tooling** | Managed Skills | Claude SDK only | Trait-based Rust | **Autonomous Python** |
 | **Hardware** | Basic | None | None | **Native C++ Bridge** |
+
+### ✨ Unique to AssistClaw (vs OpenClaw)
+While AssistClaw shares the "Claw" spirit, it introduces several architectural leaps:
+1.  **Native Concurrency**: Real-time parallel processing of tools and messages without Python's Global Interpreter Lock (GIL).
+2.  **Autonomous Tool Factory**: The agent doesn't just use tools; it **writes** its own Python tools, validates them, and builds a persistent local library.
+3.  **Active Sensing Layer**: A dedicated C++ bridge for **OpenCV Camera**, **PortAudio**, and **GPIO** control, making it a true physical-world assistant.
+4.  **Local Semantic Memory**: Native `sqlite-vec` integration for sub-millisecond vector search without needing a separate vector database.
 
 > **Why AssistClaw?** If you need the integration breadth of OpenClaw but with the performance profile of ZeroClaw and the ability to sense the physical world (GPIO/Camera) natively, AssistClaw is the choice.
 
