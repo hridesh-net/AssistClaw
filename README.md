@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/hridesh-net/AssistClaw/blob/main/doc/assets/assistclaw-logo.png" alt="AssistClaw" width="200">
+  <img src="https://github.com/hridesh-net/AssistClaw/blob/main/doc/assets/assistclaw-logo.png" alt="AssistClaw" width="400">
 </p>
 
 <h1 align="center">AssistClaw</h1>
