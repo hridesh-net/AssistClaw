@@ -69,6 +69,8 @@ While AssistClaw shares the "Claw" spirit, it introduces several architectural l
 - **[The Autonomous Execution Loop](doc/deep-dives/execution-loop.md)**: How the agent thinks and acts.
 - **[Dynamic Skills & Tools](doc/deep-dives/skills-and-tools.md)**: Extending the assistant.
 - **[V3.1.x Walkthrough](file:///Users/elrosshinzo/.gemini/antigravity/brain/f0edca1f-cfa9-476d-9eed-2c3f7b3f74e7/walkthrough.md)**: Latest daemon and stability updates.
+- **[Changelog](CHANGELOG.md)**: Release history and major milestones.
+- **[Contributing](CONTRIBUTING.md)**: Developer guide and architecture overview.
 
 ---
 
@@ -102,6 +104,22 @@ git clone https://github.com/hridesh-net/AssistClaw.git
 cd AssistClaw
 make build
 ```
+
+---
+
+## 👥 Contributors
+
+<a href="https://github.com/hridesh-net/AssistClaw/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=hridesh-net/AssistClaw" />
+</a>
+
+Made with [contrib.rocks](https://contrib.rocks).
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 ---
 

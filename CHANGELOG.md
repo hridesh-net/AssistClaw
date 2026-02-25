@@ -1,0 +1,52 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [v3.1.6] - 2026-02-25
+### Added
+- MIT License.
+- Contributors gallery in README.
+- `CHANGELOG.md` and `CONTRIBUTING.md`.
+
+## [v3.1.5] - 2026-02-25
+### Added
+- "Verified & Working" section in README (AWS Bedrock, WhatsApp).
+- Detailed technical comparison with the "Claw" ecosystem (OpenClaw, NanoClaw, ZeroClaw).
+- Highlighted unique Go-native features (Concurrency, Tool Factory, C++ Bridge).
+
+## [v3.1.4] - 2026-02-25
+### Changed
+- Major README overhaul with premium branding and status badges.
+- Improved project identity as "Autonomous Edge Intelligence System".
+
+## [v3.1.3] - 2026-02-25
+### Fixed
+- Increased WhatsApp pairing stabilization delay to 10s for large accounts.
+- Suppressed noisy `Error sending close: EOF` warnings in WhatsApp channel.
+
+## [v3.1.2] - 2026-02-25
+### Fixed
+- WhatsApp reliability: Switched to SQLite WAL mode and added redundant connection bypass during onboarding.
+
+## [v3.1.1] - 2026-02-25
+### Fixed
+- Windows compatibility: Refactored daemon logic and added non-CGO `sqlite-vec` stubs.
+
+## [v3.1.0] - 2026-02-25
+### Added
+- **Daemon Mode**: Background service management with `start`, `stop`, `status`.
+- Detached onboarding flow.
+
+## [v3.0.2] - 2026-02-25
+### Fixed
+- WhatsApp pairing persistence stability.
+
+## [v3.0.0] - 2026-02-24
+### Added
+- **Major Intelligence Release**: Plan-Execute-Reflect loop.
+- Semantic Memory (Lessons Learned) with vector search.
+- Native multi-channel security and access control.
+- Universal embedding support.
+
+---
+*For older releases, see [GitHub Tags](https://github.com/hridesh-net/AssistClaw/tags).*
