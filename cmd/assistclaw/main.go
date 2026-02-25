@@ -113,241 +113,7 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 		Use:   "agent",
 		Short: "Start an interactive agent session or send a single message",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-			defer stop()
-
-			log := buildLogger(gf.logLevel)
-			defer log.Sync() //nolint:errcheck
-
-			cfg, err := loadConfig(gf.configPath, log)
-			if err != nil {
-				return err
-			}
-
-			// Boot all subsystems
-			reg := provider.NewRegistry()
-			if err := registerProviders(ctx, cfg, reg, log); err != nil {
-				log.Warn("some providers failed to register", zap.Error(err))
-			}
-
-			embedReg := embeddings.NewRegistry()
-			registerEmbedders(ctx, cfg, embedReg, log)
-
-			// Ensure memory dirs exist
-			if err := os.MkdirAll(filepath.Dir(cfg.Memory.EpisodicDBPath), 0o755); err != nil {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(cfg.Memory.SemanticDBPath), 0o755); err != nil {
-				return err
-			}
-			dims := 1536 // default for OpenAI small
-			if e, ok := embedReg.Default(); ok {
-				models, _ := e.ListModels(ctx)
-				if len(models) > 0 {
-					dims = models[0].Dimensions
-				}
-			}
-			memMgr, err := memory.NewManager(memory.ManagerConfig{
-				WorkingTokenBudget:  cfg.Memory.WorkingTokenBudget,
-				EpisodicDBPath:      cfg.Memory.EpisodicDBPath,
-				SemanticDBPath:      cfg.Memory.SemanticDBPath,
-				EmbeddingDimensions: dims,
-			})
-			if err != nil {
-				return fmt.Errorf("memory init: %w", err)
-			}
-			defer memMgr.Close()
-
-			// Start Markdown memory watcher/synchronizer
-			go func() {
-				if err := memMgr.Watch(ctx, embedReg, cfg.StateDir); err != nil {
-					log.Warn("memory watcher failed", zap.Error(err))
-				}
-			}()
-
-			// Resolve model
-			resolvedModel := model
-			if resolvedModel == "" {
-				resolvedModel = cfg.Routing.Default
-			}
-			if resolvedModel == "" {
-				// Auto-select first available provider
-				for _, p := range reg.All() {
-					models, _ := p.ListModels(ctx)
-					if len(models) > 0 {
-						resolvedModel = p.Name() + "/" + models[0].ID
-						break
-					}
-				}
-			}
-			if resolvedModel == "" {
-				return fmt.Errorf("no model configured — set routing.default in config or use --model")
-			}
-
-			p, modelInfo, err := reg.ResolveModel(resolvedModel)
-			if err != nil {
-				return fmt.Errorf("resolve model %q: %w", resolvedModel, err)
-			}
-			log.Info("using model", zap.String("model", modelInfo.ID), zap.String("provider", p.Name()))
-
-			// Load Skills
-			skillReg := skills.NewRegistry()
-			if err := skillReg.LoadAll(ctx, cfg.Agent.SkillsDir); err != nil {
-				log.Warn("failed to load skills", zap.Error(err))
-			}
-			var activeSkillNames []string
-			for _, s := range skillReg.List() {
-				activeSkillNames = append(activeSkillNames, s.Name)
-			}
-			skillsCtx := skillReg.BuildContext(activeSkillNames)
-
-			// Build tool registry
-			toolReg := agent.NewToolRegistry()
-
-			// Register tools from skills
-			for _, s := range skillReg.List() {
-				skillTools := skills.ConvertTools(&s, cfg.Agent.SkillsDir) // Simplification: assuming all tools relative to skills dir
-				for _, t := range skillTools {
-					toolReg.Register(t)
-				}
-			}
-
-			memSearchFn := func(searchCtx context.Context, query string, limit int) ([]string, error) {
-				var out []string
-
-				// 1. Episodic Search (Full-Text)
-				msgs, err := memMgr.Episodic.Search(searchCtx, query, limit)
-				if err == nil {
-					for _, m := range msgs {
-						out = append(out, fmt.Sprintf("[episodic] [%s] %s: %s", m.CreatedAt.Format("2006-01-02 15:04"), m.Role, m.Content))
-					}
-				}
-
-				// 2. Semantic Search (Vector)
-				if vec, err := embedReg.EmbedQuery(searchCtx, query); err == nil {
-					docs, err := memMgr.Semantic.SearchWithModel(searchCtx, vec, limit)
-					if err == nil {
-						for _, d := range docs {
-							out = append(out, fmt.Sprintf("[semantic] [score:%.2f] [%s / %s] source=%s: %s", d.Score, d.Model, d.CreatedAt.Format("2006-01-02 15:04"), d.Source, d.Content))
-						}
-					}
-				}
-
-				return out, nil
-			}
-			memSnippetFn := func(snippetCtx context.Context, source string, startLine, endLine int) (string, error) {
-				// If source doesn't exist, try resolving it relative to workspace
-				path := source
-				if _, err := os.Stat(path); os.IsNotExist(err) {
-					path = filepath.Join(cfg.StateDir, source) // cfg.StateDir is workspace dir for now
-				}
-				return memMgr.Semantic.GetSnippet(snippetCtx, path, startLine, endLine)
-			}
-			for _, t := range tools.Default(memSearchFn, memSnippetFn) {
-				if tool, ok := t.(agent.Tool); ok {
-					toolReg.Register(tool)
-				}
-			}
-
-			runner := agent.NewRunner(agent.Config{
-				MaxIterations:       cfg.Agent.MaxIterations,
-				Model:               modelInfo.ID,
-				ActiveSkillsContext: skillsCtx,
-			}, p, toolReg, memMgr, log, cfg.StateDir)
-
-			if sessionID != "" {
-				// Restore session history into working memory
-				msgs, err := memMgr.Episodic.GetSession(ctx, sessionID, 200)
-				if err == nil {
-					wm := memMgr.GetWorking(sessionID)
-					for _, m := range msgs {
-						wm.Append(m)
-					}
-				}
-			}
-
-			// Single message mode
-			if message != "" {
-				if noStream {
-					result, err := runner.Run(ctx, message)
-					if err != nil {
-						return err
-					}
-					fmt.Println(result.Response)
-					return nil
-				}
-				// Streaming mode
-				done := make(chan error, 1)
-				runner.RunStream(ctx, message, &cliStreamHandler{done: done})
-				return <-done
-			}
-
-			// Start Messaging Channels
-			activeChannels := 0
-			if cfg.Channels.Telegram != nil {
-				tg, err := telegram.New(cfg.Channels.Telegram.BotToken)
-				if err == nil {
-					go tg.Start(ctx, runner.HandleChannelMessage)
-					log.Info("Telegram channel active")
-					activeChannels++
-				}
-			}
-			if cfg.Channels.Discord != nil {
-				dc, err := discord.New(cfg.Channels.Discord.BotToken)
-				if err == nil {
-					go dc.Start(ctx, runner.HandleChannelMessage)
-					log.Info("Discord channel active")
-					activeChannels++
-				}
-			}
-			if cfg.Channels.Slack != nil {
-				sl, err := slack.New(cfg.Channels.Slack.BotToken, cfg.Channels.Slack.AppToken)
-				if err == nil {
-					go sl.Start(ctx, runner.HandleChannelMessage)
-					log.Info("Slack channel active")
-					activeChannels++
-				}
-			}
-			if cfg.Channels.WhatsApp != nil {
-				wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID)
-				if err == nil {
-					go wa.Start(ctx, runner.HandleChannelMessage)
-					log.Info("WhatsApp channel active")
-					activeChannels++
-				}
-			}
-
-			// If --serve is active, start the Gateway too and wait
-			if serve {
-				log.Info("Background mode active (v3 core engine)",
-					zap.Bool("gateway", true),
-					zap.Int("channels", activeChannels),
-				)
-
-				srv := gateway.NewServer(cfg.Gateway.Port)
-				srv.Bind = cfg.Gateway.Bind
-				srv.Tailscale.Mode = cfg.Gateway.Tailscale.Mode
-
-				go func() {
-					if err := srv.Start(); err != nil && err != http.ErrServerClosed {
-						log.Error("gateway failure", zap.Error(err))
-					}
-				}()
-
-				// Wait for shutdown signal
-				<-ctx.Done()
-				log.Info("Shutting down background service...")
-
-				stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if err := srv.Stop(stopCtx); err != nil {
-					log.Warn("gateway shutdown error", zap.Error(err))
-				}
-				return nil
-			}
-
-			// Interactive REPL mode
-			return runREPL(ctx, runner, log)
+			return runAgent(gf, gf.configPath, model, message, sessionID, serve, noStream)
 		},
 	}
 
@@ -499,7 +265,11 @@ func toolsCmd(gf *globalFlags) *cobra.Command {
 		Short: "List all persisted auto-generated tools",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log := buildLogger(gf.logLevel)
-			cfg, err := loadConfig(gf.configPath, log)
+			path := gf.configPath
+			if path == "" {
+				path = config.DefaultConfigPath()
+			}
+			cfg, err := loadConfig(path, log)
 			if err != nil {
 				return err
 			}
@@ -607,12 +377,250 @@ func loadConfig(path string, log *zap.Logger) (*config.Config, error) {
 		path = config.DefaultConfigPath()
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := runOnboarding(path); err != nil {
+		if _, err := runOnboarding(path); err != nil {
 			log.Warn("interactive onboarding failed or was skipped, falling back to environment variables", zap.Error(err))
 			return config.LoadFromEnv(), nil
 		}
 	}
 	return config.Load(path)
+}
+
+func runAgent(gf *globalFlags, configPath string, model string, message string, sessionID string, serve bool, noStream bool) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	log := buildLogger(gf.logLevel)
+	defer log.Sync() //nolint:errcheck
+
+	cfg, err := loadConfig(configPath, log)
+	if err != nil {
+		return err
+	}
+
+	// Boot all subsystems
+	reg := provider.NewRegistry()
+	if err := registerProviders(ctx, cfg, reg, log); err != nil {
+		log.Warn("some providers failed to register", zap.Error(err))
+	}
+
+	embedReg := embeddings.NewRegistry()
+	registerEmbedders(ctx, cfg, embedReg, log)
+
+	// Ensure memory dirs exist
+	if err := os.MkdirAll(filepath.Dir(cfg.Memory.EpisodicDBPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.Memory.SemanticDBPath), 0o755); err != nil {
+		return err
+	}
+	dims := 1536 // default for OpenAI small
+	if e, ok := embedReg.Default(); ok {
+		models, _ := e.ListModels(ctx)
+		if len(models) > 0 {
+			dims = models[0].Dimensions
+		}
+	}
+	memMgr, err := memory.NewManager(memory.ManagerConfig{
+		WorkingTokenBudget:  cfg.Memory.WorkingTokenBudget,
+		EpisodicDBPath:      cfg.Memory.EpisodicDBPath,
+		SemanticDBPath:      cfg.Memory.SemanticDBPath,
+		EmbeddingDimensions: dims,
+	})
+	if err != nil {
+		return fmt.Errorf("memory init: %w", err)
+	}
+	defer memMgr.Close()
+
+	// Start Markdown memory watcher/synchronizer
+	go func() {
+		if err := memMgr.Watch(ctx, embedReg, cfg.StateDir); err != nil {
+			log.Warn("memory watcher failed", zap.Error(err))
+		}
+	}()
+
+	// Resolve model
+	resolvedModel := model
+	if resolvedModel == "" {
+		resolvedModel = cfg.Routing.Default
+	}
+	if resolvedModel == "" {
+		// Auto-select first available provider
+		for _, p := range reg.All() {
+			models, _ := p.ListModels(ctx)
+			if len(models) > 0 {
+				resolvedModel = p.Name() + "/" + models[0].ID
+				break
+			}
+		}
+	}
+	if resolvedModel == "" {
+		return fmt.Errorf("no model configured — set routing.default in config or use --model")
+	}
+
+	p, modelInfo, err := reg.ResolveModel(resolvedModel)
+	if err != nil {
+		return fmt.Errorf("resolve model %q: %w", resolvedModel, err)
+	}
+	log.Info("using model", zap.String("model", modelInfo.ID), zap.String("provider", p.Name()))
+
+	// Load Skills
+	skillReg := skills.NewRegistry()
+	if err := skillReg.LoadAll(ctx, cfg.Agent.SkillsDir); err != nil {
+		log.Warn("failed to load skills", zap.Error(err))
+	}
+	var activeSkillNames []string
+	for _, s := range skillReg.List() {
+		activeSkillNames = append(activeSkillNames, s.Name)
+	}
+	skillsCtx := skillReg.BuildContext(activeSkillNames)
+
+	// Build tool registry
+	toolReg := agent.NewToolRegistry()
+
+	// Register tools from skills
+	for _, s := range skillReg.List() {
+		skillTools := skills.ConvertTools(&s, cfg.Agent.SkillsDir) // Simplification: assuming all tools relative to skills dir
+		for _, t := range skillTools {
+			toolReg.Register(t)
+		}
+	}
+
+	memSearchFn := func(searchCtx context.Context, query string, limit int) ([]string, error) {
+		var out []string
+
+		// 1. Episodic Search (Full-Text)
+		msgs, err := memMgr.Episodic.Search(searchCtx, query, limit)
+		if err == nil {
+			for _, m := range msgs {
+				out = append(out, fmt.Sprintf("[episodic] [%s] %s: %s", m.CreatedAt.Format("2006-01-02 15:04"), m.Role, m.Content))
+			}
+		}
+
+		// 2. Semantic Search (Vector)
+		if vec, err := embedReg.EmbedQuery(searchCtx, query); err == nil {
+			docs, err := memMgr.Semantic.SearchWithModel(searchCtx, vec, limit)
+			if err == nil {
+				for _, d := range docs {
+					out = append(out, fmt.Sprintf("[semantic] [score:%.2f] [%s / %s] source=%s: %s", d.Score, d.Model, d.CreatedAt.Format("2006-01-02 15:04"), d.Source, d.Content))
+				}
+			}
+		}
+
+		return out, nil
+	}
+	memSnippetFn := func(snippetCtx context.Context, source string, startLine, endLine int) (string, error) {
+		// If source doesn't exist, try resolving it relative to workspace
+		path := source
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			path = filepath.Join(cfg.StateDir, source) // cfg.StateDir is workspace dir for now
+		}
+		return memMgr.Semantic.GetSnippet(snippetCtx, path, startLine, endLine)
+	}
+	for _, t := range tools.Default(memSearchFn, memSnippetFn) {
+		if tool, ok := t.(agent.Tool); ok {
+			toolReg.Register(tool)
+		}
+	}
+
+	runner := agent.NewRunner(agent.Config{
+		MaxIterations:       cfg.Agent.MaxIterations,
+		Model:               modelInfo.ID,
+		ActiveSkillsContext: skillsCtx,
+	}, p, toolReg, memMgr, log, cfg.StateDir)
+
+	if sessionID != "" {
+		// Restore session history into working memory
+		msgs, err := memMgr.Episodic.GetSession(ctx, sessionID, 200)
+		if err == nil {
+			wm := memMgr.GetWorking(sessionID)
+			for _, m := range msgs {
+				wm.Append(m)
+			}
+		}
+	}
+
+	// Single message mode
+	if message != "" {
+		if noStream {
+			result, err := runner.Run(ctx, message)
+			if err != nil {
+				return err
+			}
+			fmt.Println(result.Response)
+			return nil
+		}
+		// Streaming mode
+		done := make(chan error, 1)
+		runner.RunStream(ctx, message, &cliStreamHandler{done: done})
+		return <-done
+	}
+
+	// Start Messaging Channels
+	activeChannels := 0
+	if cfg.Channels.Telegram != nil {
+		tg, err := telegram.New(cfg.Channels.Telegram.BotToken)
+		if err == nil {
+			go tg.Start(ctx, runner.HandleChannelMessage)
+			log.Info("Telegram channel active")
+			activeChannels++
+		}
+	}
+	if cfg.Channels.Discord != nil {
+		dc, err := discord.New(cfg.Channels.Discord.BotToken)
+		if err == nil {
+			go dc.Start(ctx, runner.HandleChannelMessage)
+			log.Info("Discord channel active")
+			activeChannels++
+		}
+	}
+	if cfg.Channels.Slack != nil {
+		sl, err := slack.New(cfg.Channels.Slack.BotToken, cfg.Channels.Slack.AppToken)
+		if err == nil {
+			go sl.Start(ctx, runner.HandleChannelMessage)
+			log.Info("Slack channel active")
+			activeChannels++
+		}
+	}
+	if cfg.Channels.WhatsApp != nil {
+		wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID)
+		if err == nil {
+			go wa.Start(ctx, runner.HandleChannelMessage)
+			log.Info("WhatsApp channel active")
+			activeChannels++
+		}
+	}
+
+	// If --serve is active, start the Gateway too and wait
+	if serve {
+		log.Info("Background mode active (v3 core engine)",
+			zap.Bool("gateway", true),
+			zap.Int("channels", activeChannels),
+		)
+
+		srv := gateway.NewServer(cfg.Gateway.Port)
+		srv.Bind = cfg.Gateway.Bind
+		srv.Tailscale.Mode = cfg.Gateway.Tailscale.Mode
+
+		go func() {
+			if err := srv.Start(); err != nil && err != http.ErrServerClosed {
+				log.Error("gateway failure", zap.Error(err))
+			}
+		}()
+
+		// Wait for shutdown signal
+		<-ctx.Done()
+		log.Info("Shutting down background service...")
+
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Stop(stopCtx); err != nil {
+			log.Warn("gateway shutdown error", zap.Error(err))
+		}
+		return nil
+	}
+
+	// Interactive REPL mode
+	return runREPL(ctx, runner, log)
 }
 
 func buildLogger(level string) *zap.Logger {

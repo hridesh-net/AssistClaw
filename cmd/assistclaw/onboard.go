@@ -45,7 +45,15 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 			if path == "" {
 				path = config.DefaultConfigPath()
 			}
-			return runOnboarding(path)
+			shouldStart, err := runOnboarding(path)
+			if err != nil {
+				return err
+			}
+			if shouldStart {
+				fmt.Println("\n🚀 Starting agent as requested...")
+				return runAgent(gf, path, "", "", "", true, false)
+			}
+			return nil
 		},
 	}
 }
@@ -284,7 +292,9 @@ func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, init
 	return entry, nil
 }
 
-func runOnboarding(configPath string) error {
+// runOnboarding leads the user through the setup process.
+// Returns (true, nil) if the agent should be started immediately.
+func runOnboarding(configPath string) (bool, error) {
 	var (
 		primary          provEntry
 		secondary        provEntry
@@ -605,7 +615,7 @@ func runOnboarding(configPath string) error {
 	var err error
 	primary, err = collectProvider(theme, "primary", true, primary)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	secChoice := "none"
@@ -626,13 +636,13 @@ func runOnboarding(configPath string) error {
 		),
 	).WithTheme(theme)
 	if err := formSecondaryChoice.Run(); err != nil {
-		return fmt.Errorf("onboarding interrupted")
+		return false, fmt.Errorf("onboarding interrupted")
 	}
 
 	if secChoice == "configure" {
 		secondary, err = collectProvider(theme, "secondary", false, secondary)
 		if err != nil {
-			return err
+			return false, err
 		}
 	} else {
 		secondary.provider = "none"
@@ -660,7 +670,7 @@ func runOnboarding(configPath string) error {
 		),
 	).WithTheme(theme)
 	if err := formRouting.Run(); err != nil {
-		return fmt.Errorf("onboarding interrupted")
+		return false, fmt.Errorf("onboarding interrupted")
 	}
 
 	// Embedding selection
@@ -684,7 +694,7 @@ func runOnboarding(configPath string) error {
 		),
 	).WithTheme(theme)
 	if err := formEmbed.Run(); err != nil {
-		return fmt.Errorf("onboarding interrupted")
+		return false, fmt.Errorf("onboarding interrupted")
 	}
 
 	var embedFields []huh.Field
@@ -723,7 +733,7 @@ func runOnboarding(configPath string) error {
 	if len(embedFields) > 0 {
 		formEmbedDetail := huh.NewForm(huh.NewGroup(embedFields...)).WithTheme(theme)
 		if err := formEmbedDetail.Run(); err != nil {
-			return fmt.Errorf("onboarding interrupted")
+			return false, fmt.Errorf("onboarding interrupted")
 		}
 	}
 
@@ -1026,9 +1036,23 @@ func runOnboarding(configPath string) error {
 	_ = os.WriteFile(configPath, []byte(tpl), 0o600)
 
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ Configuration saved!"))
+
 	fmt.Println("\nNext Steps:")
-	fmt.Println("1. Run 'assistclaw agent' to start your assistant.")
-	fmt.Println("2. If you enabled WhatsApp, watch the terminal for a QR code on the first run.")
-	fmt.Println("3. Scan the code with your phone (Linked Devices) to authorize the agent.")
-	return nil
+	fmt.Println("1. Run 'assistclaw agent' to start your assistant manually.")
+	fmt.Println("2. Scan the QR code if you enabled WhatsApp.")
+
+	var startAgent bool
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Start your assistant now in background mode?").
+				Description("This will start the Gateway and your messaging channels.").
+				Value(&startAgent),
+		),
+	).Run()
+	if err != nil {
+		return false, nil // User cancelled the confirm, but config is saved
+	}
+
+	return startAgent, nil
 }
