@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"time"
+
 	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
@@ -150,6 +152,10 @@ func (c *Channel) Connect(ctx context.Context) error {
 			} else {
 				log.Printf("WhatsApp login event: %s", evt.Event)
 				if evt.Event == "success" || evt.Event == "timeout" {
+					if evt.Event == "success" {
+						// Give the library a moment to finish initial sync/prekey upload before we potentially disconnect
+						time.Sleep(5 * time.Second)
+					}
 					break
 				}
 			}
