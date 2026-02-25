@@ -29,6 +29,7 @@ type Server struct {
 	Tailscale  struct {
 		Mode string
 	}
+	TS *tsnet.Server
 }
 
 // NewServer initializes a new Gateway server on the specified port.
@@ -56,18 +57,17 @@ func (s *Server) Start() error {
 
 	addr := fmt.Sprintf(":%d", s.Port)
 	if s.Bind == "tailnet" {
-		ts := &tsnet.Server{
+		s.TS = &tsnet.Server{
 			Hostname: "assistclaw",
 		}
-		defer ts.Close()
 
 		var ln net.Listener
 		var err error
 
 		if s.Tailscale.Mode == "funnel" {
-			ln, err = ts.ListenFunnel("tcp", addr)
+			ln, err = s.TS.ListenFunnel("tcp", addr)
 		} else {
-			ln, err = ts.Listen("tcp", addr)
+			ln, err = s.TS.Listen("tcp", addr)
 		}
 
 		if err != nil {
@@ -100,7 +100,13 @@ func (s *Server) Start() error {
 // Stop safely shuts down the server.
 func (s *Server) Stop(ctx context.Context) error {
 	log.Printf("Stopping gateway...")
-	return s.HTTPServer.Shutdown(ctx)
+	if s.TS != nil {
+		s.TS.Close()
+	}
+	if s.HTTPServer != nil {
+		return s.HTTPServer.Shutdown(ctx)
+	}
+	return nil
 }
 
 // serveWs handles websocket requests from the peer.

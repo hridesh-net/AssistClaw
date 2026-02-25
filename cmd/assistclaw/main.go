@@ -106,6 +106,7 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 		model     string
 		noStream  bool
 		sessionID string
+		serve     bool
 	)
 
 	cmd := &cobra.Command{
@@ -282,11 +283,13 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 			}
 
 			// Start Messaging Channels
+			activeChannels := 0
 			if cfg.Channels.Telegram != nil {
 				tg, err := telegram.New(cfg.Channels.Telegram.BotToken)
 				if err == nil {
 					go tg.Start(ctx, runner.HandleChannelMessage)
 					log.Info("Telegram channel active")
+					activeChannels++
 				}
 			}
 			if cfg.Channels.Discord != nil {
@@ -294,6 +297,7 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 				if err == nil {
 					go dc.Start(ctx, runner.HandleChannelMessage)
 					log.Info("Discord channel active")
+					activeChannels++
 				}
 			}
 			if cfg.Channels.Slack != nil {
@@ -301,6 +305,7 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 				if err == nil {
 					go sl.Start(ctx, runner.HandleChannelMessage)
 					log.Info("Slack channel active")
+					activeChannels++
 				}
 			}
 			if cfg.Channels.WhatsApp != nil {
@@ -308,7 +313,37 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 				if err == nil {
 					go wa.Start(ctx, runner.HandleChannelMessage)
 					log.Info("WhatsApp channel active")
+					activeChannels++
 				}
+			}
+
+			// If --serve is active, start the Gateway too and wait
+			if serve {
+				log.Info("Background mode active (v3 core engine)",
+					zap.Bool("gateway", true),
+					zap.Int("channels", activeChannels),
+				)
+
+				srv := gateway.NewServer(cfg.Gateway.Port)
+				srv.Bind = cfg.Gateway.Bind
+				srv.Tailscale.Mode = cfg.Gateway.Tailscale.Mode
+
+				go func() {
+					if err := srv.Start(); err != nil && err != http.ErrServerClosed {
+						log.Error("gateway failure", zap.Error(err))
+					}
+				}()
+
+				// Wait for shutdown signal
+				<-ctx.Done()
+				log.Info("Shutting down background service...")
+
+				stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := srv.Stop(stopCtx); err != nil {
+					log.Warn("gateway shutdown error", zap.Error(err))
+				}
+				return nil
 			}
 
 			// Interactive REPL mode
@@ -320,6 +355,7 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. anthropic/claude-haiku-3-5)")
 	cmd.Flags().BoolVar(&noStream, "no-stream", false, "Disable streaming output")
 	cmd.Flags().StringVar(&sessionID, "session", "", "Resume an existing session by ID")
+	cmd.Flags().BoolVarP(&serve, "serve", "s", false, "Run in background mode with Gateway and messaging channels active")
 	return cmd
 }
 
