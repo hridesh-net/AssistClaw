@@ -1,144 +1,91 @@
-# AssistClaw
+<p align="center">
+  <img src="https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/docs/assets/assistclaw-logo.png" alt="AssistClaw" width="200">
+</p>
 
-AssistClaw is a polyglot, production-grade AI assistant system written in Go. It extends the feature set of OpenClaw with hardware sensing, autonomous tool generation, full embedding model support, background scheduling, and a modular architecture.
+<h1 align="center">AssistClaw</h1>
 
-## Key Features
+<p align="center">
+  <strong>The Autonomous Edge Intelligence System</strong>
+</p>
 
-- **15+ LLM Providers**: Support for OpenAI, Anthropic, Bedrock, Vertex, Ollama, vLLM, Groq, Mistral, and more.
-- **Three-Tier Memory**: Local, zero-infrastructure memory system including Working (RAM), Episodic (SQLite FTS5), and Semantic (sqlite-vec vector search) tiers.
-- **Autonomous Tool Generation**: The agent can write its own Python tools, validate them against a strict safety policy, sandbox execute them, and persist them for future use.
-- **Hardware Integration**: C++ sensing layer bridging internal logic with Camera (OpenCV), Audio (PortAudio), and GPIO (pigpio) over NDJSON IPC.
-- **Multi-Channel Messaging**: Native connections for Telegram, Discord, Slack, and a REST/WebSocket Gateway.
-- **Skills System**: Reads `SKILL.md` files dynamically to inject specialized prompts and custom tools globally into the assistant context.
-- **Browser Automation**: True headless browsing and page screenshot capability using `chromedp`.
-- **Background Cron**: Schedule the agent to execute autonomous jobs periodically.
-
-## Documentation
-
-For a comprehensive understanding of the system architecture, logic, and how to replicate it, please refer to our **[Master Guide](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/master_guide.md)**.
-
-Additionally, explore our technical deep-dive series:
-- **[The Autonomous Execution Loop](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/execution-loop.md)**
-- **[Dynamic Skills & Autonomous Tools](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/skills-and-tools.md)**
-- **[Providers, Routing & Channels](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/providers-and-routing.md)**
+<p align="center">
+  <a href="https://github.com/hridesh-net/AssistClaw/actions"><img src="https://img.shields.io/github/actions/workflow/status/hridesh-net/AssistClaw/ci.yml?branch=main&style=for-the-badge" alt="CI Status"></a>
+  <a href="https://github.com/hridesh-net/AssistClaw/releases"><img src="https://img.shields.io/github/v/release/hridesh-net/AssistClaw?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+</p>
 
 ---
 
-### Automated Installation (Linux / macOS)
-The fastest way to install AssistClaw is via our one-liner script. This detects your architecture, downloads the correct binary, and sets up your workspace:
+**AssistClaw** is a polyglot, production-grade AI assistant system written in **Go**. It is designed for low-latency, high-concurrency edge computing, extending the "Claw" philosophy with hardware sensing, autonomous tool generation, and a modular architecture that runs anywhere from a Raspberry Pi 5 to a high-end workstation.
 
+## 🚀 Key Highlights
+
+- **⚡ Native Performance**: Built in Go for near-instant startup, low memory footprint, and true multi-core concurrency.
+- **🧠 Three-Tier Memory**: Local, zero-infrastructure memory system:
+  - **Working**: Context-aware RAM.
+  - **Episodic**: SQLite FTS5 for fast historical recall.
+  - **Semantic**: `sqlite-vec` for native vector similarity search.
+- **🛠️ Autonomous Intelligence**: The agent can autonomously write, validate, sandbox-execute, and persist its own Python tools.
+- **📡 Multi-Channel Connectivity**: Native support for WhatsApp, Telegram, Discord, Slack, and a high-performance REST/WebSocket Gateway.
+- **🦾 Hardware Sensing**: Integrated C++ layer for Camera (OpenCV), Audio (PortAudio), and GPIO (pigpio) over NDJSON IPC.
+- **🎛️ Background Daemon**: Runs as a persistent service (`v3.1.0+`) with dedicated `start`, `stop`, and `status` management.
+
+---
+
+## 🦞 The Claw Ecosystem
+
+AssistClaw is part of a broader lineage of "Claw" projects. Here is how it compares to its cousins:
+
+| Feature | OpenClaw | NanoClaw | ZeroClaw | **AssistClaw** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Language** | Python / Node.js | TypeScript | Rust | **Go (Golang)** |
+| **Footprint** | Heavy (~1.5GB RAM) | Minimal | Extreme Low (~5MB) | **Balanced (~40MB)** |
+| **Core Focus** | Breadth & Extensions | Security & Minimalism | Performance Framework | **Edge Intelligence** |
+| **Tooling** | Managed Skills | Claude SDK only | Trait-based Rust | **Autonomous Python** |
+| **Hardware** | Basic | None | None | **Native C++ Bridge** |
+
+> **Why AssistClaw?** If you need the integration breadth of OpenClaw but with the performance profile of ZeroClaw and the ability to sense the physical world (GPIO/Camera) natively, AssistClaw is the choice.
+
+---
+
+## 📖 Documentation
+
+- **[Master Guide](doc/master_guide.md)**: Full architecture and logic overview.
+- **[The Autonomous Execution Loop](doc/deep-dives/execution-loop.md)**: How the agent thinks and acts.
+- **[Dynamic Skills & Tools](doc/deep-dives/skills-and-tools.md)**: Extending the assistant.
+- **[V3.1.x Walkthrough](file:///Users/elrosshinzo/.gemini/antigravity/brain/f0edca1f-cfa9-476d-9eed-2c3f7b3f74e7/walkthrough.md)**: Latest daemon and stability updates.
+
+---
+
+## 🛠️ Installation
+
+### Automated (Linux / macOS)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
 ```
 
-### Manual Installation (All Platforms)
-If you prefer to install manually or are on a restricted environment:
-
-1. **Download**: Grab the latest binary for your platform from the [GitHub Releases](https://github.com/hridesh-net/AssistClaw/releases) page.
-2. **Rename & Move**:
-   - **Linux/macOS**: Rename to `assistclaw`, make it executable (`chmod +x`), and move it to your path (e.g., `/usr/local/bin` or `~/.local/bin`).
-   - **Windows**: Rename to `assistclaw.exe` and move it to a folder in your PATH.
-3. **Verify**: Run `assistclaw version` to ensure it's installed correctly.
-
-### ARM64 / Raspberry Pi Optimized
-AssistClaw is optimized for the Raspberry Pi 5. Our ARM64 binaries are statically linked with `musl`, ensuring they run on any Linux distribution (Ubuntu, Debian, Raspberry Pi OS) without managed library dependencies.
-
-### Interactive Setup
-
-On your very first run, AssistClaw will automatically launch an interactive onboarding wizard to configure your preferred LLM provider (Anthropic, OpenAI, or a local provider like Ollama). It will securely save your API keys and automatically generate your `~/.assistclaw` workspace.
-
-If you want to manually run the onboarding wizard again at any time, run:
-
-```bash
-assistclaw onboard
-```
-
-### Verify the Installation
-
-Check the CLI and ensure the providers load correctly:
-
-```bash
-assistclaw --version
-assistclaw providers list
-```
+### Manual (All Platforms)
+1. Download the latest binary from [GitHub Releases](https://github.com/hridesh-net/AssistClaw/releases).
+2. Move to your PATH and ensure it is executable.
+3. Run `assistclaw onboard` to start the interactive setup.
 
 ---
 
-## Basic Usage
+## ⌨️ Basic Commands
 
-### Interactive Agent Session
-Start an interactive chat session with the assistant:
-```bash
-assistclaw agent
-```
-
-### Single Message Command
-Fire off a single prompt to the assistant:
-```bash
-assistclaw agent -m "Summarize the capabilities of sqlite-vec"
-```
-
-### Memory Management
-Query your episodic memory log across past sessions:
-```bash
-assistclaw memory search "sqlite-vec"
-```
-
-### Start the Gateway Server
-Start the HTTP REST and WebSocket control plane for connecting external chat clients:
-```bash
-assistclaw gateway start
-```
+- `assistclaw agent`: Start the interactive UI (or hatch into a running daemon).
+- `assistclaw start --daemon`: Launch the assistant in the background.
+- `assistclaw stop`: Safely shut down the background agent.
+- `assistclaw status`: Check if the agent is running and its PID.
 
 ---
 
-## Building from Source
-
-If you wish to modify AssistClaw or build extensions:
-
-1. Install **Go 1.24+**
-2. Clone the repository: `git clone https://github.com/hridesh-net/AssistClaw.git`
-3. Build the binary: `make build`
-4. Use it directly: `./bin/assistclaw`
-
----
-
-## Troubleshooting & Logs
-
-To view verbose debug information, including exact LLM requests and memory append operations, run any command with the `--log-level debug` flag:
+## 🏗️ Build from Source
 
 ```bash
-assistclaw agent --log-level debug
-```
-
----
-
-## Uninstallation
-
-To completely remove AssistClaw from your system, follow these steps to delete the binary and your local state data.
-
-### 1. Remove Executable
-Find where the AssistClaw binary is located:
-```bash
-which assistclaw
-```
-Remove the file (use `sudo` if installed in a system directory like `/usr/local/bin`):
-```bash
-# macOS / Linux
-rm $(which assistclaw)
-```
-
-### 2. Wipe Configuration & State
-Delete the state directory. **WARNING**: This action is irreversible and will permanently delete your conversation history, memories, and saved tools.
-
-By default, data is stored in `~/.assistclaw`. If you have configured a custom path via `ASSISTCLAW_STATE_DIR`, remove that directory instead.
-
-```bash
-# macOS / Linux
-rm -rf ~/.assistclaw
-
-# Windows (PowerShell)
-Remove-Item -Recurse -Force "$env:USERPROFILE\.assistclaw"
+git clone https://github.com/hridesh-net/AssistClaw.git
+cd AssistClaw
+make build
 ```
 
 ---
