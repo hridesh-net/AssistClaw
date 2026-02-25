@@ -42,7 +42,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 )
 
-const version = "v1.0.29"
+const version = "v1.0.30"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)

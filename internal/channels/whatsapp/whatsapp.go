@@ -92,8 +92,8 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 				fmt.Fprintln(os.Stderr, "WHATSAPP LOGIN REQUIRED")
 				fmt.Fprintln(os.Stderr, strings.Repeat("=", 40))
 
-				// Generate terminal QR code
-				qrterminal.Generate(evt.Code, qrterminal.L, os.Stderr)
+				// Generate smaller terminal QR code using half-blocks
+				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stderr)
 
 				fmt.Fprintln(os.Stderr, "\n1. Open WhatsApp on your phone.")
 				fmt.Fprintln(os.Stderr, "2. Tap Menu or Settings and select Linked Devices.")
@@ -114,6 +114,9 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 		}
 	}
 
+	fmt.Fprintln(os.Stderr, "\n"+strings.Repeat("*", 40))
+	fmt.Fprintln(os.Stderr, "WHATSAPP CONNECTED AND LISTENING")
+	fmt.Fprintln(os.Stderr, strings.Repeat("*", 40)+"\n")
 	log.Println("channels/whatsapp: connected and listening")
 	return nil
 }
