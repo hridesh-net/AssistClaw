@@ -157,7 +157,7 @@ func (c *Channel) Connect(ctx context.Context) error {
 				if evt.Event == "success" || evt.Event == "timeout" {
 					if evt.Event == "success" {
 						// Give the library a moment to finish initial sync/prekey upload before we potentially disconnect
-						time.Sleep(5 * time.Second)
+						time.Sleep(10 * time.Second)
 					}
 					break
 				}
