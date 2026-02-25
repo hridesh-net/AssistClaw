@@ -379,6 +379,9 @@ github.com/mdlayher/netlink/nlenc
 # github.com/mdlayher/socket v0.5.0
 ## explicit; go 1.21
 github.com/mdlayher/socket
+# github.com/mdp/qrterminal/v3 v3.2.1
+## explicit; go 1.20
+github.com/mdp/qrterminal/v3
 # github.com/mitchellh/go-ps v1.0.0
 ## explicit; go 1.13
 github.com/mitchellh/go-ps
@@ -770,6 +773,11 @@ gvisor.dev/gvisor/pkg/tcpip/transport/tcp
 gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack
 gvisor.dev/gvisor/pkg/tcpip/transport/udp
 gvisor.dev/gvisor/pkg/waiter
+# rsc.io/qr v0.2.0
+## explicit
+rsc.io/qr
+rsc.io/qr/coding
+rsc.io/qr/gf256
 # tailscale.com v1.93.0-pre
 ## explicit; go 1.25.3
 tailscale.com

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/assistclaw/assistclaw/internal/channels"
+	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -86,9 +88,8 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 		for evt := range qrChan {
 			if evt.Event == "code" {
 				fmt.Println("\n--- WHATSAPP LOGIN REQUIRED ---")
-				fmt.Printf("WhatsApp QR Code: %s\n", evt.Code)
-				fmt.Println("To login, visit https://web.whatsapp.com and scan this code,")
-				fmt.Println("or use a QR code generator for: " + evt.Code)
+				qrterminal.Generate(evt.Code, qrterminal.L, os.Stdout)
+				fmt.Println("\nTo login, scan the code above with your phone.")
 				fmt.Println("--------------------------------\n")
 			} else {
 				log.Printf("WhatsApp login event: %s", evt.Event)
