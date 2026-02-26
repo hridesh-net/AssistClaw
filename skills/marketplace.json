@@ -1,0 +1,508 @@
+{
+    "version": "1",
+    "updated": "2026-02-26",
+    "skills": [
+        {
+            "name": "1password",
+            "description": "Set up and use 1Password CLI for secrets management",
+            "emoji": "🔐",
+            "bundled": true,
+            "tags": [
+                "security",
+                "secrets"
+            ]
+        },
+        {
+            "name": "apple-notes",
+            "description": "Manage Apple Notes via the memo CLI on macOS",
+            "emoji": "📝",
+            "bundled": true,
+            "tags": [
+                "productivity",
+                "notes",
+                "macos"
+            ]
+        },
+        {
+            "name": "apple-reminders",
+            "description": "Manage Apple Reminders via remindctl CLI",
+            "emoji": "⏰",
+            "bundled": true,
+            "tags": [
+                "productivity",
+                "macos"
+            ]
+        },
+        {
+            "name": "bear-notes",
+            "description": "Create, search, and manage Bear notes",
+            "emoji": "🐻",
+            "bundled": true,
+            "tags": [
+                "productivity",
+                "notes",
+                "macos"
+            ]
+        },
+        {
+            "name": "blogwatcher",
+            "description": "Monitor blogs and RSS/Atom feeds for updates",
+            "emoji": "📰",
+            "bundled": true,
+            "tags": [
+                "reading",
+                "rss"
+            ]
+        },
+        {
+            "name": "blucli",
+            "description": "BluOS CLI for discovery, playback, grouping, and volume",
+            "emoji": "🫐",
+            "bundled": true,
+            "tags": [
+                "audio",
+                "smart-home"
+            ]
+        },
+        {
+            "name": "bluebubbles",
+            "description": "Send and manage iMessages via BlueBubbles",
+            "emoji": "🫧",
+            "bundled": true,
+            "tags": [
+                "messaging",
+                "imessage",
+                "macos"
+            ]
+        },
+        {
+            "name": "camsnap",
+            "description": "Capture frames or clips from RTSP/ONVIF cameras",
+            "emoji": "📸",
+            "bundled": true,
+            "tags": [
+                "camera",
+                "sensors"
+            ]
+        },
+        {
+            "name": "canvas",
+            "description": "Canvas drawing and diagramming tools",
+            "emoji": "🖼️",
+            "bundled": true,
+            "tags": [
+                "creative"
+            ]
+        },
+        {
+            "name": "clawhub",
+            "description": "Search, install, update, and publish agent skills from clawhub.com",
+            "emoji": "🦀",
+            "bundled": true,
+            "tags": [
+                "skills",
+                "marketplace"
+            ]
+        },
+        {
+            "name": "coding-agent",
+            "description": "Delegate coding tasks to Codex, Claude Code, or Pi agents",
+            "emoji": "🧩",
+            "bundled": true,
+            "tags": [
+                "coding",
+                "development"
+            ]
+        },
+        {
+            "name": "discord",
+            "description": "Discord operations via message tool",
+            "emoji": "🎮",
+            "bundled": true,
+            "tags": [
+                "communication",
+                "discord"
+            ]
+        },
+        {
+            "name": "eightctl",
+            "description": "Control Eight Sleep pods (status, temperature, alarms)",
+            "emoji": "🎛️",
+            "bundled": true,
+            "tags": [
+                "smart-home",
+                "health"
+            ]
+        },
+        {
+            "name": "gemini",
+            "description": "Gemini CLI for one-shot Q&A, summaries, and generation",
+            "emoji": "♊️",
+            "bundled": true,
+            "tags": [
+                "ai",
+                "llm"
+            ]
+        },
+        {
+            "name": "gh-issues",
+            "description": "Fetch GitHub issues, implement fixes, and open PRs",
+            "emoji": "🐙",
+            "bundled": true,
+            "tags": [
+                "coding",
+                "github",
+                "development"
+            ]
+        },
+        {
+            "name": "gifgrep",
+            "description": "Search GIF providers and download results",
+            "emoji": "🧲",
+            "bundled": true,
+            "tags": [
+                "media",
+                "search"
+            ]
+        },
+        {
+            "name": "github",
+            "description": "GitHub operations via gh CLI: issues, PRs, CI runs",
+            "emoji": "🐙",
+            "bundled": true,
+            "tags": [
+                "coding",
+                "github",
+                "development"
+            ]
+        },
+        {
+            "name": "gog",
+            "description": "Google Workspace CLI for Gmail, Calendar, Drive, and Docs",
+            "emoji": "🎮",
+            "bundled": true,
+            "tags": [
+                "google",
+                "productivity"
+            ]
+        },
+        {
+            "name": "goplaces",
+            "description": "Query Google Places API for text search and place details",
+            "emoji": "📍",
+            "bundled": true,
+            "tags": [
+                "maps",
+                "search"
+            ]
+        },
+        {
+            "name": "healthcheck",
+            "description": "Host security hardening and risk-tolerance configuration",
+            "emoji": "🛡️",
+            "bundled": true,
+            "tags": [
+                "security",
+                "sysadmin"
+            ]
+        },
+        {
+            "name": "himalaya",
+            "description": "CLI to manage emails via IMAP/SMTP",
+            "emoji": "📧",
+            "bundled": true,
+            "tags": [
+                "email",
+                "productivity"
+            ]
+        },
+        {
+            "name": "imsg",
+            "description": "iMessage/SMS CLI for listing chats and sending messages",
+            "emoji": "📨",
+            "bundled": true,
+            "tags": [
+                "messaging",
+                "macos"
+            ]
+        },
+        {
+            "name": "mcporter",
+            "description": "List, configure, auth, and call MCP servers/tools directly",
+            "emoji": "📦",
+            "bundled": true,
+            "tags": [
+                "mcp",
+                "integration"
+            ]
+        },
+        {
+            "name": "model-usage",
+            "description": "Summarize per-model LLM usage and cost data",
+            "emoji": "📊",
+            "bundled": true,
+            "tags": [
+                "ai",
+                "metrics"
+            ]
+        },
+        {
+            "name": "nano-banana-pro",
+            "description": "Generate or edit images via Gemini 3 Pro Image",
+            "emoji": "🍌",
+            "bundled": true,
+            "tags": [
+                "ai",
+                "image"
+            ]
+        },
+        {
+            "name": "nano-pdf",
+            "description": "Edit PDFs with natural-language instructions",
+            "emoji": "📄",
+            "bundled": true,
+            "tags": [
+                "pdf",
+                "productivity"
+            ]
+        },
+        {
+            "name": "notion",
+            "description": "Notion API for creating and managing pages, databases, and blocks",
+            "emoji": "📝",
+            "bundled": true,
+            "tags": [
+                "productivity",
+                "notes"
+            ]
+        },
+        {
+            "name": "obsidian",
+            "description": "Work with Obsidian vaults and automate via obsidian-cli",
+            "emoji": "💎",
+            "bundled": true,
+            "tags": [
+                "productivity",
+                "notes"
+            ]
+        },
+        {
+            "name": "openai-image-gen",
+            "description": "Batch-generate images via OpenAI Images API",
+            "emoji": "🖼️",
+            "bundled": true,
+            "tags": [
+                "ai",
+                "image"
+            ]
+        },
+        {
+            "name": "openai-whisper",
+            "description": "Transcribe audio locally via Whisper",
+            "emoji": "🎙️",
+            "bundled": true,
+            "tags": [
+                "audio",
+                "ai"
+            ]
+        },
+        {
+            "name": "openai-whisper-api",
+            "description": "Transcribe audio via OpenAI Audio Transcriptions API",
+            "emoji": "☁️",
+            "bundled": true,
+            "tags": [
+                "audio",
+                "ai"
+            ]
+        },
+        {
+            "name": "openhue",
+            "description": "Control Philips Hue lights via openhue CLI",
+            "emoji": "💡",
+            "bundled": true,
+            "tags": [
+                "smart-home",
+                "lights"
+            ]
+        },
+        {
+            "name": "oracle",
+            "description": "Oracle database operations and data queries",
+            "emoji": "🗄️",
+            "bundled": true,
+            "tags": [
+                "database"
+            ]
+        },
+        {
+            "name": "ordercli",
+            "description": "Order management and fulfillment",
+            "emoji": "📦",
+            "bundled": true,
+            "tags": [
+                "ecommerce"
+            ]
+        },
+        {
+            "name": "peekaboo",
+            "description": "Webcam capture and visual awareness tools",
+            "emoji": "📷",
+            "bundled": true,
+            "tags": [
+                "camera",
+                "sensors"
+            ]
+        },
+        {
+            "name": "sag",
+            "description": "System administration and governance tooling",
+            "emoji": "⚙️",
+            "bundled": true,
+            "tags": [
+                "sysadmin"
+            ]
+        },
+        {
+            "name": "session-logs",
+            "description": "Access and search agent session logs",
+            "emoji": "📋",
+            "bundled": true,
+            "tags": [
+                "debugging",
+                "logging"
+            ]
+        },
+        {
+            "name": "sherpa-onnx-tts",
+            "description": "Local TTS synthesis via Sherpa ONNX",
+            "emoji": "🔊",
+            "bundled": true,
+            "tags": [
+                "audio",
+                "tts"
+            ]
+        },
+        {
+            "name": "skill-creator",
+            "description": "Create new skills and register them with the agent",
+            "emoji": "🛠️",
+            "bundled": true,
+            "tags": [
+                "skills",
+                "meta"
+            ]
+        },
+        {
+            "name": "slack",
+            "description": "Slack messaging, channels, and workspace operations",
+            "emoji": "💬",
+            "bundled": true,
+            "tags": [
+                "communication",
+                "slack"
+            ]
+        },
+        {
+            "name": "songsee",
+            "description": "Music recognition and metadata lookup",
+            "emoji": "🎵",
+            "bundled": true,
+            "tags": [
+                "audio",
+                "music"
+            ]
+        },
+        {
+            "name": "sonoscli",
+            "description": "Control Sonos speakers via CLI",
+            "emoji": "🔊",
+            "bundled": true,
+            "tags": [
+                "audio",
+                "smart-home"
+            ]
+        },
+        {
+            "name": "spotify-player",
+            "description": "Control Spotify playback and browse library",
+            "emoji": "🎧",
+            "bundled": true,
+            "tags": [
+                "audio",
+                "music"
+            ]
+        },
+        {
+            "name": "summarize",
+            "description": "Summarize documents, URLs, and long-form content",
+            "emoji": "📃",
+            "bundled": true,
+            "tags": [
+                "productivity",
+                "reading"
+            ]
+        },
+        {
+            "name": "things-mac",
+            "description": "Manage Things 3 tasks on macOS",
+            "emoji": "✅",
+            "bundled": true,
+            "tags": [
+                "productivity",
+                "tasks",
+                "macos"
+            ]
+        },
+        {
+            "name": "tmux",
+            "description": "Manage tmux sessions, windows, and panes",
+            "emoji": "🖥️",
+            "bundled": true,
+            "tags": [
+                "terminal",
+                "sysadmin"
+            ]
+        },
+        {
+            "name": "trello",
+            "description": "Manage Trello boards, lists, and cards",
+            "emoji": "📋",
+            "bundled": true,
+            "tags": [
+                "productivity",
+                "project-management"
+            ]
+        },
+        {
+            "name": "video-frames",
+            "description": "Extract frames from video files for analysis",
+            "emoji": "🎞️",
+            "bundled": true,
+            "tags": [
+                "media",
+                "vision"
+            ]
+        },
+        {
+            "name": "voice-call",
+            "description": "Initiate and manage voice calls",
+            "emoji": "📞",
+            "bundled": true,
+            "tags": [
+                "communication",
+                "voice"
+            ]
+        },
+        {
+            "name": "wacli",
+            "description": "WhatsApp CLI operations and automation",
+            "emoji": "💬",
+            "bundled": true,
+            "tags": [
+                "messaging",
+                "whatsapp"
+            ]
+        }
+    ]
+}

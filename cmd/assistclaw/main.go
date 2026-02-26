@@ -95,6 +95,7 @@ func rootCmd() *cobra.Command {
 		toolsCmd(flags),
 		gatewayCmd(flags),
 		onboardCmd(flags),
+		skillsCmd(flags),
 		versionCmd(),
 	)
 	return root
@@ -550,14 +551,26 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	}
 	log.Info("using model", zap.String("model", modelInfo.ID), zap.String("provider", p.Name()))
 
-	// Load Skills
+	// Extract bundled skills on first run
+	bundledDir := filepath.Join(cfg.StateDir, "skills", "bundled")
+	customDir := filepath.Join(cfg.StateDir, "skills", "custom")
+	if err := extractBundledSkills(bundledDir); err != nil {
+		log.Warn("failed to extract bundled skills", zap.Error(err))
+	}
+
+	// Load Skills — respects enabled_skills if set, else loads all from custom dir
 	skillReg := skills.NewRegistry()
-	if err := skillReg.LoadAll(ctx, cfg.Agent.SkillsDir); err != nil {
+	if err := skillReg.LoadAll(ctx, customDir); err != nil {
 		log.Warn("failed to load skills", zap.Error(err))
 	}
-	var activeSkillNames []string
-	for _, s := range skillReg.List() {
-		activeSkillNames = append(activeSkillNames, s.Name)
+
+	// Determine active skill names
+	activeSkillNames := cfg.Agent.EnabledSkills
+	if len(activeSkillNames) == 0 {
+		// No explicit list = all installed custom skills are active
+		for _, s := range skillReg.List() {
+			activeSkillNames = append(activeSkillNames, s.Name)
+		}
 	}
 	skillsCtx := skillReg.BuildContext(activeSkillNames)
 
@@ -720,6 +733,55 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 
 	// Interactive REPL mode
 	return runREPL(ctx, runner, log)
+}
+
+// extractBundledSkills copies the repo's skills/ directory into destDir (bundled dir).
+// It searches for the skills directory relative to the binary, CWD, or common install paths.
+func extractBundledSkills(destDir string) error {
+	// Check if already populated (skip to avoid overwriting user edits)
+	if info, err := os.ReadDir(destDir); err == nil && len(info) > 0 {
+		return nil // already extracted
+	}
+
+	// Find the source skills directory
+	src := resolveBundledSkillsSrc()
+	if src == "" {
+		// Not available (e.g., installed without repo) — that's OK, marketplace will handle it
+		return nil
+	}
+
+	return skills.CopyDir(src, destDir)
+}
+
+// resolveBundledSkillsSrc locates the bundled skills/ directory relative to common install paths.
+func resolveBundledSkillsSrc() string {
+	candidates := []string{}
+
+	// 1. Relative to the running binary
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "skills"))
+	}
+
+	// 2. Relative to CWD (development mode)
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(cwd, "skills"))
+	}
+
+	// 3. Common install locations
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, filepath.Join(home, ".assistclaw", "repo", "skills"))
+	}
+	candidates = append(candidates,
+		"/usr/local/share/assistclaw/skills",
+		"/opt/assistclaw/skills",
+	)
+
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && info.IsDir() {
+			return c
+		}
+	}
+	return ""
 }
 
 func buildLogger(level string) *zap.Logger {

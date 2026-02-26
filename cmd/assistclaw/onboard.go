@@ -1024,36 +1024,49 @@ func runOnboarding(configPath string) (bool, error) {
 	).WithTheme(theme)
 	_ = formSkills.Run()
 
-	// Handle installation for missing dependencies
-	for _, name := range selectedSkills {
-		s, ok := skillReg.Get(name)
-		if !ok {
-			// Try to load it fully if discovered but not yet in registry
-			// Actually Discover doesn't put them in the registry, it just returns info.
-			// Let's reload everything from expected dirs to be sure.
-			_ = skillReg.LoadAll(context.Background(), "./skills")
-			if home, err := os.UserHomeDir(); err == nil {
-				_ = skillReg.LoadAll(context.Background(), filepath.Join(home, ".assistclaw", "skills"))
-			}
-			s, ok = skillReg.Get(name)
+	// Copy selected skills from bundled dir into custom dir and handle deps
+	if home, _ := os.UserHomeDir(); home != "" {
+		bundledDir := filepath.Join(home, ".assistclaw", "skills", "bundled")
+		customDir := filepath.Join(home, ".assistclaw", "skills", "custom")
+
+		// First, extract bundled skills if not already done
+		if src := resolveBundledSkillsSrc(); src != "" {
+			_ = skills.CopyDir(src, bundledDir)
 		}
 
-		if ok {
-			met, missing := skillReg.CheckRequirements(s)
-			if !met && len(s.Metadata.OpenClaw.Install) > 0 {
-				var confirmInstall bool
-				huh.NewForm(huh.NewGroup(
-					huh.NewConfirm().
-						Title(fmt.Sprintf("Install dependencies for %s (%s)?", s.Name, strings.Join(missing, ", "))).
-						Description("This will run brew or go install as specified in the skill metadata.").
-						Value(&confirmInstall),
-				)).WithTheme(theme).Run()
+		mp := skills.NewMarketplace(bundledDir, customDir)
 
-				if confirmInstall {
-					if err := skillReg.InstallDependency(context.Background(), s); err != nil {
-						fmt.Printf("Skill installation failed: %v\n", err)
-					} else {
-						fmt.Printf("✔ Successfully installed dependencies for %s\n", s.Name)
+		for _, name := range selectedSkills {
+			// Install (copy from bundled to custom) if not already customised
+			dest := filepath.Join(customDir, name)
+			if _, err := os.Stat(dest); os.IsNotExist(err) {
+				if _, err := mp.Install(context.Background(), name); err != nil {
+					fmt.Printf("⚠ Could not install skill %q: %v\n", name, err)
+					continue
+				}
+				fmt.Printf("✔ Installed skill: %s\n", name)
+			}
+
+			// Check and offer dependency installation
+			checkReg := skills.NewRegistry()
+			_ = checkReg.LoadAll(context.Background(), dest)
+			if s, ok := checkReg.Get(name); ok {
+				met, missing := checkReg.CheckRequirements(s)
+				if !met && len(s.Metadata.OpenClaw.Install) > 0 {
+					var confirmInstall bool
+					huh.NewForm(huh.NewGroup(
+						huh.NewConfirm().
+							Title(fmt.Sprintf("Install dependencies for %s (%s)?", s.Name, strings.Join(missing, ", "))).
+							Description("This will run brew or go install as specified in the skill metadata.").
+							Value(&confirmInstall),
+					)).WithTheme(theme).Run()
+
+					if confirmInstall {
+						if err := checkReg.InstallDependency(context.Background(), s); err != nil {
+							fmt.Printf("Skill dependency install failed: %v\n", err)
+						} else {
+							fmt.Printf("✔ Dependencies installed for %s\n", s.Name)
+						}
 					}
 				}
 			}
