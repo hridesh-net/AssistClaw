@@ -727,29 +727,30 @@ func runOnboarding(configPath string) (bool, error) {
 		secondary.provider = "none"
 	}
 
-	// ─── Step 3: Plano Smart Routing (optional upgrade after provider setup) ───
-	// Plano auto-routes prompts to cheap or powerful models by complexity.
-	// It only works with OpenAI-compatible providers.
+	// ─── Step 3: Plano Smart Routing ────────────────────────────────────────
+	// Only offered when a secondary provider is configured.
+	// Plano needs at least 2 OpenAI-compatible endpoints to route between.
 	var usePlano bool
-	planoHint := ""
-	if !openAICompatProviders[primary.provider] {
-		planoHint = "\n\n⚠ Your primary provider (" + primary.provider + ") is not OpenAI-compatible,\n" +
-			"so Plano would only route to your secondary provider."
-	}
-	_ = huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().
-			Title("Enable Smart Routing with Plano? (Optional)").
-			Description(
-				"Plano is an open-source AI proxy that automatically routes each prompt\n" +
-					"to the right model based on complexity — simple queries go to a fast,\n" +
-					"cheap model; complex tasks go to a powerful one. Cuts LLM costs 30–60%.\n" +
-					"\nRequires Docker on your machine. Runs locally on port 12000." + planoHint,
-			).
-			Value(&usePlano),
-	)).WithTheme(theme).Run()
+	if secChoice == "configure" && secondary.provider != "" && secondary.provider != "none" {
+		planoHint := ""
+		if !openAICompatProviders[primary.provider] {
+			planoHint = "\n\n⚠ Note: your primary provider (" + primary.provider + ") is not OpenAI-compatible.\n" +
+				"Plano will route to your secondary provider for complex tasks."
+		}
+		_ = huh.NewForm(huh.NewGroup(
+			huh.NewConfirm().
+				Title("Enable Smart Routing with Plano? (Optional — press Enter to skip)").
+				Description(
+					"Plano auto-routes each prompt by complexity: simple → fast/cheap model,\n" +
+						"complex → powerful model. Cuts LLM costs 30–60%.\n" +
+						"Requires Docker. Runs locally on port 12000." + planoHint,
+				).
+				Value(&usePlano),
+		)).WithTheme(theme).Run()
+	} // end if secChoice == "configure" && secondary
 
 	var planoEndpoint, planoFastModel, planoPowerfulModel string
-	if usePlano {
+	if secChoice == "configure" && usePlano {
 		planoEndpoint = "http://localhost:12000/v1"
 		_ = huh.NewForm(huh.NewGroup(
 			huh.NewInput().

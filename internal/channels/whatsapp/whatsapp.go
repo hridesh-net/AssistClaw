@@ -132,7 +132,7 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 
 func (c *Channel) Connect(ctx context.Context) error {
 	if c.client.Store.ID == nil {
-		// New login needed
+		// New login needed — show QR code and wait for pairing
 		qrChan, _ := c.client.GetQRChannel(ctx)
 		err := c.client.Connect()
 		if err != nil {
@@ -159,8 +159,22 @@ func (c *Channel) Connect(ctx context.Context) error {
 				log.Printf("WhatsApp login event: %s", evt.Event)
 				if evt.Event == "success" || evt.Event == "timeout" {
 					if evt.Event == "success" {
-						// Give the library a moment to finish initial sync/prekey upload before we potentially disconnect
-						time.Sleep(10 * time.Second)
+						// WhatsApp disconnects briefly after pairing to complete
+						// the session exchange. Reconnect so that app-state syncs
+						// land on an established connection (avoids noisy errors).
+						fmt.Fprintln(os.Stderr, "\n  ✓ WhatsApp paired. Reconnecting for app-state sync...")
+						c.client.Disconnect()
+						time.Sleep(2 * time.Second)
+						if err := c.client.Connect(); err != nil {
+							return fmt.Errorf("whatsapp reconnect after pairing: %w", err)
+						}
+						// Wait up to 8s for the connection to stabilise
+						for i := 0; i < 8; i++ {
+							if c.client.IsConnected() {
+								break
+							}
+							time.Sleep(time.Second)
+						}
 					}
 					break
 				}
