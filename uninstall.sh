@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# AssistClaw uninstaller
-# Removes the binary, bundled skills, system service, and optionally all user data.
+# AssistClaw uninstaller — v3.3+
+# Removes the binary, bundled skills, system service, Plano Docker container,
+# and optionally all user data.
 #
 # Usage:
 #   bash uninstall.sh              # removes binary & service, keeps ~/.assistclaw data
-#   bash uninstall.sh --purge      # removes everything including config & memory
+#   bash uninstall.sh --purge      # removes everything including config, memory & MCP data
+#   bash uninstall.sh --keep-data  # same as default (explicit alias)
 
 set -eo pipefail
 
@@ -18,25 +20,28 @@ PURGE=false
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-log()  { echo -e "${BLUE}[assistclaw]${NC} $*"; }
-ok()   { echo -e "${GREEN}[✓]${NC} $*"; }
-warn() { echo -e "${YELLOW}[!]${NC} $*"; }
-err()  { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
+log()  { echo -e "${CYAN}[assistclaw]${NC} $*"; }
+ok()   { echo -e "${GREEN}  ✓${NC} $*"; }
+warn() { echo -e "${YELLOW}  !${NC} $*"; }
+err()  { echo -e "${RED}  ✗${NC} $*" >&2; exit 1; }
+step() { echo -e "\n${BOLD}$*${NC}"; }
 
 for arg in "$@"; do
   case "$arg" in
-    --purge) PURGE=true ;;
+    --purge)     PURGE=true ;;
+    --keep-data) PURGE=false ;;
     --help|-h)
       echo ""
       echo "Usage: bash uninstall.sh [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --purge   Also remove ~/.assistclaw (config, memory, skills, logs)"
-      echo "  --help    Show this help"
+      echo "  --purge      Also remove ~/.assistclaw (config, memory, skills, MCP servers list)"
+      echo "  --keep-data  Keep user data (default behaviour)"
+      echo "  --help       Show this help"
       echo ""
       exit 0
       ;;
@@ -47,13 +52,15 @@ done
 # Header
 # ─────────────────────────────────────────────
 echo ""
-echo -e "${BOLD}  ╔═══════════════════════════════╗${NC}"
-echo -e "${BOLD}  ║   AssistClaw Uninstaller       ║${NC}"
-echo -e "${BOLD}  ╚═══════════════════════════════╝${NC}"
+echo -e "${BOLD}${CYAN}"
+echo "  ╭─────────────────────────────────────╮"
+echo "  │   AssistClaw Uninstaller  v3.3+     │"
+echo "  │   The Autonomous Edge Intelligence  │"
+echo -e "  ╰─────────────────────────────────────╯${NC}"
 echo ""
 
 if $PURGE; then
-  warn "PURGE mode — all config, memory, and skills data will be deleted"
+  warn "PURGE mode — config, memory, skills, MCP config, and logs will be deleted"
   echo ""
 fi
 
@@ -61,7 +68,7 @@ fi
 # Step 1: Stop running daemon
 # ─────────────────────────────────────────────
 stop_daemon() {
-  log "Stopping AssistClaw daemon (if running)..."
+  step "1. Stopping AssistClaw daemon..."
 
   # Try the built-in stop command first
   if command -v assistclaw >/dev/null 2>&1; then
@@ -73,7 +80,7 @@ stop_daemon() {
   if [[ -f "$plist" ]]; then
     launchctl unload "$plist" 2>/dev/null && ok "Unloaded launchd service"
     rm -f "$plist"
-    ok "Removed launchd plist: $plist"
+    ok "Removed launchd plist"
   fi
 
   # Linux systemd (user)
@@ -88,7 +95,7 @@ stop_daemon() {
     fi
   fi
 
-  # Linux systemd (system)
+  # Linux systemd (system-level)
   if command -v systemctl >/dev/null 2>&1; then
     if systemctl is-active --quiet assistclaw 2>/dev/null; then
       sudo systemctl stop assistclaw 2>/dev/null
@@ -103,16 +110,47 @@ stop_daemon() {
     fi
   fi
 
-  # Kill by process name as final fallback
+  # Kill by process name as fallback
   if pkill -f "assistclaw" 2>/dev/null; then
     ok "Killed remaining assistclaw processes"
   fi
 }
 
 # ─────────────────────────────────────────────
-# Step 2: Remove binary and bundled skills
+# Step 2: Stop & remove Plano Docker container
+# ─────────────────────────────────────────────
+remove_plano() {
+  step "2. Removing Plano smart routing proxy (if running)..."
+
+  if ! command -v docker >/dev/null 2>&1; then
+    warn "Docker not installed — skipping Plano cleanup"
+    return
+  fi
+
+  # Stop and remove the plano container (named "plano" by our onboarding)
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^plano$'; then
+    docker stop plano 2>/dev/null && ok "Stopped Plano container"
+    docker rm   plano 2>/dev/null && ok "Removed Plano container"
+  else
+    warn "No Plano container found (may already be removed)"
+  fi
+
+  # Optionally remove the image to free disk space (only with --purge)
+  if $PURGE; then
+    if docker images katanemo/plano --format '{{.ID}}' 2>/dev/null | grep -q .; then
+      docker rmi katanemo/plano 2>/dev/null && ok "Removed Plano Docker image (katanemo/plano)"
+    fi
+  else
+    warn "Plano Docker image kept (run with --purge to also remove it)"
+  fi
+}
+
+# ─────────────────────────────────────────────
+# Step 3: Remove binary and bundled skills
 # ─────────────────────────────────────────────
 remove_binary() {
+  step "3. Removing AssistClaw binary..."
+
   local candidates=(
     "$INSTALL_DIR/assistclaw"
     "$HOME/.local/bin/assistclaw"
@@ -127,7 +165,7 @@ remove_binary() {
       dir="$(dirname "$bin")"
       rm -f "$bin"
       ok "Removed binary: $bin"
-      # Remove bundled skills directory next to binary
+      # Remove bundled skills directory next to binary (if present)
       if [[ -d "$dir/skills" ]]; then
         rm -rf "$dir/skills"
         ok "Removed bundled skills: $dir/skills"
@@ -142,54 +180,66 @@ remove_binary() {
 }
 
 # ─────────────────────────────────────────────
-# Step 3: Remove shell completion (if installed)
+# Step 4: Remove shell completions
 # ─────────────────────────────────────────────
 remove_completion() {
+  step "4. Removing shell completions..."
+
   local completions=(
     "/usr/local/share/bash-completion/completions/assistclaw"
     "/usr/share/bash-completion/completions/assistclaw"
     "$HOME/.local/share/bash-completion/completions/assistclaw"
     "$HOME/.zsh/completions/_assistclaw"
+    "$HOME/.config/fish/completions/assistclaw.fish"
   )
+  local removed=false
   for f in "${completions[@]}"; do
     if [[ -f "$f" ]]; then
       rm -f "$f"
-      ok "Removed shell completion: $f"
+      ok "Removed: $f"
+      removed=true
     fi
   done
+  if ! $removed; then
+    warn "No shell completions found (skipped)"
+  fi
 }
 
 # ─────────────────────────────────────────────
-# Step 4: Remove user data (--purge only)
+# Step 5: Remove user data (--purge only)
 # ─────────────────────────────────────────────
 remove_user_data() {
+  step "5. Removing user data..."
+
   if [[ ! -d "$STATE_DIR" ]]; then
     warn "State directory not found: $STATE_DIR"
     return
   fi
 
   echo ""
-  echo -e "${RED}${BOLD}⚠ This will permanently delete:${NC}"
-  echo -e "  ${RED}• $STATE_DIR/assistclaw.yaml  (config)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/memory/          (agent memory)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/skills/          (installed skills)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/tools/           (generated tools)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/logs/            (logs)${NC}"
+  echo -e "${RED}${BOLD}  ⚠ This will permanently delete:${NC}"
+  echo -e "  ${RED}• $STATE_DIR/assistclaw.yaml     (config — providers, MCP servers, Plano)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/memory/             (working + episodic + vector memory)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/skills/             (installed skills)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/tools/              (auto-generated Python tools)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/sessions/           (conversation session data)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/logs/               (log files)${NC}"
   echo ""
-  read -r -p "Type 'yes' to confirm: " confirm
+  read -r -p "  Type 'yes' to confirm permanent deletion: " confirm
   if [[ "$confirm" != "yes" ]]; then
-    warn "Skipped data deletion"
+    warn "Skipped data deletion — your data is intact"
     return
   fi
 
   rm -rf "$STATE_DIR"
-  ok "Removed user data: $STATE_DIR"
+  ok "Removed all user data: $STATE_DIR"
 }
 
 # ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
 stop_daemon
+remove_plano
 remove_binary
 remove_completion
 
@@ -198,9 +248,10 @@ if $PURGE; then
 else
   echo ""
   warn "Your config and data at ${BOLD}$STATE_DIR${NC} were kept."
-  warn "To also remove them, run: ${BOLD}bash uninstall.sh --purge${NC}"
+  warn "To also remove them:  ${BOLD}bash uninstall.sh --purge${NC}"
+  warn "To remove Plano image: ${BOLD}docker rmi katanemo/plano${NC}"
 fi
 
 echo ""
-echo -e "${GREEN}${BOLD}AssistClaw uninstalled.${NC}"
+echo -e "${GREEN}${BOLD}  ✓ AssistClaw v3.3+ uninstalled successfully.${NC}"
 echo ""
