@@ -8,16 +8,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -47,7 +44,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.3.3"
+const version = "v3.3.4"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -203,43 +200,6 @@ func statusCmd(gf *globalFlags) *cobra.Command {
 				return nil
 			}
 
-			// Gather resource stats via ps (cross-platform: Linux + macOS)
-			type stats struct {
-				cpu   string
-				rssKB int64
-				vsz   string
-				etime string
-			}
-			st := stats{cpu: "n/a", rssKB: 0, vsz: "n/a", etime: "n/a"}
-
-			out, psErr := exec.Command(
-				"ps", "-p", fmt.Sprint(pid),
-				"-o", "%cpu,rss,vsz,etime",
-				"--no-headers",
-			).Output()
-			if psErr != nil {
-				// macOS ps doesn't support --no-headers; retry without it
-				out, _ = exec.Command(
-					"ps", "-p", fmt.Sprint(pid),
-					"-o", "%cpu,rss,vsz,etime",
-				).Output()
-			}
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			for _, line := range lines {
-				fields := strings.Fields(line)
-				if len(fields) >= 4 {
-					st.cpu = fields[0] + "%"
-					if kb, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
-						st.rssKB = kb
-					}
-					st.vsz = fields[2]
-					st.etime = fields[3]
-					break
-				}
-			}
-
-			ramMB := float64(st.rssKB) / 1024.0
-
 			// Count installed skills
 			skillCount := 0
 			customDir := filepath.Join(cfg.StateDir, "skills", "custom")
@@ -256,82 +216,37 @@ func statusCmd(gf *globalFlags) *cobra.Command {
 				skillSummary = fmt.Sprintf("%d enabled / %d installed", enabledCount, skillCount)
 			}
 
-			// ── Styled status board ──────────────────────────────────────────
-			bold := lipgloss.NewStyle().Bold(true).Foreground(tui.ColorNeon)
-			dim := lipgloss.NewStyle().Foreground(tui.ColorMuted)
-			primary := lipgloss.NewStyle().Foreground(tui.ColorPrimary).Bold(true)
-
-			// Parse CPU % for progress bar
-			cpuPct := 0.0
-			fmt.Sscanf(st.cpu, "%f", &cpuPct)
-			ramPct := (ramMB / 1024.0) * 100.0 // % of 1 GB reference
-			if ramPct > 100 {
-				ramPct = 100
-			}
-
-			// Channel list
+			// Build channel list
 			var channels []string
 			if cfg.Channels.WhatsApp != nil {
-				channels = append(channels, primary.Render("WhatsApp"))
+				channels = append(channels, "WhatsApp")
 			}
 			if cfg.Channels.Telegram != nil {
-				channels = append(channels, primary.Render("Telegram"))
+				channels = append(channels, "Telegram")
 			}
 			if cfg.Channels.Discord != nil {
-				channels = append(channels, primary.Render("Discord"))
+				channels = append(channels, "Discord")
 			}
 			if cfg.Channels.Slack != nil {
-				channels = append(channels, primary.Render("Slack"))
-			}
-			channelStr := dim.Render("none")
-			if len(channels) > 0 {
-				channelStr = strings.Join(channels, dim.Render(" · "))
+				channels = append(channels, "Slack")
 			}
 
-			// Plano / MCP
-			planoStr := dim.Render("disabled")
-			if cfg.Plano.Enabled {
-				planoStr = primary.Render("✓ ") + dim.Render(cfg.Plano.Endpoint)
-			}
-			mcpStr := dim.Render("disabled")
-			if cfg.MCP.Server.Enabled {
-				t := cfg.MCP.Server.Transport
-				if t == "" {
-					t = "stdio"
-				}
-				mcpStr = primary.Render("✓ ") + dim.Render(t)
+			// MCP transport
+			mcpTransport := cfg.MCP.Server.Transport
+			if mcpTransport == "" {
+				mcpTransport = "stdio"
 			}
 
-			body := fmt.Sprintf(
-				"%s RUNNING%s\n\n"+
-					"  %s  %s  %s\n"+
-					"  %s  %s\n\n"+
-					"  %s %s  %s  %s%%\n"+
-					"  %s %s %s %.1f MB\n\n"+
-					"  %s%s\n"+
-					"  %s%s\n"+
-					"  %s%s\n",
-				tui.StatusOK,
-				dim.Render(fmt.Sprintf("               PID %d   uptime %s", pid, st.etime)),
-				dim.Render("version"), primary.Render(version),
-				dim.Render("skills"), primary.Render(skillSummary),
-				dim.Render("model  "), primary.Render(cfg.Agent.SystemPromptExt[:0]+"(configured)"),
-				dim.Render("CPU "), tui.ProgressBar(cpuPct, 12), dim.Render(" "), st.cpu,
-				dim.Render("RAM "), tui.ProgressBar(ramPct, 12), dim.Render(" "), ramMB,
-				dim.Render("Channels  "), channelStr,
-				dim.Render("Plano     "), planoStr,
-				dim.Render("MCP       "), mcpStr,
-			)
-
-			box := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(tui.ColorPrimary).
-				Background(tui.ColorSurface).
-				Padding(0, 2).
-				Render(bold.Render("  AssistClaw Status") + "\n\n" + body)
-
-			fmt.Println("\n" + box + "\n")
-			return nil
+			return tui.RunStatus(tui.StatusInfo{
+				PID:           pid,
+				Version:       version,
+				SkillSummary:  skillSummary,
+				Channels:      channels,
+				PlanoEnabled:  cfg.Plano.Enabled,
+				PlanoEndpoint: cfg.Plano.Endpoint,
+				MCPEnabled:    cfg.MCP.Server.Enabled,
+				MCPTransport:  mcpTransport,
+			})
 		},
 	}
 }
