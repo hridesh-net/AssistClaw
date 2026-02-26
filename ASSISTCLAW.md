@@ -1,83 +1,232 @@
 # AssistClaw
 
-AssistClaw is a polyglot, production-grade AI assistant system built primarily in Go. 
-It takes inspiration from the OpenClaw feature set and extends it with hardware sensing, 
-autonomous tool generation, full embedding model support, and a fast, concurrent Go-first architecture.
+AssistClaw is a polyglot, production-grade AI assistant built in Go.
+It shares the "Claw" philosophy with OpenClaw but extends it with native hardware sensing, autonomous tool generation, a skill-graph memory system, smart multi-model routing, and a token-efficient MCP integration.
+
+---
 
 ## Features
 
-- **15+ LLM Providers**: Support for OpenAI, Anthropic, AWS Bedrock, Google Vertex AI, Ollama (local), vLLM, LM Studio, OpenRouter, Groq, Mistral, Together AI, Cohere, HuggingFace, and NVIDIA NIM.
-- **5 Embedding Providers**: Semantic vector memory powered by OpenAI, Cohere, Google, Ollama, or HuggingFace embeddings.
-- **Three-Tiered Memory**:
-  - *Working Memory*: In-RAM session context with token-budget compaction.
-  - *Episodic Memory*: SQLite FTS5 database for full-text search across conversation history.
-  - *Semantic Memory*: Vector similarity search using sqlite-vec.
-- **Autonomous Tool Generation**: The agent can write its own Python tools, validate them against safety policies (no `sudo`, no network exfil without permission), sandbox them in a disposable `venv`, and persist them for future use.
-- **Hardware Integration (C++)**: High-performance, low-latency C++ processes for camera capture (OpenCV) and audio streaming (PortAudio) that communicate cleanly with the Go orchestrator via JSON streaming.
-- **Multi-Model Routing**: YAML-based routing engine to direct specific tasks (e.g., coding, vision, summarization) to the most cost-effective or capable models.
+### LLM Providers (15+)
+
+OpenAI, Anthropic, AWS Bedrock, Google Vertex AI, Ollama (local), vLLM, LM Studio, OpenRouter, Groq, Mistral, Together AI, Cohere, HuggingFace, NVIDIA NIM, Azure OpenAI, DeepSeek, Perplexity.
+
+### Three-Tiered Memory
+
+| Tier | Store | Use |
+|------|-------|-----|
+| **Working** | In-RAM | Per-session context with token-budget compaction |
+| **Episodic** | SQLite FTS5 | Full-text search across conversation history |
+| **Semantic** | `sqlite-vec` | Sub-millisecond vector similarity search (no separate vector DB) |
+
+### Skill Graph
+
+Skills are organized as **lazy-loaded graph nodes** (markdown files). The agent starts with a compact **Map of Content** (~200 tokens) and traverses into skill nodes on demand via `read_skill_node`. This saves 90%+ of tool-context tokens compared to loading all tool specs upfront.
+
+```
+Map of Content (~200 tokens)
+  ├─ nano-pdf:   Edit and extract PDF content
+  ├─ discord:    Send messages, manage channels
+  └─ mcp:filesystem  Read/write files (external MCP server)
+
+Agent calls: read_skill_node("nano-pdf") → gets tools → calls tool
+```
+
+Bundled skills: `1password`, `apple-notes`, `coding-agent`, `discord`, `nano-pdf` (and more at [OpenClaw skill registry](https://github.com/hridesh-net/AssistClaw)).
+
+### Plano Smart Routing *(v3.2.0+)*
+
+[Plano](https://github.com/katanemo/plano) is an open-source AI proxy powered by `Arch-Router-1.5B` that auto-routes each prompt to the right model based on complexity:
+
+- **Simple queries** go to cheap, fast models (e.g. GPT-4o mini, Llama3 8B).
+- **Complex tasks** go to powerful models (e.g. GPT-4o, DeepSeek R1).
+- Works with any OpenAI-compatible backend.
+- Docker setup happens **automatically** during `assistclaw onboard`.
+- Graceful fallback to your primary provider if Plano is down.
+
+**Config:**
+```yaml
+plano:
+  enabled: true
+  endpoint: "http://localhost:12000/v1"
+  fallback_provider: "openai"
+  preferences:
+    - description: "Simple chat → fast model"
+      prefer_model: "openai/gpt-4o-mini"
+    - description: "Code/reasoning → powerful model"
+      prefer_model: "openai/gpt-4o"
+```
+
+**vs. Standard Multi-model Routing:**
+
+| | Standard YAML routing | Plano |
+|---|---|---|
+| **Routing logic** | Rule-based (regex/keywords) | AI model (Arch-Router-1.5B) |
+| **Setup** | Manual rule config | Plain-English preferences |
+| **Cost** | Requires manual tuning | Automatic optimization |
+| **Model support** | All providers | OpenAI-compatible only |
+
+### MCP Integration *(v3.3.0+)*
+
+AssistClaw implements the [Model Context Protocol](https://modelcontextprotocol.io) in both directions.
+
+#### MCP Server — expose skills to any MCP client
+
+Clients like Claude Desktop, Cursor, and custom apps can connect to AssistClaw and use all its skills.
+
+```bash
+# stdio transport (use in Claude Desktop / Cursor config)
+assistclaw mcp serve
+
+# HTTP-SSE transport
+assistclaw mcp serve --transport http --port 5173
+```
+
+**Claude Desktop config (`claude_desktop_config.json`):**
+```json
+{
+  "mcpServers": {
+    "assistclaw": {
+      "command": "assistclaw",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+**Token-efficient by design:**
+
+| | Standard MCP | AssistClaw MCP |
+|---|---|---|
+| Per-request token cost | All tool specs (~8 k tokens) | Compact index only (~200 tokens) |
+| Tool spec loading | Eager (always upfront) | Lazy (`read_skill_node` on demand) |
+| 20-skill library | ~8,000 tokens / request | ~400 tokens / request |
+
+#### MCP Client — consume external MCP servers
+
+Register any external MCP server. Its tools appear in the agent's skill graph as lazy-loaded nodes — grouped by prefix for Map of Content.
+
+```bash
+# Filesystem MCP (stdio, spawns child process)
+assistclaw mcp add --name filesystem \
+  --command "npx @modelcontextprotocol/server-filesystem /home"
+
+# Browser MCP (HTTP)
+assistclaw mcp add --name browser --url http://localhost:5174
+
+# List the compact tool index
+assistclaw mcp list-tools
+
+# Show status + connected servers
+assistclaw mcp status
+```
+
+**Config (`assistclaw.yaml`):**
+```yaml
+mcp:
+  server:
+    enabled: true
+    transport: stdio   # or http
+    http_port: 5173
+  clients:
+    - name: filesystem
+      command: "npx @modelcontextprotocol/server-filesystem /home"
+    - name: browser
+      url: "http://localhost:5174"
+```
+
+---
 
 ## Architecture
 
-At its core, AssistClaw is a **Go binary (`assistclaw`)**. 
+```
+assistclaw (Go binary)
+├── Agent Runner       — prompt → tool-call loop, memory writes, skill-graph context
+├── Provider Registry  — 15+ LLM backends (openai, anthropic, bedrock, ollama …)
+├── Plano Provider     — OpenAI-compat proxy with complexity-aware routing
+├── MCP Server         — stdio / HTTP-SSE, skill-graph-optimized tool listing
+├── MCP Clients        — connects to external servers, injects as skill nodes
+├── Skill Registry     — lazy-loaded markdown node graphs
+├── Memory System      — working / episodic (SQLite FTS5) / semantic (sqlite-vec)
+├── Channel Layer      — WhatsApp, Telegram, Discord, Slack, Gateway (REST+WS)
+├── Tool Registry      — built-in tools + autonomous Python tool factory
+└── C++ Sensing        — Camera (OpenCV), Audio (PortAudio), GPIO (pigpio)
+```
 
-- **Go**: The primary orchestrator, CLI, task router, and API gateway.
-- **Python (Sandboxed)**: Used exclusively for running auto-generated tools and complex ML scripts in a secure virtual environment.
-- **C++**: Optional high-performance sensing layer (Camera, Audio, GPIO).
-- **TypeScript**: A minimal shim layer is included to run OpenClaw-compatible subagents using `@mariozechner/pi-agent-core` if desired, but is not required for the core Go assistant.
+**Python (sandboxed)** — isolated `venv` for running autonomous tools.  
+**C++** — optional sensing layer. Not required for core functionality.
+
+---
 
 ## Setup & Installation
 
-The easiest way to install AssistClaw (including compiling the Go binary and setting up the Python sandbox) is using the installer script:
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/assistclaw/assistclaw/main/install.sh | bash
+# Automated (Linux / macOS)
+curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
+
+# Uninstall
+curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/uninstall.sh | bash
 ```
 
-Or clone the repo and build manually:
-
+Or build from source:
 ```bash
-git clone https://github.com/assistclaw/assistclaw.git
-cd assistclaw
-make deps
-make build      # Builds the Go binary
-make install    # Moves binary to /usr/local/bin
+git clone https://github.com/hridesh-net/AssistClaw.git
+cd AssistClaw && make build
 ```
 
-## Configuration
-
-AssistClaw uses a YAML configuration file, usually located at `~/.assistclaw/assistclaw.yaml`. Environment variables can override any setting (e.g., `ASSISTCLAW_OPENAI_API_KEY`).
-
-Copy the template to get started:
+Run the interactive setup wizard:
 ```bash
-cp .env.example .env
-# Edit .env with your provider keys
+assistclaw onboard
 ```
+
+---
 
 ## Usage
 
-Start an interactive REPL session:
 ```bash
+# Interactive REPL
 assistclaw agent
-```
 
-Send a single message:
-```bash
-assistclaw agent --message "What's the weather like?" --model anthropic/claude-3-5-sonnet-20241022-v2:0
-```
+# Single message
+assistclaw agent -m "Summarise today's Hacker News top 10"
 
-List registered providers and available models:
-```bash
+# Background daemon
+assistclaw start --daemon
+assistclaw status
+assistclaw stop
+
+# Skills
+assistclaw skills list
+assistclaw skills install coding-agent
+
+# MCP
+assistclaw mcp serve               # start as MCP server
+assistclaw mcp add --name fs \
+  --command "npx @mcp/server-filesystem /home"
+assistclaw mcp list-tools
+
+# Providers & memory
 assistclaw providers list
+assistclaw memory search "docker"
 ```
 
-Search your conversation history using SQLite FTS5:
+---
+
+## Autonomous Tool Creation
+
+Ask the agent to build its own tools:
+> "Create a tool that fetches the top 5 Hacker News stories and formats them as markdown."
+
+The agent drafts Python code, validates it against a safety policy (blocks `sudo`, network exfil etc.), runs it in an isolated `venv`, and saves it to `~/.assistclaw/tools/` for future use.
+
+---
+
+## Resource Usage
+
+AssistClaw is designed to be lightweight:
+
 ```bash
-assistclaw memory search "docker commands"
+# Check memory and CPU of a running daemon
+ps -p $(cat ~/.assistclaw/assistclaw.pid) -o pid,comm,%cpu,%mem,rss
+# Typical: ~42 MB RSS, <0.1% CPU at idle
 ```
-
-## Creating Autonomous Tools
-
-AssistClaw can build its own tools! Simply ask the agent:
-> "Create a tool that fetches the top 5 HackerNews stories and formats them as markdown."
-
-The agent will draft the Python code, the system will validate its safety (blocking dangerous imports), and then run it in an isolated Python `venv`. If it works, it is saved to `~/.assistclaw/tools/` for future use by the agent.
