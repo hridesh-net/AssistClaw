@@ -120,7 +120,10 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 				return err
 			}
 
-			handler(ctx, msg, replyFn)
+			buf := channels.NewStreamingBuffer(replyFn, 1*time.Second)
+
+			handler(ctx, msg, buf.Push)
+			_ = buf.Done()
 		}
 	})
 

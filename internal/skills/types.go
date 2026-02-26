@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 )
 
-// Skill represents an loaded OpenClaw-compatible skill.
+// Skill represents a loaded OpenClaw-compatible skill graph.
 type Skill struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
@@ -16,7 +16,6 @@ type Skill struct {
 	Homepage string `yaml:"homepage,omitempty"`
 
 	// Metadata contains additional skill information like emojis or hardware requirements.
-	// It mirrors OpenClaw's rich metadata structure.
 	Metadata struct {
 		OpenClaw struct {
 			Emoji      string   `yaml:"emoji,omitempty"`
@@ -33,19 +32,26 @@ type Skill struct {
 		} `yaml:"openclaw,omitempty"`
 	} `yaml:"metadata,omitempty"`
 
-	// Instructions is the Markdown body of the SKILL.md file
-	// that will be injected into the system prompt when active.
-	Instructions string `yaml:"-"`
+	// Nodes contains all content files (.md) within the skill directory.
+	// The primary SKILL.md is typically the entry point node.
+	Nodes map[string]*Node `yaml:"-"`
 
-	// FilePath is the absolute path to the SKILL.md file.
+	// FilePath is the absolute path to the main SKILL.md file.
 	FilePath string `yaml:"-"`
 
 	// Tools defines any custom actions provided by the skill.
 	Tools []SkillTool `yaml:"tools,omitempty"`
 }
 
+// Node represents an individual markdown file within a skill, acting as a graph node.
+type Node struct {
+	Name         string `yaml:"name"`         // Simple filename (e.g. "risk-management")
+	Summary      string `yaml:"summary"`      // Short description from frontmatter
+	Instructions string `yaml:"instructions"` // Full body content
+	FilePath     string `yaml:"-"`            // Absolute path
+}
+
 // SkillTool represents a callable tool within a skill directory.
-// Skills often provide Python scripts or executables alongside the SKILL.md.
 type SkillTool struct {
 	Name        string          `yaml:"name"`
 	Description string          `yaml:"description"`
@@ -68,7 +74,10 @@ type Registry interface {
 	Get(name string) (*Skill, bool)
 	List() []Skill
 
-	// BuildContext dynamically compiles the active skills into a prompt string.
+	// ReadSkillNode retrieves the content of a specific node within a skill.
+	ReadSkillNode(skillName string, nodeName string) (*Node, bool)
+
+	// BuildContext dynamically compiles a "Map of Content" for active skills.
 	BuildContext(activeSkillNames []string) string
 
 	// Discover lists available skill names in the directory without loading full body.

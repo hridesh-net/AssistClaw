@@ -76,6 +76,7 @@ type Config struct {
 	EnableReflection    bool
 	EmbeddingModel      string
 	SessionID           string // The persistent session ID for this runner
+	ChannelID           string // The message channel ID (e.g. "whatsapp", "telegram")
 }
 
 // Runner is the main agent execution loop.
@@ -88,6 +89,7 @@ type Runner struct {
 	log      *zap.Logger
 
 	sessionID    string
+	channelID    string
 	workspaceDir string
 }
 
@@ -116,6 +118,7 @@ func NewRunner(
 		working:      mem.GetWorking(sessionID),
 		log:          log,
 		sessionID:    sessionID,
+		channelID:    cfg.ChannelID,
 		workspaceDir: workspaceDir,
 	}
 }
@@ -197,6 +200,7 @@ func (r *Runner) WithSession(sessionID string) *Runner {
 		working:      r.memory.GetWorking(sessionID),
 		log:          r.log,
 		sessionID:    sessionID,
+		channelID:    r.channelID,
 		workspaceDir: r.workspaceDir,
 	}
 }
@@ -447,6 +451,11 @@ func (r *Runner) buildRequest() *provider.CompletionRequest {
 func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 	base := "You are AssistClaw, a powerful AI assistant with hardware integration and autonomous tool generation capabilities."
 
+	// If communicating via WhatsApp, prioritize conciseness
+	if r.channelID == "whatsapp" {
+		base += "\n\nCRITICAL: You are communicating over WHATSAPP. Be extremely concise and smart. Avoid long monologues. Break information into small, digestible paragraphs. Use bullet points for lists. If the user asks a simple question, give a simple, direct answer."
+	}
+
 	var parts []string
 	parts = append(parts, base)
 
@@ -650,8 +659,9 @@ func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message,
 	// Note: In a production system, we would resolve a dedicated Runner instance per SessionID
 	// to maintain separate working memories. For now, we share the runner's session logic.
 
-	// Use a dedicated runner instance for this session ID to ensure isolation.
+	// Use a dedicated runner instance for this session ID and channel
 	sessionRunner := r.WithSession(msg.SessionID)
+	sessionRunner.channelID = msg.ChannelID
 
 	handler := &channelStreamHandler{
 		replyFn: replyFn,

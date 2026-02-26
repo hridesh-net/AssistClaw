@@ -608,6 +608,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 			toolReg.Register(tool)
 		}
 	}
+	toolReg.Register(skills.NewReadSkillNodeTool(skillReg))
 
 	runner := agent.NewRunner(agent.Config{
 		MaxIterations:       cfg.Agent.MaxIterations,
