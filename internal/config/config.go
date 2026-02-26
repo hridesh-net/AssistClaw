@@ -41,6 +41,23 @@ type Config struct {
 
 	// Channels configures messaging channel integrations.
 	Channels ChannelsConfig `yaml:"channels"`
+
+	// Plano configures the optional smart AI routing proxy.
+	Plano PlanoConfig `yaml:"plano"`
+}
+
+// PlanoConfig configures the Plano smart routing proxy.
+type PlanoConfig struct {
+	Enabled          bool              `yaml:"enabled"`
+	Endpoint         string            `yaml:"endpoint"`          // default: http://localhost:12000/v1
+	FallbackProvider string            `yaml:"fallback_provider"` // provider name: openai, groq, etc.
+	Preferences      []PlanoPreference `yaml:"preferences"`
+}
+
+// PlanoPreference maps a plain-English routing description to a preferred model.
+type PlanoPreference struct {
+	Description string `yaml:"description"`
+	PreferModel string `yaml:"prefer_model"`
 }
 
 // GatewayConfig controls the HTTP/WebSocket gateway.

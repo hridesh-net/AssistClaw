@@ -5,9 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 	"github.com/assistclaw/assistclaw/internal/config"
@@ -734,9 +737,17 @@ func runOnboarding(configPath string) (bool, error) {
 		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(
 			"\n  ⚡ Plano enabled — only OpenAI-compatible providers will be shown below.",
 		))
-		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
-			"  Start Plano: docker run -p 12000:12000 katanemo/plano:latest\n",
-		))
+
+		// ── Docker prerequisites ──────────────────────────────────────────────
+		fmt.Println()
+		dockerOK := setupPlanoDocker(planoEndpoint)
+		if !dockerOK {
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(
+				"  ⚠  Plano Docker setup skipped. Start it manually:\n" +
+					"     docker run -d -p 12000:12000 --name plano katanemo/plano:latest",
+			))
+		}
+		fmt.Println()
 	}
 	// ─────────────────────────────────────────────────────────────────────────
 
@@ -1367,4 +1378,82 @@ func randomToken(n int) string {
 		return ""
 	}
 	return hex.EncodeToString(b)
+}
+
+// setupPlanoDocker checks Docker availability, pulls the Plano image, and
+// starts a detached Plano container listening on port 12000.
+// Returns true if Plano is confirmed reachable after setup.
+func setupPlanoDocker(endpoint string) bool {
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+
+	// 1. Check docker binary
+	fmt.Print("  Checking Docker... ")
+	if err := exec.Command("docker", "version", "--format", "{{.Server.Version}}").Run(); err != nil {
+		fmt.Println(red.Render("✗ Docker not found."))
+		fmt.Println(yellow.Render("  Install Docker Desktop: https://docs.docker.com/get-docker/"))
+		return false
+	}
+	fmt.Println(green.Render("✔ Docker found"))
+
+	// 2. Check if plano container already running
+	out, _ := exec.Command("docker", "ps", "--filter", "name=plano", "--format", "{{.Names}}").Output()
+	if strings.Contains(string(out), "plano") {
+		fmt.Println(green.Render("  ✔ Plano container already running"))
+		return waitForPlano(endpoint, 5)
+	}
+
+	// 3. Pull image
+	fmt.Print("  Pulling katanemo/plano:latest (this may take a minute)... ")
+	pullCmd := exec.Command("docker", "pull", "katanemo/plano:latest")
+	pullCmd.Stdout = os.Stdout
+	pullCmd.Stderr = os.Stderr
+	if err := pullCmd.Run(); err != nil {
+		fmt.Println(red.Render("✗ Pull failed: " + err.Error()))
+		return false
+	}
+	fmt.Println(green.Render("  ✔ Image pulled"))
+
+	// 4. Remove any stopped plano container
+	_ = exec.Command("docker", "rm", "-f", "plano").Run()
+
+	// 5. Start container detached
+	fmt.Print("  Starting Plano container... ")
+	startCmd := exec.Command("docker", "run", "-d",
+		"--name", "plano",
+		"-p", "12000:12000",
+		"--restart", "unless-stopped",
+		"katanemo/plano:latest",
+	)
+	if out, err := startCmd.CombinedOutput(); err != nil {
+		fmt.Println(red.Render("✗ Failed to start: " + string(out)))
+		return false
+	}
+	fmt.Println(green.Render("✔ Container started"))
+
+	// 6. Wait for readiness
+	fmt.Print("  Waiting for Plano to be ready")
+	if waitForPlano(endpoint, 15) {
+		fmt.Println(" " + green.Render("✔ Ready!"))
+		return true
+	}
+	fmt.Println(" " + yellow.Render("⚠ Timed out — Plano may still be starting up"))
+	return false
+}
+
+// waitForPlano polls the Plano /v1/models endpoint until it responds or timeout expires.
+func waitForPlano(endpoint string, timeoutSec int) bool {
+	modelsURL := strings.TrimRight(endpoint, "/") + "/models"
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
+	for time.Now().Before(deadline) {
+		if resp, err := client.Get(modelsURL); err == nil && resp.StatusCode < 400 {
+			resp.Body.Close()
+			return true
+		}
+		fmt.Print(".")
+		time.Sleep(1 * time.Second)
+	}
+	return false
 }

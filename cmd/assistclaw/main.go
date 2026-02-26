@@ -42,9 +42,10 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/slack"
 	"github.com/assistclaw/assistclaw/internal/channels/telegram"
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
+	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.2.0"
+const version = "v3.2.1"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -998,6 +999,43 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 			register(v)
 		}
 	}
+	// ─── Plano Smart Routing ───────────────────────────────────────────────────
+	// If Plano is enabled, register it as the primary provider so all requests
+	// flow through Plano's complexity-aware router. All other providers are still
+	// registered so Plano can delegate to them, and as fallback if Plano is down.
+	if cfg.Plano.Enabled {
+		// Convert config.PlanoPreference → planoprovider.Preference
+		prefs := make([]planoprovider.Preference, len(cfg.Plano.Preferences))
+		for i, p := range cfg.Plano.Preferences {
+			prefs[i] = planoprovider.Preference{
+				Description: p.Description,
+				PreferModel: p.PreferModel,
+			}
+		}
+
+		// Look up fallback from already-registered providers
+		var fallback provider.Provider
+		if cfg.Plano.FallbackProvider != "" {
+			if p, ok := reg.Get(cfg.Plano.FallbackProvider); ok {
+				fallback = p
+			}
+		}
+
+		planoP := planoprovider.New(planoprovider.Config{
+			Enabled:          true,
+			Endpoint:         cfg.Plano.Endpoint,
+			FallbackProvider: cfg.Plano.FallbackProvider,
+			Preferences:      prefs,
+		}, fallback)
+
+		register(planoP)
+		log.Info("Plano smart routing enabled",
+			zap.String("endpoint", cfg.Plano.Endpoint),
+			zap.Int("preferences", len(prefs)),
+		)
+	}
+	// ──────────────────────────────────────────────────────────────────────────
+
 	return nil
 }
 
