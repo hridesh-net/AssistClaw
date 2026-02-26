@@ -107,6 +107,7 @@ install_binary() {
     chmod +x "$tmp_bin"
     mv "$tmp_bin" "$INSTALL_DIR/assistclaw"
     ok "Binary installed: $INSTALL_DIR/assistclaw"
+    copy_skills_dir
   else
     warn "Failed to download pre-built binary from $download_url (HTTP 404/Error)"
     warn "Falling back to compiling from source..."
@@ -130,9 +131,28 @@ build_binary_from_source() {
     install -m 0755 /tmp/assistclaw-build "$INSTALL_DIR/assistclaw"
     rm -f /tmp/assistclaw-build
     ok "Binary compiled and installed: $INSTALL_DIR/assistclaw"
+    copy_skills_dir
   else
     err "Go compiler not found! Unable to build from source, and pre-built binaries failed to download. Please install Go 1.24+."
   fi
+}
+
+# ─────────────────────────────────────────────
+# Copy bundled skills next to binary
+# ─────────────────────────────────────────────
+copy_skills_dir() {
+  local skills_src="$REPO_ROOT/skills"
+  local skills_dest="$INSTALL_DIR/skills"
+
+  if [[ ! -d "$skills_src" ]]; then
+    warn "No skills/ directory found in repo root — skipping bundled skills copy"
+    return
+  fi
+
+  log "Copying bundled skills to $skills_dest..."
+  rm -rf "$skills_dest"
+  cp -r "$skills_src" "$skills_dest"
+  ok "Bundled skills installed: $skills_dest"
 }
 
 # ─────────────────────────────────────────────
@@ -220,8 +240,8 @@ build_sensing() {
 # ─────────────────────────────────────────────
 setup_config() {
   log "Setting up ~/.assistclaw config directory..."
-  mkdir -p "$STATE_DIR"/{memory,tools,skills,logs}
-
+  mkdir -p "$STATE_DIR"/{memory,tools,logs}
+  mkdir -p "$STATE_DIR"/skills/{bundled,custom}
 }
 
 # ─────────────────────────────────────────────
@@ -258,9 +278,10 @@ main() {
   echo ""
   echo -e "  Get started:"
   echo -e "    ${BOLD}assistclaw --help${NC}"
-  echo -e "    ${BOLD}assistclaw providers list${NC}"
-  echo -e "    ${BOLD}assistclaw agent --message \"Hello!\"${NC}"
-  echo -e "    ${BOLD}assistclaw agent${NC}   (interactive REPL)"
+  echo -e "    ${BOLD}assistclaw onboard${NC}               (first-time setup)"
+  echo -e "    ${BOLD}assistclaw skills marketplace${NC}    (browse available skills)"
+  echo -e "    ${BOLD}assistclaw skills add github${NC}     (install a skill)"
+  echo -e "    ${BOLD}assistclaw agent${NC}                 (interactive REPL)"
   echo ""
   echo -e "  Config: ${BOLD}$STATE_DIR/assistclaw.yaml${NC}"
   echo ""
