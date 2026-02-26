@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -45,7 +47,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.3.0"
+const version = "v3.3.1"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -254,17 +256,81 @@ func statusCmd(gf *globalFlags) *cobra.Command {
 				skillSummary = fmt.Sprintf("%d enabled / %d installed", enabledCount, skillCount)
 			}
 
-			// Display
-			fmt.Printf("\n  ● AssistClaw is RUNNING\n\n")
-			fmt.Printf("  %-12s %d\n", "PID:", pid)
-			fmt.Printf("  %-12s %s\n", "Version:", version)
-			fmt.Printf("  %-12s %s\n", "Uptime:", st.etime)
-			fmt.Printf("  %-12s %s\n", "CPU:", st.cpu)
-			fmt.Printf("  %-12s %.1f MB\n", "RAM (RSS):", ramMB)
-			fmt.Printf("  %-12s %s\n", "Skills:", skillSummary)
-			fmt.Printf("  %-12s %s\n", "Config:", gf.configPath)
-			fmt.Printf("  %-12s %s\n\n", "State dir:", cfg.StateDir)
+			// ── Styled status board ──────────────────────────────────────────
+			bold := lipgloss.NewStyle().Bold(true).Foreground(tui.ColorNeon)
+			dim := lipgloss.NewStyle().Foreground(tui.ColorMuted)
+			primary := lipgloss.NewStyle().Foreground(tui.ColorPrimary).Bold(true)
 
+			// Parse CPU % for progress bar
+			cpuPct := 0.0
+			fmt.Sscanf(st.cpu, "%f", &cpuPct)
+			ramPct := (ramMB / 1024.0) * 100.0 // % of 1 GB reference
+			if ramPct > 100 {
+				ramPct = 100
+			}
+
+			// Channel list
+			var channels []string
+			if cfg.Channels.WhatsApp != nil {
+				channels = append(channels, primary.Render("WhatsApp"))
+			}
+			if cfg.Channels.Telegram != nil {
+				channels = append(channels, primary.Render("Telegram"))
+			}
+			if cfg.Channels.Discord != nil {
+				channels = append(channels, primary.Render("Discord"))
+			}
+			if cfg.Channels.Slack != nil {
+				channels = append(channels, primary.Render("Slack"))
+			}
+			channelStr := dim.Render("none")
+			if len(channels) > 0 {
+				channelStr = strings.Join(channels, dim.Render(" · "))
+			}
+
+			// Plano / MCP
+			planoStr := dim.Render("disabled")
+			if cfg.Plano.Enabled {
+				planoStr = primary.Render("✓ ") + dim.Render(cfg.Plano.Endpoint)
+			}
+			mcpStr := dim.Render("disabled")
+			if cfg.MCP.Server.Enabled {
+				t := cfg.MCP.Server.Transport
+				if t == "" {
+					t = "stdio"
+				}
+				mcpStr = primary.Render("✓ ") + dim.Render(t)
+			}
+
+			body := fmt.Sprintf(
+				"%s RUNNING%s\n\n"+
+					"  %s  %s  %s\n"+
+					"  %s  %s\n\n"+
+					"  %s %s  %s  %s%%\n"+
+					"  %s %s %s %.1f MB\n\n"+
+					"  %s%s\n"+
+					"  %s%s\n"+
+					"  %s%s\n",
+				tui.StatusOK,
+				dim.Render(fmt.Sprintf("               PID %d   uptime %s", pid, st.etime)),
+				dim.Render("version"), primary.Render(version),
+				dim.Render("skills"), primary.Render(skillSummary),
+				dim.Render("model  "), primary.Render(cfg.Agent.SystemPromptExt[:0]+"(configured)"),
+				dim.Render("CPU "), tui.ProgressBar(cpuPct, 12), dim.Render(" "), st.cpu,
+				dim.Render("RAM "), tui.ProgressBar(ramPct, 12), dim.Render(" "), ramMB,
+				dim.Render("Channels  "), channelStr,
+				dim.Render("Plano     "), planoStr,
+				dim.Render("MCP       "), mcpStr,
+			)
+
+			box := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(tui.ColorPrimary).
+				Background(tui.ColorSurface).
+				Padding(0, 2).
+				Render(bold.Render("  AssistClaw Status") + "\n\n" + body)
+
+			fmt.Println("\n" + box + "\n")
 			return nil
 		},
 	}
@@ -1141,22 +1207,42 @@ func (h *cliStreamHandler) OnDone(result *agent.RunResult) {
 }
 func (h *cliStreamHandler) OnError(err error) { h.done <- err }
 
+// runREPL launches the interactive agent REPL.
+// It now uses the futuristic bubbletea TUI from cmd/assistclaw/tui.
 func runREPL(ctx context.Context, r *agent.Runner, log *zap.Logger) error {
-	fmt.Printf("AssistClaw %s  (session: %s)\nType your message, or 'exit' to quit.\n\n", version, r.SessionID())
-	done := make(chan error, 1)
-	for {
-		fmt.Print("You: ")
-		var line string
-		_, err := fmt.Scanln(&line)
-		if err != nil || strings.TrimSpace(line) == "exit" {
-			return nil
+	// Count providers and skills for the banner
+	providerCount := 1 // at least one is configured or we wouldn't be here
+	skillCount := 0
+	if home, err := os.UserHomeDir(); err == nil {
+		if entries, err := os.ReadDir(filepath.Join(home, ".assistclaw", "skills", "custom")); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					skillCount++
+				}
+			}
 		}
-		r.RunStream(ctx, line, &cliStreamHandler{done: done})
-		if err := <-done; err != nil {
-			log.Error("agent error", zap.Error(err))
-		}
-		fmt.Println()
 	}
+
+	// Wrap agent.Runner as tui.AgentRunner
+	a := &agentRunnerAdapter{runner: r}
+	return tui.RunREPL(ctx, a, version, providerCount, skillCount)
+}
+
+// agentRunnerAdapter wraps agent.Runner to satisfy tui.AgentRunner.
+type agentRunnerAdapter struct {
+	runner *agent.Runner
+}
+
+func (a *agentRunnerAdapter) SessionID() string { return a.runner.SessionID() }
+func (a *agentRunnerAdapter) Run(ctx context.Context, msg string) (*tui.RunResult, error) {
+	res, err := a.runner.Run(ctx, msg)
+	if err != nil || res == nil {
+		return nil, err
+	}
+	return &tui.RunResult{
+		Iterations: res.Iterations,
+		Usage:      struct{ TotalTokens int }{TotalTokens: res.Usage.TotalTokens},
+	}, nil
 }
 
 func truncate(s string, n int) string {

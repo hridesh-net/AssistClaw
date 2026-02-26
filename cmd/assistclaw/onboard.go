@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/skills"
@@ -370,9 +371,9 @@ func runOnboarding(configPath string) (bool, error) {
 	theme.Focused.TextInput.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	theme.Focused.TextInput.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 
-	fmt.Println()
-	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("  Welcome to AssistClaw 🐾"))
+	tui.PrintOnboardBanner(version)
 	fmt.Println(lipgloss.NewStyle().Faint(true).Render("  Let's configure your autonomous agent environment."))
+	fmt.Println()
 
 	// Load existing config if available to pre-populate defaults
 	var existing *config.Config
