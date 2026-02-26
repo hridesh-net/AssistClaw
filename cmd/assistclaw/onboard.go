@@ -687,9 +687,55 @@ func runOnboarding(configPath string) (bool, error) {
 		selectedSkills = existing.Agent.EnabledSkills
 	}
 
-	// ─── Plano Smart Routing ──────────────────────────────────────────────────
-	// Optional: auto-route prompts to cheap vs. powerful models based on complexity.
+	// ────────────────────────────────────────────────────────────────────────
+	// Step 1: Primary LLM Provider
+	// ────────────────────────────────────────────────────────────────────────
+	var err error
+	primary, err = collectProvider(theme, "primary", true, primary)
+	if err != nil {
+		return false, err
+	}
+
+	secChoice := "none"
+	if secondary.provider != "" && secondary.provider != "none" {
+		secChoice = "configure"
+	}
+
+	formSecondaryChoice := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Secondary / Fallback Provider?").
+				Description("Pick a second model for high availability or specific tasks.").
+				Options(
+					huh.NewOption("None", "none"),
+					huh.NewOption("Choose a secondary provider", "configure"),
+				).
+				Value(&secChoice),
+		),
+	).WithTheme(theme)
+	if err := formSecondaryChoice.Run(); err != nil {
+		return false, fmt.Errorf("onboarding interrupted")
+	}
+
+	if secChoice == "configure" {
+		// Secondary provider — show all providers (no Plano filter yet)
+		secondary, err = collectProvider(theme, "secondary", false, secondary)
+		if err != nil {
+			return false, err
+		}
+	} else {
+		secondary.provider = "none"
+	}
+
+	// ─── Step 3: Plano Smart Routing (optional upgrade after provider setup) ───
+	// Plano auto-routes prompts to cheap or powerful models by complexity.
+	// It only works with OpenAI-compatible providers.
 	var usePlano bool
+	planoHint := ""
+	if !openAICompatProviders[primary.provider] {
+		planoHint = "\n\n⚠ Your primary provider (" + primary.provider + ") is not OpenAI-compatible,\n" +
+			"so Plano would only route to your secondary provider."
+	}
 	_ = huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
 			Title("Enable Smart Routing with Plano? (Optional)").
@@ -697,7 +743,7 @@ func runOnboarding(configPath string) (bool, error) {
 				"Plano is an open-source AI proxy that automatically routes each prompt\n" +
 					"to the right model based on complexity — simple queries go to a fast,\n" +
 					"cheap model; complex tasks go to a powerful one. Cuts LLM costs 30–60%.\n" +
-					"\nRequires Docker on your machine. Runs locally on port 12000.",
+					"\nRequires Docker on your machine. Runs locally on port 12000." + planoHint,
 			).
 			Value(&usePlano),
 	)).WithTheme(theme).Run()
@@ -735,10 +781,6 @@ func runOnboarding(configPath string) (bool, error) {
 				Value(&planoPowerfulModel),
 		)).WithTheme(theme).Run()
 
-		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(
-			"\n  ⚡ Plano enabled — only OpenAI-compatible providers will be shown below.",
-		))
-
 		// ── Docker prerequisites ──────────────────────────────────────────────
 		fmt.Println()
 		dockerOK := setupPlanoDocker(planoEndpoint)
@@ -751,42 +793,6 @@ func runOnboarding(configPath string) (bool, error) {
 		fmt.Println()
 	}
 	// ─────────────────────────────────────────────────────────────────────────
-
-	var err error
-	primary, err = collectProviderFiltered(theme, "primary", true, primary, usePlano)
-	if err != nil {
-		return false, err
-	}
-
-	secChoice := "none"
-	if secondary.provider != "" && secondary.provider != "none" {
-		secChoice = "configure"
-	}
-
-	formSecondaryChoice := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Secondary / Fallback Provider?").
-				Description("Pick a second model for high availability or specific tasks.").
-				Options(
-					huh.NewOption("None", "none"),
-					huh.NewOption("Choose a secondary provider", "configure"),
-				).
-				Value(&secChoice),
-		),
-	).WithTheme(theme)
-	if err := formSecondaryChoice.Run(); err != nil {
-		return false, fmt.Errorf("onboarding interrupted")
-	}
-
-	if secChoice == "configure" {
-		secondary, err = collectProviderFiltered(theme, "secondary", false, secondary, usePlano)
-		if err != nil {
-			return false, err
-		}
-	} else {
-		secondary.provider = "none"
-	}
 
 	formRouting := huh.NewForm(
 		huh.NewGroup(
