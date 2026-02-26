@@ -44,6 +44,33 @@ type Config struct {
 
 	// Plano configures the optional smart AI routing proxy.
 	Plano PlanoConfig `yaml:"plano"`
+
+	// MCP configures the Model Context Protocol server and external MCP client connections.
+	MCP MCPConfig `yaml:"mcp"`
+}
+
+// MCPConfig configures the MCP server and external MCP client connections.
+type MCPConfig struct {
+	Server  MCPServerConfig   `yaml:"server"`
+	Clients []MCPClientConfig `yaml:"clients"`
+}
+
+// MCPServerConfig configures the built-in MCP server.
+type MCPServerConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Transport string `yaml:"transport"`  // "stdio" | "http" — default: stdio
+	HTTPPort  int    `yaml:"http_port"`  // default: 5173
+	AuthToken string `yaml:"auth_token"` // optional bearer token for HTTP mode
+}
+
+// MCPClientConfig configures a connection to an external MCP server.
+type MCPClientConfig struct {
+	Name      string   `yaml:"name"`
+	Transport string   `yaml:"transport"` // "stdio" | "http"
+	Command   string   `yaml:"command"`   // e.g. "npx @modelcontextprotocol/server-filesystem /tmp"
+	Args      []string `yaml:"args"`
+	URL       string   `yaml:"url"`
+	AuthToken string   `yaml:"auth_token"`
 }
 
 // PlanoConfig configures the Plano smart routing proxy.

@@ -74,6 +74,10 @@ type Registry interface {
 	Get(name string) (*Skill, bool)
 	List() []Skill
 
+	// Register adds (or replaces) a virtual skill in the registry.
+	// Used by the MCP adapter to inject external server tools as skill nodes.
+	Register(skill *Skill)
+
 	// ReadSkillNode retrieves the content of a specific node within a skill.
 	ReadSkillNode(skillName string, nodeName string) (*Node, bool)
 

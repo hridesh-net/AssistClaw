@@ -92,6 +92,14 @@ func (l *loader) Get(name string) (*Skill, bool) {
 	return s, ok
 }
 
+// Register adds or replaces a virtual skill in the registry.
+// This is used by the MCP adapter to inject external server tools as skill nodes.
+func (l *loader) Register(skill *Skill) {
+	if skill != nil && skill.Name != "" {
+		l.skills[skill.Name] = skill
+	}
+}
+
 func (l *loader) ReadSkillNode(skillName string, nodeName string) (*Node, bool) {
 	skill, ok := l.skills[skillName]
 	if !ok {
