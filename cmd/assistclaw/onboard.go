@@ -62,41 +62,75 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 }
 
 // collectProvider guides the user through selecting and configuring an LLM provider.
+// openAICompatProviders is the list of provider keys that work with Plano
+// (all OpenAI-compatible providers). Anthropic, Bedrock, and Vertex use their
+// own proprietary protocols and are NOT OpenAI-compatible.
+var openAICompatProviders = map[string]bool{
+	"openai":     true,
+	"azure":      true,
+	"ollama":     true,
+	"vllm":       true,
+	"lmstudio":   true,
+	"groq":       true,
+	"mistral":    true,
+	"openrouter": true,
+	"deepseek":   true,
+	"perplexity": true,
+	"nvidia":     true,
+}
+
 func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, initial provEntry) (provEntry, error) {
+	return collectProviderFiltered(theme, providerType, isPrimary, initial, false)
+}
+
+func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bool, initial provEntry, planoMode bool) (provEntry, error) {
 	entry := initial
 	var providerOptions []huh.Option[string]
 
+	allPrimary := []huh.Option[string]{
+		huh.NewOption("Anthropic (Recommended)", "anthropic"),
+		huh.NewOption("OpenAI", "openai"),
+		huh.NewOption("Ollama (Local / Free)", "ollama"),
+		huh.NewOption("AWS Bedrock", "bedrock"),
+		huh.NewOption("vLLM (Local / Custom)", "vllm"),
+		huh.NewOption("LM Studio (Local)", "lmstudio"),
+		huh.NewOption("Groq", "groq"),
+		huh.NewOption("Mistral", "mistral"),
+		huh.NewOption("Azure OpenAI", "azure"),
+		huh.NewOption("DeepSeek", "deepseek"),
+		huh.NewOption("Perplexity", "perplexity"),
+		huh.NewOption("Google Vertex AI", "vertex"),
+	}
+	allSecondary := []huh.Option[string]{
+		huh.NewOption("Ollama (Local / Free)", "ollama"),
+		huh.NewOption("OpenAI", "openai"),
+		huh.NewOption("Groq (Super Fast)", "groq"),
+		huh.NewOption("Anthropic", "anthropic"),
+		huh.NewOption("Mistral", "mistral"),
+		huh.NewOption("OpenRouter", "openrouter"),
+		huh.NewOption("Azure OpenAI", "azure"),
+		huh.NewOption("DeepSeek", "deepseek"),
+		huh.NewOption("Perplexity", "perplexity"),
+		huh.NewOption("AWS Bedrock", "bedrock"),
+		huh.NewOption("Google Vertex AI", "vertex"),
+		huh.NewOption("vLLM (Local / Custom)", "vllm"),
+		huh.NewOption("LM Studio (Local)", "lmstudio"),
+	}
+
+	source := allSecondary
 	if isPrimary {
-		providerOptions = []huh.Option[string]{
-			huh.NewOption("Anthropic (Recommended)", "anthropic"),
-			huh.NewOption("OpenAI", "openai"),
-			huh.NewOption("Ollama (Local / Free)", "ollama"),
-			huh.NewOption("AWS Bedrock", "bedrock"),
-			huh.NewOption("vLLM (Local / Custom)", "vllm"),
-			huh.NewOption("LM Studio (Local)", "lmstudio"),
-			huh.NewOption("Groq", "groq"),
-			huh.NewOption("Mistral", "mistral"),
-			huh.NewOption("Azure OpenAI", "azure"),
-			huh.NewOption("DeepSeek", "deepseek"),
-			huh.NewOption("Perplexity", "perplexity"),
-			huh.NewOption("Google Vertex AI", "vertex"),
+		source = allPrimary
+	}
+
+	if planoMode {
+		// Plano only routes to OpenAI-compatible providers
+		for _, o := range source {
+			if openAICompatProviders[o.Value] {
+				providerOptions = append(providerOptions, o)
+			}
 		}
 	} else {
-		providerOptions = []huh.Option[string]{
-			huh.NewOption("Ollama (Local / Free)", "ollama"),
-			huh.NewOption("OpenAI", "openai"),
-			huh.NewOption("Groq (Super Fast)", "groq"),
-			huh.NewOption("Anthropic", "anthropic"),
-			huh.NewOption("Mistral", "mistral"),
-			huh.NewOption("OpenRouter", "openrouter"),
-			huh.NewOption("Azure OpenAI", "azure"),
-			huh.NewOption("DeepSeek", "deepseek"),
-			huh.NewOption("Perplexity", "perplexity"),
-			huh.NewOption("AWS Bedrock", "bedrock"),
-			huh.NewOption("Google Vertex AI", "vertex"),
-			huh.NewOption("vLLM (Local / Custom)", "vllm"),
-			huh.NewOption("LM Studio (Local)", "lmstudio"),
-		}
+		providerOptions = source
 	}
 
 	title := fmt.Sprintf("Which %s AI provider would you like to use?", providerType)
@@ -649,8 +683,65 @@ func runOnboarding(configPath string) (bool, error) {
 		selectedSkills = existing.Agent.EnabledSkills
 	}
 
+	// ─── Plano Smart Routing ──────────────────────────────────────────────────
+	// Optional: auto-route prompts to cheap vs. powerful models based on complexity.
+	var usePlano bool
+	_ = huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title("Enable Smart Routing with Plano? (Optional)").
+			Description(
+				"Plano is an open-source AI proxy that automatically routes each prompt\n" +
+					"to the right model based on complexity — simple queries go to a fast,\n" +
+					"cheap model; complex tasks go to a powerful one. Cuts LLM costs 30–60%.\n" +
+					"\nRequires Docker on your machine. Runs locally on port 12000.",
+			).
+			Value(&usePlano),
+	)).WithTheme(theme).Run()
+
+	var planoEndpoint, planoFastModel, planoPowerfulModel string
+	if usePlano {
+		planoEndpoint = "http://localhost:12000/v1"
+		_ = huh.NewForm(huh.NewGroup(
+			huh.NewInput().
+				Title("Plano endpoint").
+				Description("Leave as default if running Plano locally via Docker.").
+				Value(&planoEndpoint),
+			huh.NewSelect[string]().
+				Title("Fast (cheap) model — for simple queries").
+				Description("Used for greetings, short Q&A, and conversational turns.").
+				Options(
+					huh.NewOption("GPT-4o mini", "openai/gpt-4o-mini"),
+					huh.NewOption("Groq Llama3 8B", "groq/llama3-8b-8192"),
+					huh.NewOption("Mistral 7B", "mistral/mistral-7b-instruct"),
+					huh.NewOption("Ollama Llama3.2", "ollama/llama3.2"),
+					huh.NewOption("DeepSeek V2 (Lite)", "deepseek/deepseek-chat"),
+				).
+				Value(&planoFastModel),
+			huh.NewSelect[string]().
+				Title("Powerful model — for complex tasks").
+				Description("Used for coding, multi-step reasoning, and analysis.").
+				Options(
+					huh.NewOption("GPT-4o", "openai/gpt-4o"),
+					huh.NewOption("GPT-4.1", "openai/gpt-4.1"),
+					huh.NewOption("Groq Llama3 70B", "groq/llama3-70b-8192"),
+					huh.NewOption("Mistral Large", "mistral/mistral-large-latest"),
+					huh.NewOption("Ollama Llama3.1 70B", "ollama/llama3.1:70b"),
+					huh.NewOption("DeepSeek R1", "deepseek/deepseek-r1"),
+				).
+				Value(&planoPowerfulModel),
+		)).WithTheme(theme).Run()
+
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render(
+			"\n  ⚡ Plano enabled — only OpenAI-compatible providers will be shown below.",
+		))
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
+			"  Start Plano: docker run -p 12000:12000 katanemo/plano:latest\n",
+		))
+	}
+	// ─────────────────────────────────────────────────────────────────────────
+
 	var err error
-	primary, err = collectProvider(theme, "primary", true, primary)
+	primary, err = collectProviderFiltered(theme, "primary", true, primary, usePlano)
 	if err != nil {
 		return false, err
 	}
@@ -677,7 +768,7 @@ func runOnboarding(configPath string) (bool, error) {
 	}
 
 	if secChoice == "configure" {
-		secondary, err = collectProvider(theme, "secondary", false, secondary)
+		secondary, err = collectProviderFiltered(theme, "secondary", false, secondary, usePlano)
 		if err != nil {
 			return false, err
 		}
@@ -1230,6 +1321,18 @@ func runOnboarding(configPath string) (bool, error) {
 			sb.WriteString("  rules:\n")
 		}
 		sb.WriteString(fmt.Sprintf("    - task: \"vision\"\n      model: \"%s\"\n", visionModel))
+	}
+
+	// Plano smart routing config
+	if usePlano {
+		sb.WriteString("\nplano:\n")
+		sb.WriteString(fmt.Sprintf("  enabled: true\n"))
+		sb.WriteString(fmt.Sprintf("  endpoint: \"%s\"\n", planoEndpoint))
+		sb.WriteString("  preferences:\n")
+		sb.WriteString(fmt.Sprintf("    - description: \"Route simple greetings, weather, casual chat, and short questions to the fast model\"\n"))
+		sb.WriteString(fmt.Sprintf("      prefer_model: \"%s\"\n", planoFastModel))
+		sb.WriteString(fmt.Sprintf("    - description: \"Route code generation, debugging, analysis, and multi-step reasoning to the powerful model\"\n"))
+		sb.WriteString(fmt.Sprintf("      prefer_model: \"%s\"\n", planoPowerfulModel))
 	}
 
 	tpl = sb.String()
