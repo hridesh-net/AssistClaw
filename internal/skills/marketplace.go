@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -21,9 +22,10 @@ type MarketplaceEntry struct {
 	Emoji       string   `json:"emoji"`
 	Bundled     bool     `json:"bundled"` // true = ships with binary
 	Tags        []string `json:"tags"`
-	// For community skills:
-	Repo    string `json:"repo,omitempty"`    // GitHub repo (e.g. "user/skill-name")
-	URL     string `json:"url,omitempty"`     // Direct download URL
+	// For community skills or monorepo sub-paths:
+	Repo    string `json:"repo,omitempty"`    // GitHub repo (e.g. "hridesh-net/AssistClaw")
+	Path    string `json:"path,omitempty"`    // Subdirectory within repo (e.g. "skills/github")
+	URL     string `json:"url,omitempty"`     // Direct download URL (overrides repo+path)
 	Version string `json:"version,omitempty"` // Latest version tag
 }
 
@@ -119,18 +121,19 @@ func containsTag(tags []string, q string) bool {
 }
 
 // Install copies a bundled skill or downloads a community skill to customDir.
-// For bundled skills: copies from bundledDir.
-// For community skills: clones/downloads from the entry's URL or Repo.
+// Strategy order:
+//  1. Copy from local bundledDir (fast, no network)
+//  2. Git sparse-checkout from GitHub monorepo (bundled skills)
+//  3. Download from entry's explicit URL or Repo
+//  4. Direct URL/GitHub shorthand
 func (m *Marketplace) Install(ctx context.Context, nameOrURL string) (string, error) {
-	// Normalize
 	name := filepath.Base(nameOrURL)
-
 	destDir := filepath.Join(m.CustomDir, name)
 	if _, err := os.Stat(destDir); err == nil {
 		return destDir, fmt.Errorf("skill %q is already installed at %s", name, destDir)
 	}
 
-	// Try bundled first
+	// 1. Try local bundled directory first (fast path)
 	bundledSrc := filepath.Join(m.BundledDir, name)
 	if _, err := os.Stat(bundledSrc); err == nil {
 		if err := CopyDir(bundledSrc, destDir); err != nil {
@@ -139,9 +142,27 @@ func (m *Marketplace) Install(ctx context.Context, nameOrURL string) (string, er
 		return destDir, nil
 	}
 
-	// Try marketplace lookup
-	index, err := m.FetchIndex(ctx)
-	if err == nil {
+	// Look up in marketplace index
+	index, _ := m.FetchIndex(ctx)
+
+	// 2. Git sparse-checkout for bundled monorepo skills (works even when bundledDir is empty)
+	if index != nil {
+		for _, e := range index.Skills {
+			if e.Name == name && e.Bundled && e.Repo != "" {
+				skillPath := e.Path
+				if skillPath == "" {
+					skillPath = "skills/" + name
+				}
+				if err := gitSparseCheckout(ctx, e.Repo, skillPath, destDir); err == nil {
+					return destDir, nil
+				}
+				// Fall through to URL download if git fails
+			}
+		}
+	}
+
+	// 3. Explicit URL or Repo from marketplace entry
+	if index != nil {
 		for _, e := range index.Skills {
 			if e.Name == name {
 				if downloadURL := resolveDownloadURL(e); downloadURL != "" {
@@ -154,7 +175,7 @@ func (m *Marketplace) Install(ctx context.Context, nameOrURL string) (string, er
 		}
 	}
 
-	// Try direct URL/GitHub
+	// 4. Direct URL or GitHub shorthand
 	if strings.HasPrefix(nameOrURL, "http") || strings.Contains(nameOrURL, "/") {
 		url := resolveGitHubURL(nameOrURL)
 		if err := downloadSkill(ctx, url, destDir); err != nil {
@@ -163,7 +184,67 @@ func (m *Marketplace) Install(ctx context.Context, nameOrURL string) (string, er
 		return destDir, nil
 	}
 
-	return "", fmt.Errorf("skill %q not found in bundled skills or marketplace", name)
+	return "", fmt.Errorf("skill %q not found. Try: assistclaw skills marketplace", name)
+}
+
+// InstallFromPath copies a skill from a local filesystem path into customDir.
+func (m *Marketplace) InstallFromPath(src string) (string, error) {
+	// Validate it has a SKILL.md
+	if _, err := os.Stat(filepath.Join(src, "SKILL.md")); err != nil {
+		return "", fmt.Errorf("%s does not look like a skill directory (no SKILL.md found)", src)
+	}
+	name := filepath.Base(src)
+	destDir := filepath.Join(m.CustomDir, name)
+	if _, err := os.Stat(destDir); err == nil {
+		return destDir, fmt.Errorf("skill %q already exists at %s", name, destDir)
+	}
+	if err := CopyDir(src, destDir); err != nil {
+		return "", fmt.Errorf("failed to copy skill from %s: %w", src, err)
+	}
+	return destDir, nil
+}
+
+// gitSparseCheckout uses git to download a single subdirectory from a GitHub repo.
+func gitSparseCheckout(ctx context.Context, repo, subPath, destDir string) error {
+	repoURL := fmt.Sprintf("https://github.com/%s.git", repo)
+	tmpDir, err := os.MkdirTemp("", "assistclaw-skill-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	runGit := func(args ...string) error {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = tmpDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("git %s failed: %w\n%s", args[0], err, string(out))
+		}
+		return nil
+	}
+
+	if err := runGit("init"); err != nil {
+		return err
+	}
+	if err := runGit("remote", "add", "origin", repoURL); err != nil {
+		return err
+	}
+	if err := runGit("sparse-checkout", "init", "--cone"); err != nil {
+		return err
+	}
+	if err := runGit("sparse-checkout", "set", subPath); err != nil {
+		return err
+	}
+	if err := runGit("pull", "--depth=1", "origin", "main"); err != nil {
+		return err
+	}
+
+	// Copy the checked-out subdirectory to destination
+	src := filepath.Join(tmpDir, subPath)
+	if _, err := os.Stat(src); err != nil {
+		return fmt.Errorf("skill path %s not found in repo after checkout", subPath)
+	}
+	return CopyDir(src, destDir)
 }
 
 func resolveDownloadURL(e MarketplaceEntry) string {

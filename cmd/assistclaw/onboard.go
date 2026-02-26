@@ -968,104 +968,90 @@ func runOnboarding(configPath string) (bool, error) {
 		}
 	}
 
-	// Dynamic Skill Discovery
-	var skillOptions []huh.Option[string]
-	skillReg := skills.NewRegistry()
-
-	// 1. Check current directory
-	availableSkills, _ := skillReg.Discover("./skills")
-	// 2. Check default state directory (~/.assistclaw/skills)
-	if home, err := os.UserHomeDir(); err == nil {
-		homeSkills := filepath.Join(home, ".assistclaw", "skills")
-		if homeSkills != "./skills" { // avoid double-counting if we are IN ~/.assistclaw
-			more, _ := skillReg.Discover(homeSkills)
-			availableSkills = append(availableSkills, more...)
-		}
-	}
-
-	// Deduplicate by name
-	seen := make(map[string]bool)
-	var finalSkills []skills.SkillInfo
-	for _, s := range availableSkills {
-		if !seen[s.Name] {
-			seen[s.Name] = true
-			finalSkills = append(finalSkills, s)
-		}
-	}
-
-	for _, s := range finalSkills {
-		label := s.Name
-		if s.Emoji != "" {
-			label = s.Emoji + " " + s.Name
-		}
-		if !s.Eligible {
-			label = "❗ " + label + " (Missing: " + strings.Join(s.Missing, ", ") + ")"
-		}
-		skillOptions = append(skillOptions, huh.NewOption(label, s.Name))
-	}
-
-	// Fallback if no skills found on disk
-	if len(skillOptions) == 0 {
-		skillOptions = []huh.Option[string]{
-			huh.NewOption("Browser Control", "browser"),
-			huh.NewOption("System Admin", "sysadmin"),
-			huh.NewOption("Development Assistant", "dev"),
-		}
-	}
-
-	formSkills := huh.NewForm(
-		huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Enable Skills").
-				Description("Choose specialized capabilities for your agent.").
-				Options(skillOptions...).
-				Value(&selectedSkills),
-		),
-	).WithTheme(theme)
-	_ = formSkills.Run()
-
-	// Copy selected skills from bundled dir into custom dir and handle deps
-	if home, _ := os.UserHomeDir(); home != "" {
+	// Skill configuration — identical TUI used by "assistclaw skills configure"
+	{
+		home, _ := os.UserHomeDir()
 		bundledDir := filepath.Join(home, ".assistclaw", "skills", "bundled")
 		customDir := filepath.Join(home, ".assistclaw", "skills", "custom")
+		_ = os.MkdirAll(bundledDir, 0o755)
+		_ = os.MkdirAll(customDir, 0o755)
 
-		// First, extract bundled skills if not already done
+		// Extract bundled skills from repo if available
 		if src := resolveBundledSkillsSrc(); src != "" {
 			_ = skills.CopyDir(src, bundledDir)
 		}
 
 		mp := skills.NewMarketplace(bundledDir, customDir)
-
-		for _, name := range selectedSkills {
-			// Install (copy from bundled to custom) if not already customised
-			dest := filepath.Join(customDir, name)
-			if _, err := os.Stat(dest); os.IsNotExist(err) {
-				if _, err := mp.Install(context.Background(), name); err != nil {
-					fmt.Printf("⚠ Could not install skill %q: %v\n", name, err)
-					continue
-				}
-				fmt.Printf("✔ Installed skill: %s\n", name)
+		idx, err := mp.FetchIndex(context.Background())
+		if err == nil {
+			type skillOption struct {
+				name string
 			}
 
-			// Check and offer dependency installation
-			checkReg := skills.NewRegistry()
-			_ = checkReg.LoadAll(context.Background(), dest)
-			if s, ok := checkReg.Get(name); ok {
-				met, missing := checkReg.CheckRequirements(s)
-				if !met && len(s.Metadata.OpenClaw.Install) > 0 {
-					var confirmInstall bool
-					huh.NewForm(huh.NewGroup(
-						huh.NewConfirm().
-							Title(fmt.Sprintf("Install dependencies for %s (%s)?", s.Name, strings.Join(missing, ", "))).
-							Description("This will run brew or go install as specified in the skill metadata.").
-							Value(&confirmInstall),
-					)).WithTheme(theme).Run()
+			const customSentinel = "__custom__"
+			var opts []huh.Option[string]
+			for _, e := range idx.Skills {
+				label := e.Name
+				if e.Emoji != "" {
+					label = e.Emoji + "  " + e.Name
+				}
+				if e.Description != "" {
+					desc := e.Description
+					if len(desc) > 72 {
+						desc = desc[:71] + "…"
+					}
+					label += "\n     " + desc
+				}
+				opts = append(opts, huh.NewOption(label, e.Name))
+			}
+			opts = append(opts, huh.NewOption("＋  Add custom skill  (local path or URL)", customSentinel))
 
-					if confirmInstall {
-						if err := checkReg.InstallDependency(context.Background(), s); err != nil {
-							fmt.Printf("Skill dependency install failed: %v\n", err)
+			fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).
+				Render("\n  🛠  Select Agent Skills"))
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).
+				Render("  Space to toggle · Enter to confirm · ↑↓ to move\n"))
+
+			var raw []string
+			_ = huh.NewForm(huh.NewGroup(
+				huh.NewMultiSelect[string]().
+					Title("Enable Skills").
+					Description("Bundled skills are fetched automatically if not present locally.").
+					Options(opts...).
+					Value(&raw),
+			)).WithTheme(theme).Run()
+
+			var customPath string
+			for _, n := range raw {
+				if n == customSentinel {
+					_ = huh.NewForm(huh.NewGroup(
+						huh.NewInput().
+							Title("Custom skill path or URL").
+							Placeholder("/path/to/skill  or  https://github.com/user/skill").
+							Value(&customPath),
+					)).WithTheme(theme).Run()
+					if customPath != "" {
+						dest, err := mp.InstallFromPath(customPath)
+						if err != nil {
+							// Try as URL
+							dest, err = mp.Install(context.Background(), customPath)
+						}
+						if err == nil {
+							selectedSkills = append(selectedSkills, filepath.Base(dest))
+							fmt.Printf("✔ Custom skill installed: %s\n", filepath.Base(dest))
 						} else {
-							fmt.Printf("✔ Dependencies installed for %s\n", s.Name)
+							fmt.Printf("⚠ Custom skill failed: %v\n", err)
+						}
+					}
+				} else {
+					selectedSkills = append(selectedSkills, n)
+					// Install in background (non-blocking feedback)
+					dest := filepath.Join(customDir, n)
+					if _, err := os.Stat(dest); os.IsNotExist(err) {
+						fmt.Printf("  Installing %s...", n)
+						if _, err := mp.Install(context.Background(), n); err != nil {
+							fmt.Printf(" ⚠ %v\n", err)
+						} else {
+							fmt.Println(" ✔")
 						}
 					}
 				}

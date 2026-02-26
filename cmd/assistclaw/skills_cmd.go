@@ -27,11 +27,20 @@ Skills live in two directories:
   bundled:  skills shipped with AssistClaw  (~/.assistclaw/skills/bundled/)
   custom:   your active/custom skills        (~/.assistclaw/skills/custom/)
 
-The agent loads all skills in ~/.assistclaw/skills/ on startup.
-Use 'enable' and 'disable' to control which ones are active.`,
+Run 'assistclaw skills configure' (or just 'assistclaw skills') for the interactive TUI.`,
+		// Default: open the configure TUI when no subcommand is given
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log := buildLogger(gf.logLevel)
+			cfg, err := loadConfig(gf.configPath, log)
+			if err != nil {
+				return err
+			}
+			return RunSkillsConfigure(cfg, gf.configPath, "")
+		},
 	}
 
 	cmd.AddCommand(
+		skillsConfigureCmd(gf),
 		skillsListCmd(gf),
 		skillsAddCmd(gf),
 		skillsRemoveCmd(gf),

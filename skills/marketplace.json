@@ -1,12 +1,15 @@
 {
     "version": "1",
     "updated": "2026-02-26",
+    "repo": "hridesh-net/AssistClaw",
     "skills": [
         {
             "name": "1password",
             "description": "Set up and use 1Password CLI for secrets management",
             "emoji": "🔐",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/1password",
             "tags": [
                 "security",
                 "secrets"
@@ -17,6 +20,8 @@
             "description": "Manage Apple Notes via the memo CLI on macOS",
             "emoji": "📝",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/apple-notes",
             "tags": [
                 "productivity",
                 "notes",
@@ -28,6 +33,8 @@
             "description": "Manage Apple Reminders via remindctl CLI",
             "emoji": "⏰",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/apple-reminders",
             "tags": [
                 "productivity",
                 "macos"
@@ -38,6 +45,8 @@
             "description": "Create, search, and manage Bear notes",
             "emoji": "🐻",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/bear-notes",
             "tags": [
                 "productivity",
                 "notes",
@@ -49,6 +58,8 @@
             "description": "Monitor blogs and RSS/Atom feeds for updates",
             "emoji": "📰",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/blogwatcher",
             "tags": [
                 "reading",
                 "rss"
@@ -59,6 +70,8 @@
             "description": "BluOS CLI for discovery, playback, grouping, and volume",
             "emoji": "🫐",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/blucli",
             "tags": [
                 "audio",
                 "smart-home"
@@ -69,6 +82,8 @@
             "description": "Send and manage iMessages via BlueBubbles",
             "emoji": "🫧",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/bluebubbles",
             "tags": [
                 "messaging",
                 "imessage",
@@ -80,6 +95,8 @@
             "description": "Capture frames or clips from RTSP/ONVIF cameras",
             "emoji": "📸",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/camsnap",
             "tags": [
                 "camera",
                 "sensors"
@@ -90,6 +107,8 @@
             "description": "Canvas drawing and diagramming tools",
             "emoji": "🖼️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/canvas",
             "tags": [
                 "creative"
             ]
@@ -99,6 +118,8 @@
             "description": "Search, install, update, and publish agent skills from clawhub.com",
             "emoji": "🦀",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/clawhub",
             "tags": [
                 "skills",
                 "marketplace"
@@ -109,6 +130,8 @@
             "description": "Delegate coding tasks to Codex, Claude Code, or Pi agents",
             "emoji": "🧩",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/coding-agent",
             "tags": [
                 "coding",
                 "development"
@@ -119,6 +142,8 @@
             "description": "Discord operations via message tool",
             "emoji": "🎮",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/discord",
             "tags": [
                 "communication",
                 "discord"
@@ -129,6 +154,8 @@
             "description": "Control Eight Sleep pods (status, temperature, alarms)",
             "emoji": "🎛️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/eightctl",
             "tags": [
                 "smart-home",
                 "health"
@@ -139,6 +166,8 @@
             "description": "Gemini CLI for one-shot Q&A, summaries, and generation",
             "emoji": "♊️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/gemini",
             "tags": [
                 "ai",
                 "llm"
@@ -149,6 +178,8 @@
             "description": "Fetch GitHub issues, implement fixes, and open PRs",
             "emoji": "🐙",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/gh-issues",
             "tags": [
                 "coding",
                 "github",
@@ -160,6 +191,8 @@
             "description": "Search GIF providers and download results",
             "emoji": "🧲",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/gifgrep",
             "tags": [
                 "media",
                 "search"
@@ -170,6 +203,8 @@
             "description": "GitHub operations via gh CLI: issues, PRs, CI runs",
             "emoji": "🐙",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/github",
             "tags": [
                 "coding",
                 "github",
@@ -181,6 +216,8 @@
             "description": "Google Workspace CLI for Gmail, Calendar, Drive, and Docs",
             "emoji": "🎮",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/gog",
             "tags": [
                 "google",
                 "productivity"
@@ -191,6 +228,8 @@
             "description": "Query Google Places API for text search and place details",
             "emoji": "📍",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/goplaces",
             "tags": [
                 "maps",
                 "search"
@@ -201,6 +240,8 @@
             "description": "Host security hardening and risk-tolerance configuration",
             "emoji": "🛡️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/healthcheck",
             "tags": [
                 "security",
                 "sysadmin"
@@ -211,6 +252,8 @@
             "description": "CLI to manage emails via IMAP/SMTP",
             "emoji": "📧",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/himalaya",
             "tags": [
                 "email",
                 "productivity"
@@ -221,6 +264,8 @@
             "description": "iMessage/SMS CLI for listing chats and sending messages",
             "emoji": "📨",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/imsg",
             "tags": [
                 "messaging",
                 "macos"
@@ -231,6 +276,8 @@
             "description": "List, configure, auth, and call MCP servers/tools directly",
             "emoji": "📦",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/mcporter",
             "tags": [
                 "mcp",
                 "integration"
@@ -241,6 +288,8 @@
             "description": "Summarize per-model LLM usage and cost data",
             "emoji": "📊",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/model-usage",
             "tags": [
                 "ai",
                 "metrics"
@@ -251,6 +300,8 @@
             "description": "Generate or edit images via Gemini 3 Pro Image",
             "emoji": "🍌",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/nano-banana-pro",
             "tags": [
                 "ai",
                 "image"
@@ -261,6 +312,8 @@
             "description": "Edit PDFs with natural-language instructions",
             "emoji": "📄",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/nano-pdf",
             "tags": [
                 "pdf",
                 "productivity"
@@ -271,6 +324,8 @@
             "description": "Notion API for creating and managing pages, databases, and blocks",
             "emoji": "📝",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/notion",
             "tags": [
                 "productivity",
                 "notes"
@@ -281,6 +336,8 @@
             "description": "Work with Obsidian vaults and automate via obsidian-cli",
             "emoji": "💎",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/obsidian",
             "tags": [
                 "productivity",
                 "notes"
@@ -291,6 +348,8 @@
             "description": "Batch-generate images via OpenAI Images API",
             "emoji": "🖼️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/openai-image-gen",
             "tags": [
                 "ai",
                 "image"
@@ -301,6 +360,8 @@
             "description": "Transcribe audio locally via Whisper",
             "emoji": "🎙️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/openai-whisper",
             "tags": [
                 "audio",
                 "ai"
@@ -311,6 +372,8 @@
             "description": "Transcribe audio via OpenAI Audio Transcriptions API",
             "emoji": "☁️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/openai-whisper-api",
             "tags": [
                 "audio",
                 "ai"
@@ -321,6 +384,8 @@
             "description": "Control Philips Hue lights via openhue CLI",
             "emoji": "💡",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/openhue",
             "tags": [
                 "smart-home",
                 "lights"
@@ -331,6 +396,8 @@
             "description": "Oracle database operations and data queries",
             "emoji": "🗄️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/oracle",
             "tags": [
                 "database"
             ]
@@ -340,6 +407,8 @@
             "description": "Order management and fulfillment",
             "emoji": "📦",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/ordercli",
             "tags": [
                 "ecommerce"
             ]
@@ -349,6 +418,8 @@
             "description": "Webcam capture and visual awareness tools",
             "emoji": "📷",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/peekaboo",
             "tags": [
                 "camera",
                 "sensors"
@@ -359,6 +430,8 @@
             "description": "System administration and governance tooling",
             "emoji": "⚙️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/sag",
             "tags": [
                 "sysadmin"
             ]
@@ -368,6 +441,8 @@
             "description": "Access and search agent session logs",
             "emoji": "📋",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/session-logs",
             "tags": [
                 "debugging",
                 "logging"
@@ -378,6 +453,8 @@
             "description": "Local TTS synthesis via Sherpa ONNX",
             "emoji": "🔊",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/sherpa-onnx-tts",
             "tags": [
                 "audio",
                 "tts"
@@ -388,6 +465,8 @@
             "description": "Create new skills and register them with the agent",
             "emoji": "🛠️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/skill-creator",
             "tags": [
                 "skills",
                 "meta"
@@ -398,6 +477,8 @@
             "description": "Slack messaging, channels, and workspace operations",
             "emoji": "💬",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/slack",
             "tags": [
                 "communication",
                 "slack"
@@ -408,6 +489,8 @@
             "description": "Music recognition and metadata lookup",
             "emoji": "🎵",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/songsee",
             "tags": [
                 "audio",
                 "music"
@@ -418,6 +501,8 @@
             "description": "Control Sonos speakers via CLI",
             "emoji": "🔊",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/sonoscli",
             "tags": [
                 "audio",
                 "smart-home"
@@ -428,6 +513,8 @@
             "description": "Control Spotify playback and browse library",
             "emoji": "🎧",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/spotify-player",
             "tags": [
                 "audio",
                 "music"
@@ -438,6 +525,8 @@
             "description": "Summarize documents, URLs, and long-form content",
             "emoji": "📃",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/summarize",
             "tags": [
                 "productivity",
                 "reading"
@@ -448,6 +537,8 @@
             "description": "Manage Things 3 tasks on macOS",
             "emoji": "✅",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/things-mac",
             "tags": [
                 "productivity",
                 "tasks",
@@ -459,6 +550,8 @@
             "description": "Manage tmux sessions, windows, and panes",
             "emoji": "🖥️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/tmux",
             "tags": [
                 "terminal",
                 "sysadmin"
@@ -469,6 +562,8 @@
             "description": "Manage Trello boards, lists, and cards",
             "emoji": "📋",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/trello",
             "tags": [
                 "productivity",
                 "project-management"
@@ -479,6 +574,8 @@
             "description": "Extract frames from video files for analysis",
             "emoji": "🎞️",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/video-frames",
             "tags": [
                 "media",
                 "vision"
@@ -489,6 +586,8 @@
             "description": "Initiate and manage voice calls",
             "emoji": "📞",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/voice-call",
             "tags": [
                 "communication",
                 "voice"
@@ -499,6 +598,8 @@
             "description": "WhatsApp CLI operations and automation",
             "emoji": "💬",
             "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/wacli",
             "tags": [
                 "messaging",
                 "whatsapp"
