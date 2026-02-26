@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -42,7 +44,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 )
 
-const version = "v3.1.9"
+const version = "v3.1.9.1"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -183,7 +185,7 @@ func stopCmd(gf *globalFlags) *cobra.Command {
 func statusCmd(gf *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Check the status of the AssistClaw process",
+		Short: "Check status, CPU, and RAM usage of AssistClaw",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log := buildLogger(gf.logLevel)
 			cfg, err := loadConfig(gf.configPath, log)
@@ -192,10 +194,75 @@ func statusCmd(gf *globalFlags) *cobra.Command {
 			}
 			pid, err := ReadPID(PidFile(cfg.StateDir))
 			if err != nil || !CheckPID(pid) {
-				fmt.Println("AssistClaw is NOT running.")
+				fmt.Println("● AssistClaw is NOT running.")
+				fmt.Printf("  Start with: assistclaw start\n")
 				return nil
 			}
-			fmt.Printf("AssistClaw is RUNNING (PID: %d)\n", pid)
+
+			// Gather resource stats via ps (cross-platform: Linux + macOS)
+			type stats struct {
+				cpu   string
+				rssKB int64
+				vsz   string
+				etime string
+			}
+			st := stats{cpu: "n/a", rssKB: 0, vsz: "n/a", etime: "n/a"}
+
+			out, psErr := exec.Command(
+				"ps", "-p", fmt.Sprint(pid),
+				"-o", "%cpu,rss,vsz,etime",
+				"--no-headers",
+			).Output()
+			if psErr != nil {
+				// macOS ps doesn't support --no-headers; retry without it
+				out, _ = exec.Command(
+					"ps", "-p", fmt.Sprint(pid),
+					"-o", "%cpu,rss,vsz,etime",
+				).Output()
+			}
+			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+			for _, line := range lines {
+				fields := strings.Fields(line)
+				if len(fields) >= 4 {
+					st.cpu = fields[0] + "%"
+					if kb, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+						st.rssKB = kb
+					}
+					st.vsz = fields[2]
+					st.etime = fields[3]
+					break
+				}
+			}
+
+			ramMB := float64(st.rssKB) / 1024.0
+
+			// Count installed skills
+			skillCount := 0
+			customDir := filepath.Join(cfg.StateDir, "skills", "custom")
+			if entries, err := os.ReadDir(customDir); err == nil {
+				for _, e := range entries {
+					if e.IsDir() {
+						skillCount++
+					}
+				}
+			}
+			enabledCount := len(cfg.Agent.EnabledSkills)
+			skillSummary := fmt.Sprintf("%d installed", skillCount)
+			if enabledCount > 0 {
+				skillSummary = fmt.Sprintf("%d enabled / %d installed", enabledCount, skillCount)
+			}
+
+			// Display
+			fmt.Printf("\n  ● AssistClaw is RUNNING\n\n")
+			fmt.Printf("  %-12s %d\n", "PID:", pid)
+			fmt.Printf("  %-12s %s\n", "Version:", version)
+			fmt.Printf("  %-12s %s\n", "Uptime:", st.etime)
+			fmt.Printf("  %-12s %s\n", "CPU:", st.cpu)
+			fmt.Printf("  %-12s %.1f MB\n", "RAM (RSS):", ramMB)
+			fmt.Printf("  %-12s %s\n", "Skills:", skillSummary)
+			fmt.Printf("  %-12s %s\n", "Config:", gf.configPath)
+			fmt.Printf("  %-12s %s\n\n", "State dir:", cfg.StateDir)
+
 			return nil
 		},
 	}
