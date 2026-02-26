@@ -45,10 +45,10 @@ type Skill struct {
 
 // Node represents an individual markdown file within a skill, acting as a graph node.
 type Node struct {
-	Name         string `yaml:"name"`         // Simple filename (e.g. "risk-management")
-	Summary      string `yaml:"summary"`      // Short description from frontmatter
-	Instructions string `yaml:"instructions"` // Full body content
-	FilePath     string `yaml:"-"`            // Absolute path
+	Name         string `yaml:"name"`    // Simple filename (e.g. "risk-management")
+	Summary      string `yaml:"summary"` // Short description from frontmatter
+	Instructions string `yaml:"-"`       // Full body content (populated after parsing)
+	FilePath     string `yaml:"-"`       // Absolute path
 }
 
 // SkillTool represents a callable tool within a skill directory.

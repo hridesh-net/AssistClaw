@@ -77,6 +77,13 @@ func (l *loader) loadSkill(skillDir string) (*Skill, error) {
 		return nil
 	})
 
+	// The primary SKILL node always uses the skill's description as its summary.
+	// This ensures the Map of Content shows the canonical human-written description
+	// rather than an auto-derived excerpt from the body text.
+	if skillNode, ok := skill.Nodes["SKILL"]; ok && skill.Description != "" {
+		skillNode.Summary = skill.Description
+	}
+
 	return skill, err
 }
 
@@ -282,6 +289,8 @@ func (l *loader) parseSkillMetadata(path string) (*Skill, error) {
 }
 
 // parseNodeFile reads any .md file and extracts summary/instructions.
+// It derives a fallback summary from the first heading or first sentence if
+// the frontmatter does not contain an explicit `summary` field.
 func (l *loader) parseNodeFile(path string) (*Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -289,6 +298,7 @@ func (l *loader) parseNodeFile(path string) (*Node, error) {
 	}
 
 	var node Node
+	// Always key by filename, never by frontmatter `name` field.
 	node.Name = strings.TrimSuffix(filepath.Base(path), ".md")
 	node.FilePath = path
 
@@ -297,7 +307,12 @@ func (l *loader) parseNodeFile(path string) (*Node, error) {
 		endIdx := bytes.Index(data[len(separator):], []byte(separator))
 		if endIdx != -1 {
 			frontmatter := data[len(separator) : len(separator)+endIdx]
-			_ = yaml.Unmarshal(frontmatter, &node)
+			// Unmarshal into a temp struct to avoid overwriting the filename key
+			var fm struct {
+				Summary string `yaml:"summary"`
+			}
+			_ = yaml.Unmarshal(frontmatter, &fm)
+			node.Summary = fm.Summary
 			bodyStart := len(separator) + endIdx + len(separator)
 			node.Instructions = strings.TrimSpace(string(data[bodyStart:]))
 		}
@@ -305,5 +320,44 @@ func (l *loader) parseNodeFile(path string) (*Node, error) {
 		node.Instructions = strings.TrimSpace(string(data))
 	}
 
+	// Derive a summary from the body if frontmatter didn't provide one
+	if node.Summary == "" {
+		node.Summary = extractSummary(node.Instructions)
+	}
+
 	return &node, nil
+}
+
+// extractSummary derives a short one-line summary from markdown body text.
+// It uses the first heading line (# ...) or the first non-blank sentence.
+func extractSummary(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Strip markdown heading markers
+		if strings.HasPrefix(line, "#") {
+			trimmed := strings.TrimLeft(line, "# ")
+			if trimmed != "" {
+				return truncateSummary(trimmed, 120)
+			}
+			continue
+		}
+		// First non-blank, non-heading line
+		return truncateSummary(line, 120)
+	}
+	return ""
+}
+
+func truncateSummary(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	// Truncate at word boundary
+	idx := strings.LastIndex(s[:max], " ")
+	if idx > 0 {
+		return s[:idx] + "…"
+	}
+	return s[:max] + "…"
 }
