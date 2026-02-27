@@ -333,6 +333,17 @@ func buildConverseTools(reqTools []provider.ToolDef) (*types.ToolConfiguration, 
 		if err != nil {
 			return nil, err
 		}
+
+		// Bedrock strictly requires "properties" to be present in the schema object,
+		// even if the tool takes no arguments. Since our struct uses omitempty, we enforce it here.
+		var schemaMap map[string]any
+		if err := json.Unmarshal(schemaBytes, &schemaMap); err == nil {
+			if schemaMap["properties"] == nil {
+				schemaMap["properties"] = map[string]any{}
+			}
+			schemaBytes, _ = json.Marshal(schemaMap)
+		}
+
 		bTools = append(bTools, &types.ToolMemberToolSpec{
 			Value: types.ToolSpecification{
 				Name:        aws.String(t.Name),
