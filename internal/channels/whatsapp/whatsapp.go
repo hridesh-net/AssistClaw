@@ -216,21 +216,7 @@ func (c *Channel) Connect(ctx context.Context) error {
 				log.Printf("WhatsApp login event: %s", evt.Event)
 				if evt.Event == "success" || evt.Event == "timeout" {
 					if evt.Event == "success" {
-						// WA disconnects briefly after pairing for session exchange.
-						// Reconnect so app-state sync runs on a live socket.
-						fmt.Fprintln(os.Stderr, "\n  ✓ WhatsApp paired. Reconnecting for app-state sync...")
-						c.client.Disconnect()
-						time.Sleep(2 * time.Second)
-						if err := c.client.Connect(); err != nil {
-							return fmt.Errorf("whatsapp reconnect after pairing: %w", err)
-						}
-						// Wait up to 8s for connection to stabilise
-						for i := 0; i < 8; i++ {
-							if c.client.IsConnected() {
-								break
-							}
-							time.Sleep(time.Second)
-						}
+						fmt.Fprintln(os.Stderr, "\n  ✓ WhatsApp successfully linked.")
 					}
 					break
 				}

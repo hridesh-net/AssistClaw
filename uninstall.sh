@@ -13,6 +13,7 @@ set -eo pipefail
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 STATE_DIR="${STATE_DIR:-$HOME/.assistclaw}"
 PURGE=false
+AUTO_CONFIRM=false
 
 # ─────────────────────────────────────────────
 # Colors
@@ -34,6 +35,7 @@ for arg in "$@"; do
   case "$arg" in
     --purge)     PURGE=true ;;
     --keep-data) PURGE=false ;;
+    -y|--yes)    AUTO_CONFIRM=true ;;
     --help|-h)
       echo ""
       echo "Usage: bash uninstall.sh [OPTIONS]"
@@ -41,6 +43,7 @@ for arg in "$@"; do
       echo "Options:"
       echo "  --purge      Also remove ~/.assistclaw (config, memory, skills, MCP servers list)"
       echo "  --keep-data  Keep user data (default behaviour)"
+      echo "  -y, --yes    Auto-confirm deletion without prompting"
       echo "  --help       Show this help"
       echo ""
       exit 0
@@ -77,10 +80,18 @@ stop_daemon() {
 
   # macOS launchd
   local plist="$HOME/Library/LaunchAgents/com.assistclaw.agent.plist"
+  local sys_plist="/Library/LaunchDaemons/com.assistclaw.agent.plist"
+  
   if [[ -f "$plist" ]]; then
-    launchctl unload "$plist" 2>/dev/null && ok "Unloaded launchd service"
+    launchctl unload "$plist" 2>/dev/null && ok "Unloaded user launchd service"
     rm -f "$plist"
-    ok "Removed launchd plist"
+    ok "Removed user launchd plist"
+  fi
+  
+  if [[ -f "$sys_plist" ]]; then
+    sudo launchctl unload "$sys_plist" 2>/dev/null && ok "Unloaded system launchd service"
+    sudo rm -f "$sys_plist"
+    ok "Removed system launchd plist"
   fi
 
   # Linux systemd (user)
@@ -222,17 +233,22 @@ remove_user_data() {
   echo -e "  ${RED}• $STATE_DIR/memory/             (working + episodic + vector memory)${NC}"
   echo -e "  ${RED}• $STATE_DIR/skills/             (installed skills)${NC}"
   echo -e "  ${RED}• $STATE_DIR/tools/              (auto-generated Python tools)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/sessions/           (conversation session data)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/logs/               (log files)${NC}"
+  echo "  • $STATE_DIR/sessions/           (conversation session data)"
+  echo "  • $STATE_DIR/logs/               (log files)"
+  echo "  • $HOME/.cache/assistclaw/       (cache files)"
   echo ""
-  read -r -p "  Type 'yes' to confirm permanent deletion: " confirm
-  if [[ "$confirm" != "yes" ]]; then
-    warn "Skipped data deletion — your data is intact"
-    return
+  
+  if ! $AUTO_CONFIRM; then
+    read -r -p "  Type 'yes' to confirm permanent deletion: " confirm
+    if [[ "$confirm" != "yes" ]]; then
+      warn "Skipped data deletion — your data is intact"
+      return
+    fi
   fi
 
   rm -rf "$STATE_DIR"
-  ok "Removed all user data: $STATE_DIR"
+  rm -rf "$HOME/.cache/assistclaw" 2>/dev/null || true
+  ok "Removed all user data: $STATE_DIR and caches"
 }
 
 # ─────────────────────────────────────────────
