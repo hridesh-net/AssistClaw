@@ -15,6 +15,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
 	"github.com/assistclaw/assistclaw/internal/provider"
@@ -151,10 +152,16 @@ func (p *Provider) Complete(ctx context.Context, req *provider.CompletionRequest
 		return nil, fmt.Errorf("bedrock: build messages: %w", err)
 	}
 
+	toolConfig, err := buildConverseTools(req.Tools)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: build tools: %w", err)
+	}
+
 	input := &bedrockruntime.ConverseInput{
-		ModelId:  aws.String(model),
-		Messages: messages,
-		System:   system,
+		ModelId:    aws.String(model),
+		Messages:   messages,
+		System:     system,
+		ToolConfig: toolConfig,
 	}
 	if req.MaxTokens > 0 {
 		input.InferenceConfig = &types.InferenceConfiguration{
@@ -180,9 +187,19 @@ func (p *Provider) Complete(ctx context.Context, req *provider.CompletionRequest
 		for _, b := range content.Value.Content {
 			if t, ok := b.(*types.ContentBlockMemberText); ok {
 				resp.Content = append(resp.Content, provider.ContentPart{Type: provider.ContentTypeText, Text: t.Value})
+			} else if tu, ok := b.(*types.ContentBlockMemberToolUse); ok {
+				resp.Content = append(resp.Content, provider.ContentPart{
+					Type:      provider.ContentTypeToolUse,
+					ToolUseID: *tu.Value.ToolUseId,
+					ToolName:  *tu.Value.Name,
+					ToolInput: tu.Value.Input,
+				})
+				resp.FinishReason = provider.FinishReasonToolUse
 			}
 		}
-		resp.FinishReason = provider.FinishReasonStop
+		if len(resp.Content) > 0 && resp.FinishReason == "" {
+			resp.FinishReason = provider.FinishReasonStop
+		}
 	}
 
 	if output.Usage != nil {
@@ -208,10 +225,16 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 		return nil, err
 	}
 
+	toolConfig, err := buildConverseTools(req.Tools)
+	if err != nil {
+		return nil, err
+	}
+
 	input := &bedrockruntime.ConverseStreamInput{
-		ModelId:  aws.String(model),
-		Messages: messages,
-		System:   system,
+		ModelId:    aws.String(model),
+		Messages:   messages,
+		System:     system,
+		ToolConfig: toolConfig,
 	}
 	if req.MaxTokens > 0 {
 		input.InferenceConfig = &types.InferenceConfiguration{
@@ -233,13 +256,47 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 		defer close(ch)
 		stream := output.GetStream()
 		defer stream.Close()
+
+		// State for accumulating fragmented JSON tool calls during the stream
+		type activeToolCall struct {
+			ID        string
+			Name      string
+			Arguments string
+		}
+		activeToolCalls := make(map[string]*activeToolCall)
+
 		for event := range stream.Events() {
 			switch v := event.(type) {
+			case *types.ConverseStreamOutputMemberContentBlockStart:
+				if tu, ok := v.Value.Start.(*types.ContentBlockStartMemberToolUse); ok {
+					activeToolCalls[*tu.Value.ToolUseId] = &activeToolCall{
+						ID:   *tu.Value.ToolUseId,
+						Name: *tu.Value.Name,
+					}
+				}
 			case *types.ConverseStreamOutputMemberContentBlockDelta:
 				if d, ok := v.Value.Delta.(*types.ContentBlockDeltaMemberText); ok {
 					ch <- provider.StreamEvent{Type: provider.StreamEventText, Text: d.Value}
+				} else if tu, ok := v.Value.Delta.(*types.ContentBlockDeltaMemberToolUse); ok {
+					for _, activeCall := range activeToolCalls { // Bedrock streams 1 tool delta block at a time
+						activeCall.Arguments += *tu.Value.Input
+					}
 				}
 			case *types.ConverseStreamOutputMemberMessageStop:
+				// Emit tool calls before finishing stream
+				for _, call := range activeToolCalls {
+					var args any
+					_ = json.Unmarshal([]byte(call.Arguments), &args)
+					ch <- provider.StreamEvent{
+						Type: provider.StreamEventToolUse,
+						ToolUse: &provider.ContentPart{
+							Type:      provider.ContentTypeToolUse,
+							ToolUseID: call.ID,
+							ToolName:  call.Name,
+							ToolInput: args,
+						},
+					}
+				}
 				ch <- provider.StreamEvent{Type: provider.StreamEventDone}
 			case *types.ConverseStreamOutputMemberMetadata:
 				if v.Value.Usage != nil {
@@ -265,6 +322,29 @@ func (p *Provider) SupportsNativeStreaming() bool { return true }
 // ─────────────────────────────────────────────
 // Unified Converse Message Builders
 // ─────────────────────────────────────────────
+
+func buildConverseTools(reqTools []provider.ToolDef) (*types.ToolConfiguration, error) {
+	if len(reqTools) == 0 {
+		return nil, nil
+	}
+	var bTools []types.Tool
+	for _, t := range reqTools {
+		schemaBytes, err := json.Marshal(t.InputSchema)
+		if err != nil {
+			return nil, err
+		}
+		bTools = append(bTools, &types.ToolMemberToolSpec{
+			Value: types.ToolSpecification{
+				Name:        aws.String(t.Name),
+				Description: aws.String(t.Description),
+				InputSchema: &types.ToolInputSchemaMemberJson{
+					Value: document.NewLazyDocument(schemaBytes),
+				},
+			},
+		})
+	}
+	return &types.ToolConfiguration{Tools: bTools}, nil
+}
 
 func buildConverseMessages(req *provider.CompletionRequest) ([]types.Message, []types.SystemContentBlock, error) {
 	var messages []types.Message

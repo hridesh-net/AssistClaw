@@ -358,6 +358,15 @@ func (p *Provider) buildBody(req *provider.CompletionRequest, stream bool) ([]by
 
 func readSSE(ctx context.Context, resp *http.Response, ch chan<- provider.StreamEvent) {
 	scanner := bufio.NewScanner(resp.Body)
+
+	// State for accumulating fragmented JSON tool calls during the stream
+	type activeToolCall struct {
+		ID        string
+		Name      string
+		Arguments string
+	}
+	var activeToolCalls []*activeToolCall
+
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -377,7 +386,15 @@ func readSSE(ctx context.Context, resp *http.Response, ch chan<- provider.Stream
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -405,7 +422,52 @@ func readSSE(ctx context.Context, resp *http.Response, ch chan<- provider.Stream
 			if c.Delta.Content != "" {
 				ch <- provider.StreamEvent{Type: provider.StreamEventText, Text: c.Delta.Content}
 			}
+
+			// Capture streamed tool call segments
+			for _, tc := range c.Delta.ToolCalls {
+				idx := tc.Index
+				if len(activeToolCalls) <= idx {
+					// Grow slice if needed (usually streams in order)
+					newCalls := make([]*activeToolCall, idx+1)
+					copy(newCalls, activeToolCalls)
+					activeToolCalls = newCalls
+				}
+				if activeToolCalls[idx] == nil {
+					activeToolCalls[idx] = &activeToolCall{}
+				}
+
+				call := activeToolCalls[idx]
+				if tc.ID != "" {
+					call.ID = tc.ID
+				}
+				if tc.Function.Name != "" {
+					call.Name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					call.Arguments += tc.Function.Arguments
+				}
+			}
+
 			if c.FinishReason != "" {
+				// We've finished, emit any accumulated tool calls first
+				for _, call := range activeToolCalls {
+					if call == nil || call.Name == "" {
+						continue
+					}
+					var args any
+					_ = json.Unmarshal([]byte(call.Arguments), &args)
+
+					ch <- provider.StreamEvent{
+						Type: provider.StreamEventToolUse,
+						ToolUse: &provider.ContentPart{
+							Type:      provider.ContentTypeToolUse,
+							ToolUseID: call.ID,
+							ToolName:  call.Name,
+							ToolInput: args,
+						},
+					}
+				}
+
 				ch <- provider.StreamEvent{Type: provider.StreamEventDone, FinishReason: provider.FinishReason(c.FinishReason)}
 			}
 		}
