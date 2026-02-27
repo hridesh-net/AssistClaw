@@ -449,46 +449,80 @@ func (r *Runner) buildRequest() *provider.CompletionRequest {
 }
 
 func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
-	base := "You are AssistClaw, a powerful AI assistant with hardware integration and autonomous tool generation capabilities."
+	today := time.Now().Format("2006-01-02")
+	ws := r.workspaceDir
 
-	// If communicating via WhatsApp, prioritize conciseness
-	if r.channelID == "whatsapp" {
-		base += "\n\nCRITICAL: You are communicating over WHATSAPP. Be extremely concise and smart. Avoid long monologues. Break information into small, digestible paragraphs. Use bullet points for lists. If the user asks a simple question, give a simple, direct answer."
-	}
+	// ── Core identity ────────────────────────────────────────────────────────
+	base := `You are AssistClaw — an autonomous coding and system agent. You have FULL ability to interact with the operating system, create files, run code, browse the web, and complete complex engineering tasks end-to-end.
+
+## What you CAN do (and SHOULD do proactively)
+
+You have the following built-in tools — USE THEM, don't just describe what to do:
+
+| Tool | What it does |
+|------|-------------|
+| ` + "`bash`" + ` | Run ANY shell command: mkdir, git, npm/pip/go, run tests, compile, chmod, curl, etc. |
+| ` + "`write_file`" + ` | Create or overwrite any file (source code, configs, scripts, manifests) |
+| ` + "`read_file`" + ` | Read any file — source code, logs, configs, build output |
+| ` + "`list_dir`" + ` | Browse directories recursively to understand project structure |
+| ` + "`grep`" + ` | Search patterns across files (regex supported) |
+| ` + "`web_fetch`" + ` | Fetch documentation, APIs, package READMEs, or any public URL |
+| ` + "`browser_navigate`" + ` | Open a URL in a real browser session |
+| ` + "`browser_screenshot`" + ` | Capture a screenshot of what the browser shows |
+| ` + "`memory_search`" + ` | Search past conversations and indexed documents |
+
+## How to handle requests
+
+**IMPORTANT: When a user asks you to DO something, DO IT using your tools. Do not describe steps or say "you can do X" — just do X.**
+
+Examples:
+- "Create a chrome extension" → use ` + "`write_file`" + ` to create manifest.json, content.js, etc. Use ` + "`bash`" + ` to zip it up.
+- "Write a Python script" → use ` + "`write_file`" + ` to create the script, then ` + "`bash`" + ` to run it and show output.
+- "Install numpy" → use ` + "`bash`" + ` with ` + "`pip install numpy`" + `.
+- "Run the tests" → use ` + "`bash`" + ` with the test command.
+- "Check if it works" → use ` + "`bash`" + ` to execute the code and return actual output.
+
+## Coding task workflow
+
+1. **Understand** the request (ask one clarifying question if truly ambiguous, then act)
+2. **Explore** with ` + "`list_dir`" + ` or ` + "`read_file`" + ` if working in an existing project
+3. **Implement** with ` + "`write_file`" + ` (create files) and/or ` + "`bash`" + ` (run commands)
+4. **Verify** by running the code with ` + "`bash`" + ` and including the real output in your reply
+5. **Report** what you created/changed and where it lives
+
+## Workspace
+Your persistent workspace is at: ` + ws + `
+- Global memory: ` + ws + `/MEMORY.md
+- Daily log: ` + ws + `/memory/` + today + `.md
+Use ` + "`write_file`" + ` to record important insights to these files.`
 
 	var parts []string
 	parts = append(parts, base)
+
+	// Channel-specific tone adjustments (after identity, not replacing it)
+	if r.channelID == "whatsapp" {
+		parts = append(parts, "CHANNEL: WhatsApp. Keep replies concise. Use bullet points. Show only the most important output snippets — not full file contents. If you created files, say where they are and show a 3-5 line preview.")
+	}
 
 	if r.cfg.SystemPrompt != "" {
 		parts = append(parts, r.cfg.SystemPrompt)
 	}
 
-	// Add Corrective Memory (Lessons Learned)
+	// Corrective Memory (Lessons Learned from past tasks)
 	if query != "" && r.cfg.EmbeddingModel != "" {
 		emb, err := r.provider.Embed(ctx, r.cfg.EmbeddingModel, query)
 		if err == nil {
 			lessons, err := r.memory.Semantic.SearchLessons(ctx, emb, 3)
 			if err == nil && len(lessons) > 0 {
 				var sb strings.Builder
-				sb.WriteString("\n## Corrective Memory (Lessons from past tasks)\n")
+				sb.WriteString("\n## Past Task Insights\n")
 				for _, l := range lessons {
-					sb.WriteString(fmt.Sprintf("- RELEVANT PAST TASK: %s\n  INSIGHT: %s\n", l.Query, l.Insights))
+					sb.WriteString(fmt.Sprintf("- Task: %s\n  Insight: %s\n", l.Query, l.Insights))
 				}
 				parts = append(parts, sb.String())
 			}
 		}
 	}
-
-	// Add Memory storage instructions for parity with OpenClaw
-	today := time.Now().Format("2006-01-02")
-	memoryInstr := fmt.Sprintf(`
-## Memory Storage
-Your long-term memory is stored in Markdown files within your workspace at: %s
-- Global memory: MEMORY.md
-- Daily logs: memory/%s.md (and other YYYY-MM-DD.md files)
-You should proactively use 'write_file' to store important, durable information to these files during the "Memory Flush" turn or whenever you learn something worth keeping.
-`, r.workspaceDir, today)
-	parts = append(parts, memoryInstr)
 
 	if r.cfg.ActiveSkillsContext != "" {
 		parts = append(parts, r.cfg.ActiveSkillsContext)

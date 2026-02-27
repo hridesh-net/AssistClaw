@@ -12,9 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -44,7 +46,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.3.4"
+const version = "v3.3.5"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -397,10 +399,10 @@ func memoryCmd(gf *globalFlags) *cobra.Command {
 // ─────────────────────────────────────────────
 
 func toolsCmd(gf *globalFlags) *cobra.Command {
-	cmd := &cobra.Command{Use: "tools", Short: "Manage auto-generated tools"}
+	cmd := &cobra.Command{Use: "tools", Short: "List all tools available to the agent"}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "List all persisted auto-generated tools",
+		Short: "List all tools: built-in, skill, and auto-generated",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log := buildLogger(gf.logLevel)
 			path := gf.configPath
@@ -411,29 +413,89 @@ func toolsCmd(gf *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			prim := lipgloss.NewStyle().Foreground(tui.ColorPrimary).Bold(true)
+			dim := lipgloss.NewStyle().Foreground(tui.ColorMuted)
+			header := lipgloss.NewStyle().Foreground(tui.ColorNeon).Bold(true)
+
+			// ── Section 1: Built-in tools ──────────────────────────────────────
+			fmt.Println(header.Render("\n⚡ Built-in System Tools") + dim.Render("  (always available)"))
+			fmt.Println(dim.Render("─────────────────────────────────────────────────────────────"))
+			builtins := []struct{ name, desc string }{
+				{"bash", "Execute any shell command (mkdir, git, npm, pip, compile, run tests…)"},
+				{"write_file", "Create or overwrite any file — source code, configs, scripts"},
+				{"read_file", "Read file contents (with optional line range)"},
+				{"list_dir", "Browse directory contents, optionally recursive"},
+				{"grep", "Search patterns across files (regex, case-insensitive modes)"},
+				{"web_fetch", "Fetch text content from a URL (docs, APIs, READMEs)"},
+				{"browser_navigate", "Open a URL in a real browser session"},
+				{"browser_screenshot", "Capture a screenshot of the browser"},
+				{"memory_search", "Search episodic + semantic (vector) memory"},
+				{"memory_get", "Read a specific line range from a memory file"},
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			for _, t := range builtins {
+				fmt.Fprintf(w, "  %s\t%s\n", prim.Render(t.name), dim.Render(t.desc))
+			}
+			w.Flush()
+
+			// ── Section 2: Skill tools ─────────────────────────────────────────
+			customDir := filepath.Join(cfg.StateDir, "skills", "custom")
+			skillReg := skills.NewRegistry()
+			_ = skillReg.LoadAll(context.Background(), customDir)
+			allSkills := skillReg.List()
+
+			var skillToolCount int
+			for _, s := range allSkills {
+				skillToolCount += len(s.Tools)
+			}
+
+			fmt.Println(header.Render("\n🧠 Skill Tools") + dim.Render(fmt.Sprintf("  (%d installed skills)", len(allSkills))))
+			fmt.Println(dim.Render("─────────────────────────────────────────────────────────────"))
+			if skillToolCount == 0 {
+				fmt.Println(dim.Render("  No skill tools installed yet."))
+				fmt.Println(dim.Render("  Run: assistclaw skills install <name>"))
+			} else {
+				w2 := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+				for _, s := range allSkills {
+					for _, t := range s.Tools {
+						fmt.Fprintf(w2, "  %s\t%s\t%s\n",
+							prim.Render(t.Name),
+							dim.Render("["+s.Name+"]"),
+							dim.Render(t.Description))
+					}
+				}
+				w2.Flush()
+			}
+
+			// ── Section 3: Auto-generated tools ───────────────────────────────
 			creator, err := autotool.NewCreator(autotool.CreatorConfig{
 				ToolsDir: cfg.Agent.ToolsDir,
 				VenvPath: filepath.Join(cfg.StateDir, "venv"),
 				Timeout:  30,
 			}, log)
-			if err != nil {
-				return err
+			var autoList []autotool.ToolMeta
+			if err == nil {
+				autoList, _ = creator.List()
 			}
-			toolList, err := creator.List()
-			if err != nil {
-				return err
+
+			fmt.Println(header.Render("\n🔧 Auto-generated Tools") + dim.Render(fmt.Sprintf("  (%d generated)", len(autoList))))
+			fmt.Println(dim.Render("─────────────────────────────────────────────────────────────"))
+			if len(autoList) == 0 {
+				fmt.Println(dim.Render("  No auto-generated tools yet."))
+				fmt.Println(dim.Render("  Ask the agent to create one — it uses 'bash' and 'write_file' automatically."))
+			} else {
+				w3 := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+				for _, t := range autoList {
+					fmt.Fprintf(w3, "  %s\t%s\t%s\n",
+						prim.Render(t.Name),
+						dim.Render(t.CreatedAt.Format("2006-01-02")),
+						dim.Render(t.Description))
+				}
+				w3.Flush()
 			}
-			if len(toolList) == 0 {
-				fmt.Println("No auto-generated tools yet.")
-				return nil
-			}
-			for _, t := range toolList {
-				fmt.Printf("• %s — %s\n  Created: %s\n  Script: %s\n\n",
-					t.Name, t.Description,
-					t.CreatedAt.Format("2006-01-02 15:04"),
-					t.ScriptPath,
-				)
-			}
+
+			fmt.Println()
 			return nil
 		},
 	})
