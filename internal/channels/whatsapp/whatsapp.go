@@ -216,7 +216,10 @@ func (c *Channel) Connect(ctx context.Context) error {
 				log.Printf("WhatsApp login event: %s", evt.Event)
 				if evt.Event == "success" || evt.Event == "timeout" {
 					if evt.Event == "success" {
-						fmt.Fprintln(os.Stderr, "\n  ✓ WhatsApp successfully linked.")
+						fmt.Fprintln(os.Stderr, "\n  ✓ WhatsApp successfully linked. Waiting 10s for initial app-state sync...")
+						// Wait before returning control so onboard.go doesn't close
+						// the socket while the phone is negotiating device keys.
+						time.Sleep(10 * time.Second)
 					}
 					break
 				}
