@@ -300,6 +300,7 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 			SessionID: r.sessionID,
 			Role:      memory.RoleAssistant,
 			Content:   assistantContent,
+			Parts:     toolCalls,
 			Model:     r.cfg.Model,
 			Tokens:    resp.Usage.CompletionTokens,
 			CreatedAt: time.Now(),
@@ -337,6 +338,13 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 				SessionID: r.sessionID,
 				Role:      memory.RoleTool,
 				Content:   result,
+				Parts: []provider.ContentPart{
+					{
+						Type:              provider.ContentTypeToolResult,
+						ToolResultID:      tc.ToolUseID,
+						ToolResultContent: result,
+					},
+				},
 				CreatedAt: time.Now(),
 			}
 			r.working.Append(toolResultMsg)
@@ -452,11 +460,18 @@ func (r *Runner) convertMessages(msgs []memory.Message) []provider.Message {
 	providerMsgs := make([]provider.Message, 0, len(msgs))
 	for _, m := range msgs {
 		role := provider.Role(m.Role)
-		providerMsgs = append(providerMsgs, provider.Message{
-			Role: role,
-			Content: []provider.ContentPart{
+		content := m.Parts
+		if len(content) == 0 {
+			content = []provider.ContentPart{
 				{Type: provider.ContentTypeText, Text: m.Content},
-			},
+			}
+		} else if m.Content != "" {
+			// Prepend the raw text if parts exist (like tool calls)
+			content = append([]provider.ContentPart{{Type: provider.ContentTypeText, Text: m.Content}}, content...)
+		}
+		providerMsgs = append(providerMsgs, provider.Message{
+			Role:    role,
+			Content: content,
 		})
 	}
 	return providerMsgs
@@ -668,7 +683,7 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 
 		assistantMsg := memory.Message{
 			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
-			Content: assistantContent, Model: r.cfg.Model,
+			Content: assistantContent, Parts: toolCalls, Model: r.cfg.Model,
 			Tokens: totalUsage.CompletionTokens, CreatedAt: time.Now(),
 		}
 		r.working.Append(assistantMsg)
@@ -690,7 +705,15 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 
 			toolMsg := memory.Message{
 				ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
-				Content: result, CreatedAt: time.Now(),
+				Content: result,
+				Parts: []provider.ContentPart{
+					{
+						Type:              provider.ContentTypeToolResult,
+						ToolResultID:      tc.ToolUseID,
+						ToolResultContent: result,
+					},
+				},
+				CreatedAt: time.Now(),
 			}
 			r.working.Append(toolMsg)
 			_ = r.memory.Episodic.Save(ctx, toolMsg)
@@ -814,7 +837,7 @@ func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
 
 	assistantMsg := memory.Message{
 		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
-		Content: assistantContent, Model: r.cfg.Model, Tokens: resp.Usage.CompletionTokens, CreatedAt: time.Now(),
+		Content: assistantContent, Parts: resp.ToolCalls(), Model: r.cfg.Model, Tokens: resp.Usage.CompletionTokens, CreatedAt: time.Now(),
 	}
 	r.working.Append(assistantMsg)
 
@@ -823,7 +846,15 @@ func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
 		result := r.executeTool(ctx, tc)
 		toolMsg := memory.Message{
 			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
-			Content: result, CreatedAt: time.Now(),
+			Content: result,
+			Parts: []provider.ContentPart{
+				{
+					Type:              provider.ContentTypeToolResult,
+					ToolResultID:      tc.ToolUseID,
+					ToolResultContent: result,
+				},
+			},
+			CreatedAt: time.Now(),
 		}
 		r.working.Append(toolMsg)
 	}
@@ -876,7 +907,7 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 
 	assistantMsg := memory.Message{
 		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
-		Content: assistantContent, Model: r.cfg.Model,
+		Content: assistantContent, Parts: toolCalls, Model: r.cfg.Model,
 		Tokens: usage.CompletionTokens, CreatedAt: time.Now(),
 	}
 	r.working.Append(assistantMsg)
@@ -889,7 +920,15 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 
 		toolMsg := memory.Message{
 			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
-			Content: result, CreatedAt: time.Now(),
+			Content: result,
+			Parts: []provider.ContentPart{
+				{
+					Type:              provider.ContentTypeToolResult,
+					ToolResultID:      tc.ToolUseID,
+					ToolResultContent: result,
+				},
+			},
+			CreatedAt: time.Now(),
 		}
 		r.working.Append(toolMsg)
 	}

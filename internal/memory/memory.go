@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/assistclaw/assistclaw/internal/provider"
 )
 
 func init() {
@@ -36,13 +38,14 @@ const (
 
 // Message is a single conversation turn.
 type Message struct {
-	ID        string    `json:"id"`
-	SessionID string    `json:"session_id"`
-	Role      Role      `json:"role"`
-	Content   string    `json:"content"`
-	Model     string    `json:"model,omitempty"`
-	Tokens    int       `json:"tokens,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string                 `json:"id"`
+	SessionID string                 `json:"session_id"`
+	Role      Role                   `json:"role"`
+	Content   string                 `json:"content"`
+	Parts     []provider.ContentPart `json:"parts,omitempty"`
+	Model     string                 `json:"model,omitempty"`
+	Tokens    int                    `json:"tokens,omitempty"`
+	CreatedAt time.Time              `json:"created_at"`
 }
 
 // Document is a chunk of content stored in semantic memory.
