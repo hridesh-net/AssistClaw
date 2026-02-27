@@ -368,8 +368,15 @@ func buildConverseMessages(req *provider.CompletionRequest) ([]types.Message, []
 		var content []types.ContentBlock
 		for _, cp := range m.Content {
 			if cp.Type == provider.ContentTypeText {
-				content = append(content, &types.ContentBlockMemberText{Value: cp.Text})
+				text := cp.Text
+				if strings.TrimSpace(text) == "" {
+					text = " "
+				}
+				content = append(content, &types.ContentBlockMemberText{Value: text})
 			}
+		}
+		if len(content) == 0 {
+			content = append(content, &types.ContentBlockMemberText{Value: " "})
 		}
 		messages = append(messages, types.Message{
 			Role:    role,

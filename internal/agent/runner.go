@@ -291,6 +291,10 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 		assistantContent := resp.Text()
 		toolCalls := resp.ToolCalls()
 
+		if strings.TrimSpace(assistantContent) == "" && len(toolCalls) > 0 {
+			assistantContent = "[Activating tools...]"
+		}
+
 		assistantMsg := memory.Message{
 			ID:        uuid.New().String(),
 			SessionID: r.sessionID,
@@ -430,6 +434,10 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 			zap.Error(err),
 		)
 		return fmt.Sprintf("Error: %v", err)
+	}
+
+	if strings.TrimSpace(result) == "" {
+		result = "Command executed successfully with no output."
 	}
 
 	r.log.Info("tool result",
@@ -653,9 +661,14 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 			}
 		}
 
+		assistantContent := fullResponse.String()
+		if strings.TrimSpace(assistantContent) == "" && len(toolCalls) > 0 {
+			assistantContent = "[Activating tools...]"
+		}
+
 		assistantMsg := memory.Message{
 			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
-			Content: fullResponse.String(), Model: r.cfg.Model,
+			Content: assistantContent, Model: r.cfg.Model,
 			Tokens: totalUsage.CompletionTokens, CreatedAt: time.Now(),
 		}
 		r.working.Append(assistantMsg)
