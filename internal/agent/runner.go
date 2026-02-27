@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -304,6 +305,12 @@ func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error
 			r.log.Warn("episodic save failed", zap.Error(err))
 		}
 
+		// Markdown fallback parser: if the model dropped out of native tool schema
+		// but printed bash instructions, we execute them autonomously anyway.
+		if len(toolCalls) == 0 {
+			toolCalls = extractMarkdownBash(assistantContent)
+		}
+
 		// If no tool calls, we're done.
 		if len(toolCalls) == 0 || resp.FinishReason == provider.FinishReasonStop {
 			// Compact working memory if over budget.
@@ -374,6 +381,28 @@ func extractTag(text, tag string) string {
 		return ""
 	}
 	return text[start+len(startTag) : end]
+}
+
+// extractMarkdownBash finds ```bash or ```sh blocks in the model's plaintext
+// and wraps them into synthetic tool calls if the model failed to use the JSON schema.
+func extractMarkdownBash(text string) []provider.ContentPart {
+	var results []provider.ContentPart
+	re := regexp.MustCompile(`(?s)\x60\x60\x60(?:bash|sh)\n(.*?)\x60\x60\x60`)
+	matches := re.FindAllStringSubmatch(text, -1)
+	for _, m := range matches {
+		code := strings.TrimSpace(m[1])
+		if code == "" {
+			continue
+		}
+		inputMap := map[string]any{"command": code}
+		results = append(results, provider.ContentPart{
+			Type:      provider.ContentTypeToolUse,
+			ToolUseID: "call_md_" + uuid.New().String()[:8],
+			ToolName:  "bash",
+			ToolInput: inputMap,
+		})
+	}
+	return results
 }
 
 // executeTool runs a single tool call and returns the result string.
@@ -473,7 +502,8 @@ You have the following built-in tools — USE THEM, don't just describe what to 
 
 ## How to handle requests
 
-**IMPORTANT: When a user asks you to DO something, DO IT using your tools. Do not describe steps or say "you can do X" — just do X.**
+**IMPORTANT: When a user asks you to DO something, DO IT using your tools.**
+**CRITICAL: Do NOT output conversational markdown code blocks (like ` + "`" + `bash ... ` + "`" + ` or ` + "`" + `json ... ` + "`" + `) expecting the user to run them or save them. You MUST use the ` + "`" + `write_file` + "`" + ` tool to save files and the ` + "`" + `bash` + "`" + ` tool to execute commands. If you output raw markdown blocks instead of calling the native JSON tools, your actions will not be executed!**
 
 Examples:
 - "Create a chrome extension" → use ` + "`write_file`" + ` to create manifest.json, content.js, etc. Use ` + "`bash`" + ` to zip it up.
