@@ -807,9 +807,14 @@ func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
 	usage.CompletionTokens += resp.Usage.CompletionTokens
 	usage.TotalTokens += resp.Usage.TotalTokens
 
+	assistantContent := resp.Text()
+	if strings.TrimSpace(assistantContent) == "" && len(resp.ToolCalls()) > 0 {
+		assistantContent = "[Activating tools...]"
+	}
+
 	assistantMsg := memory.Message{
 		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
-		Content: resp.Text(), Model: r.cfg.Model, Tokens: resp.Usage.CompletionTokens, CreatedAt: time.Now(),
+		Content: assistantContent, Model: r.cfg.Model, Tokens: resp.Usage.CompletionTokens, CreatedAt: time.Now(),
 	}
 	r.working.Append(assistantMsg)
 
@@ -864,9 +869,14 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 		}
 	}
 
+	assistantContent := fullResponse.String()
+	if strings.TrimSpace(assistantContent) == "" && len(toolCalls) > 0 {
+		assistantContent = "[Activating tools...]"
+	}
+
 	assistantMsg := memory.Message{
 		ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleAssistant,
-		Content: fullResponse.String(), Model: r.cfg.Model,
+		Content: assistantContent, Model: r.cfg.Model,
 		Tokens: usage.CompletionTokens, CreatedAt: time.Now(),
 	}
 	r.working.Append(assistantMsg)
