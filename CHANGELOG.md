@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.4.1] - 2026-03-03
+### Changed
+- **Daemon auto-starts after onboarding**: `assistclaw onboard` now launches the background daemon automatically on completion (no "Start now?" confirm) and displays a launch summary banner with the Web UI URL and token.
+- **`assistclaw gateway` is now a subcommand group**:
+  - `gateway start` — start daemon in background (web UI + agent + channels)
+  - `gateway stop` — stop the running daemon
+  - `gateway restart` — restart the daemon
+  - `gateway status` — show PID and status
+  - `gateway serve` — foreground mode (blocks terminal, for dev/debug)
+
 ## [v3.4.0] - 2026-03-03
 ### Added
 - **Embedded Web UI**: Full dark-themed chat interface (`/`) served directly from the binary via `go:embed` — no external build step. Supports SSE streaming, tool-call indicators, session management, and Bearer token auth.

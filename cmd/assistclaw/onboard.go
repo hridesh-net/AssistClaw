@@ -1385,25 +1385,30 @@ func runOnboarding(configPath string) (bool, error) {
 		}
 	}
 
-	fmt.Println("\nNext Steps:")
-	fmt.Println("1. Run 'assistclaw agent' to start your assistant manually.")
-	fmt.Printf("2. Run 'assistclaw start --daemon' to start the background service (web UI at http://localhost:%d).\n", gwPort)
-	fmt.Println("3. Scan the QR code if you enabled WhatsApp.")
+	// ── Launch summary banner ─────────────────────────────────────────────────
+	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	webURL := fmt.Sprintf("http://localhost:%d", gwPort)
 
-	var startAgent bool
-	err = huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Start your assistant now in background mode?").
-				Description("This will start the Gateway (web UI) and your messaging channels.").
-				Value(&startAgent),
-		),
-	).Run()
-	if err != nil {
-		return false, nil // User cancelled the confirm, but config is saved
+	fmt.Println()
+	fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).Render("  🚀 Launching AssistClaw in background…"))
+	fmt.Println()
+	fmt.Printf("  %-14s %s\n", dim.Render("Web UI:"), accent.Render(webURL))
+	fmt.Printf("  %-14s %s\n", dim.Render("Token:"), accent.Render(gwToken))
+	fmt.Printf("  %-14s %s\n", dim.Render("Gateway:"), accent.Render(fmt.Sprintf("%s:%d", gwHost, gwPort)))
+	fmt.Println()
+	fmt.Println(dim.Render("  Manage with:"))
+	fmt.Println(dim.Render("    assistclaw gateway start   │ stop   │ restart"))
+	fmt.Println(dim.Render("    assistclaw service install          (auto-login)"))
+	fmt.Println(dim.Render("    assistclaw status"))
+	if len(selectedChannels) > 0 {
+		fmt.Println()
+		fmt.Println(dim.Render("  Tip: Scan the QR code in the terminal to link WhatsApp."))
 	}
+	fmt.Println()
 
-	return startAgent, nil
+	// Always start daemon after onboarding completes
+	return true, nil
 }
 
 func randomToken(n int) string {

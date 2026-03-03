@@ -47,7 +47,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.4.0"
+const version = "v3.4.1"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -508,20 +508,68 @@ func toolsCmd(gf *globalFlags) *cobra.Command {
 // gateway command
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// gateway command (start · stop · restart · serve)
+// ─────────────────────────────────────────────
+
 func gatewayCmd(gf *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "gateway",
-		Short: "Start the AssistClaw REST/WebSocket Gateway server",
+		Short: "Manage the AssistClaw Gateway and Web UI",
+		Long: `Manage the AssistClaw background gateway and embedded web UI.
+
+Subcommands:
+  start    Start in background daemon mode (web UI + channels)
+  stop     Stop the running background daemon
+  restart  Restart the background daemon
+  serve    Run the gateway in the foreground (blocks terminal)
+  status   Show daemon status (alias of 'assistclaw status')`,
+	}
+
+	// gateway start — alias of 'assistclaw start --daemon'
+	cmd.AddCommand(&cobra.Command{
+		Use:   "start",
+		Short: "Start AssistClaw daemon in background (web UI + agent + channels)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Detach("start")
+		},
+	})
+
+	// gateway stop — alias of 'assistclaw stop'
+	cmd.AddCommand(&cobra.Command{
+		Use:   "stop",
+		Short: "Stop the running AssistClaw background daemon",
+		RunE:  stopCmd(gf).RunE,
+	})
+
+	// gateway restart — alias of 'assistclaw restart'
+	cmd.AddCommand(&cobra.Command{
+		Use:   "restart",
+		Short: "Restart the AssistClaw background daemon",
+		RunE:  restartCmd(gf).RunE,
+	})
+
+	// gateway status — alias of 'assistclaw status'
+	cmd.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Show AssistClaw daemon status, PID, and web UI address",
+		RunE:  statusCmd(gf).RunE,
+	})
+
+	// gateway serve — foreground gateway-only server (dev/debug)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "serve",
+		Short: "Run the gateway in the foreground (blocks terminal)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log := buildLogger(gf.logLevel)
-			defer log.Sync()
+			defer log.Sync() //nolint:errcheck
 
 			cfg, err := loadConfig(gf.configPath, log)
 			if err != nil {
 				return err
 			}
 
-			log.Info("Starting AssistClaw Gateway...",
+			log.Info("Starting AssistClaw Gateway (foreground)...",
 				zap.String("host", cfg.Gateway.Host),
 				zap.Int("port", cfg.Gateway.Port),
 				zap.String("bind", cfg.Gateway.Bind),
@@ -529,6 +577,14 @@ func gatewayCmd(gf *globalFlags) *cobra.Command {
 			srv := gateway.NewServer(cfg.Gateway.Port)
 			srv.Bind = cfg.Gateway.Bind
 			srv.Tailscale.Mode = cfg.Gateway.Tailscale.Mode
+			srv.Token = cfg.Gateway.Token
+			srv.Version = version
+
+			webHost := cfg.Gateway.Host
+			if webHost == "" {
+				webHost = "localhost"
+			}
+			fmt.Printf("\n🌐 Web UI: http://%s:%d\n", webHost, cfg.Gateway.Port)
 
 			errCh := make(chan error, 1)
 			go func() {
@@ -553,7 +609,9 @@ func gatewayCmd(gf *globalFlags) *cobra.Command {
 			}
 			return nil
 		},
-	}
+	})
+
+	return cmd
 }
 
 // ─────────────────────────────────────────────
