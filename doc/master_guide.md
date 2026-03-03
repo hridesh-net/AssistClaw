@@ -89,9 +89,11 @@ AssistClaw began as a Go-based evolution of the original **OpenClaw** (Node.js).
 
 For a more granular look at the specialized systems within AssistClaw, explore our technical deep-dive series:
 
-1.  **[The Autonomous Execution Loop](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/execution-loop.md)**: Explore the Plan-Execute-Reflect cycle and how Corrective Memory (Lessons Learned) helps the agent improve over time.
-2.  **[Dynamic Skills & Autonomous Tools](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/skills-and-tools.md)**: Understand the `SKILL.md` mechanism and how the agent safely writes and executes its own Python tools.
-3.  **[Providers, Routing & Channels](file:///Users/elrosshinzo/Projects/Personal/AssistClaw/doc/deep-dives/providers-and-routing.md)**: Deep dive into the model-agnostic provider registry and the unified messaging channel architecture.
+1.  **[The Autonomous Execution Loop](deep-dives/execution-loop.md)**: Explore the Plan-Execute-Reflect cycle and how Corrective Memory (Lessons Learned) helps the agent improve over time.
+2.  **[Dynamic Skills & Autonomous Tools](deep-dives/skills-and-tools.md)**: Understand the `SKILL.md` mechanism and how the agent safely writes and executes its own Python tools.
+3.  **[Providers, Routing & Channels](deep-dives/providers-and-routing.md)**: Deep dive into the model-agnostic provider registry and the unified messaging channel architecture.
+4.  **[Skill Graphs](deep-dives/skill-graphs.md)**: How skills are structured as navigable graphs with lazy node loading — 96% context reduction vs flat file injection.
+5.  **[Context Engineering](deep-dives/context-engineering.md)**: Graph-first system for selecting which tools and skill nodes to surface per request. Covers tool graph BFS traversal, session inertia, intent classification, and provider-capability adaptation.
 
 ---
 

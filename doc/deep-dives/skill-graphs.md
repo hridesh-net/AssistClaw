@@ -188,3 +188,11 @@ Expected output:
 --- PASS: TestContextReduction_MeasuresTokenReduction
 PASS
 ```
+
+---
+
+## See Also
+
+- [**Context Engineering**](context-engineering.md) — How AssistClaw's tool graph + skill graph system reduces token overhead by ~66% using BFS traversal, session inertia, and provider-capability detection.
+- [Skills and Tools](skills-and-tools.md) — Autonomous tool generation
+- [Providers and Routing](providers-and-routing.md) — Provider configuration
