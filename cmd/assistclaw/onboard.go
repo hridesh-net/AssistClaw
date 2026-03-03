@@ -96,14 +96,19 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 		huh.NewOption("OpenAI", "openai"),
 		huh.NewOption("Ollama (Local / Free)", "ollama"),
 		huh.NewOption("AWS Bedrock", "bedrock"),
-		huh.NewOption("vLLM (Local / Custom)", "vllm"),
-		huh.NewOption("LM Studio (Local)", "lmstudio"),
+		huh.NewOption("Google Vertex AI", "vertex"),
 		huh.NewOption("Groq", "groq"),
 		huh.NewOption("Mistral", "mistral"),
-		huh.NewOption("Azure OpenAI", "azure"),
 		huh.NewOption("DeepSeek", "deepseek"),
 		huh.NewOption("Perplexity", "perplexity"),
-		huh.NewOption("Google Vertex AI", "vertex"),
+		huh.NewOption("OpenRouter", "openrouter"),
+		huh.NewOption("NVIDIA NIM", "nvidia"),
+		huh.NewOption("Together AI", "together"),
+		huh.NewOption("HuggingFace (Inference API)", "huggingface"),
+		huh.NewOption("Cohere", "cohere"),
+		huh.NewOption("Azure OpenAI", "azure"),
+		huh.NewOption("vLLM (Local / Custom)", "vllm"),
+		huh.NewOption("LM Studio (Local)", "lmstudio"),
 	}
 	allSecondary := []huh.Option[string]{
 		huh.NewOption("Ollama (Local / Free)", "ollama"),
@@ -117,6 +122,10 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 		huh.NewOption("Perplexity", "perplexity"),
 		huh.NewOption("AWS Bedrock", "bedrock"),
 		huh.NewOption("Google Vertex AI", "vertex"),
+		huh.NewOption("NVIDIA NIM", "nvidia"),
+		huh.NewOption("Together AI", "together"),
+		huh.NewOption("HuggingFace (Inference API)", "huggingface"),
+		huh.NewOption("Cohere", "cohere"),
 		huh.NewOption("vLLM (Local / Custom)", "vllm"),
 		huh.NewOption("LM Studio (Local)", "lmstudio"),
 	}
@@ -1360,16 +1369,33 @@ func runOnboarding(configPath string) (bool, error) {
 
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ Configuration saved!"))
 
+	// ── Auto-start on login ───────────────────────────────────────────────────
+	var installSvc bool
+	_ = huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().
+			Title("Start AssistClaw automatically on login?").
+			Description("Installs a system service (launchd on macOS, systemd on Linux).\nThe web UI will be available at http://localhost:" + fmt.Sprintf("%d", gwPort) + " after every reboot.").
+			Value(&installSvc),
+	)).WithTheme(theme).Run()
+
+	if installSvc {
+		if err := installService(); err != nil {
+			fmt.Printf("\n⚠  Service install failed: %v\n", err)
+			fmt.Println("   You can retry later with: assistclaw service install")
+		}
+	}
+
 	fmt.Println("\nNext Steps:")
 	fmt.Println("1. Run 'assistclaw agent' to start your assistant manually.")
-	fmt.Println("2. Scan the QR code if you enabled WhatsApp.")
+	fmt.Printf("2. Run 'assistclaw start --daemon' to start the background service (web UI at http://localhost:%d).\n", gwPort)
+	fmt.Println("3. Scan the QR code if you enabled WhatsApp.")
 
 	var startAgent bool
 	err = huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Start your assistant now in background mode?").
-				Description("This will start the Gateway and your messaging channels.").
+				Description("This will start the Gateway (web UI) and your messaging channels.").
 				Value(&startAgent),
 		),
 	).Run()

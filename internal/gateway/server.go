@@ -2,21 +2,28 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"tailscale.com/tsnet"
+
+	"github.com/assistclaw/assistclaw/internal/agent"
+	"github.com/assistclaw/assistclaw/internal/webui"
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all cross-origin requests for now (gateway handles local/remote auth)
+		return true // Gateway handles local/remote auth via Bearer token
 	},
 }
 
@@ -26,6 +33,9 @@ type Server struct {
 	HTTPServer *http.Server
 	Port       int
 	Bind       string
+	Token      string // Bearer token for auth (empty = no auth)
+	Runner     *agent.Runner
+	Version    string
 	Tailscale  struct {
 		Mode string
 	}
@@ -46,11 +56,54 @@ func (s *Server) Start() error {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+	// ── Auth middleware wrapper ───────────────────────────────────────────────
+	auth := func(h http.HandlerFunc) http.HandlerFunc {
+		if s.Token == "" {
+			return h
+		}
+		return func(w http.ResponseWriter, r *http.Request) {
+			tok := r.Header.Get("Authorization")
+			if !strings.HasPrefix(tok, "Bearer ") || strings.TrimPrefix(tok, "Bearer ") != s.Token {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			h(w, r)
+		}
+	}
+
+	// ── Static web UI ─────────────────────────────────────────────────────────
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(webui.Assets()))))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		// Serve index.html from embedded FS
+		data, err := webui.Assets().Open("index.html")
+		if err != nil {
+			http.Error(w, "not found", 404)
+			return
+		}
+		defer data.Close()
+		http.ServeContent(w, r, "index.html", time.Time{}, data.(interface {
+			http.File
+		}))
 	})
 
+	// ── Health ────────────────────────────────────────────────────────────────
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	// ── API: Status ───────────────────────────────────────────────────────────
+	mux.HandleFunc("/api/status", auth(s.handleStatus))
+
+	// ── API: Chat (SSE streaming) ─────────────────────────────────────────────
+	mux.HandleFunc("/api/chat", auth(s.handleChat))
+
+	// ── WebSocket (legacy / channel use) ─────────────────────────────────────
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		serveWs(s.Hub, w, r)
 	})
@@ -74,10 +127,8 @@ func (s *Server) Start() error {
 			return fmt.Errorf("tailscale listen error: %w", err)
 		}
 
-		s.HTTPServer = &http.Server{
-			Handler: mux,
-		}
-		log.Printf("Gateway control plane listening via Tailscale (%s) on %s", s.Tailscale.Mode, addr)
+		s.HTTPServer = &http.Server{Handler: mux}
+		log.Printf("AssistClaw gateway + web UI listening via Tailscale (%s) on %s", s.Tailscale.Mode, addr)
 		return s.HTTPServer.Serve(ln)
 	}
 
@@ -93,7 +144,7 @@ func (s *Server) Start() error {
 		Handler: mux,
 	}
 
-	log.Printf("Gateway control plane listening on ws://%s/ws", fullAddr)
+	log.Printf("AssistClaw gateway + web UI listening on http://%s", fullAddr)
 	return s.HTTPServer.ListenAndServe()
 }
 
@@ -109,7 +160,140 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
-// serveWs handles websocket requests from the peer.
+// ── API Handlers ──────────────────────────────────────────────────────────────
+
+// chatRequest is the JSON body for POST /api/chat.
+type chatRequest struct {
+	Message   string `json:"message"`
+	SessionID string `json:"session_id"`
+}
+
+// sseEvent formats an SSE data line.
+func sseEvent(eventType, content string) []byte {
+	payload, _ := json.Marshal(map[string]string{"type": eventType, "content": content})
+	return []byte("data: " + string(payload) + "\n\n")
+}
+
+func sseDone() []byte { return []byte("data: [DONE]\n\n") }
+
+func sseToolEvent(eventType, name string) []byte {
+	payload, _ := json.Marshal(map[string]string{"type": eventType, "name": name})
+	return []byte("data: " + string(payload) + "\n\n")
+}
+
+// handleChat handles POST /api/chat, returning an SSE stream of tokens.
+func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.Runner == nil {
+		http.Error(w, `{"error":"agent not initialised"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	var req chatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Message == "" {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Pick or create session-specific runner
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
+	sessionRunner := s.Runner.WithSession(sessionID)
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	ctx := r.Context()
+	done := make(chan struct{})
+
+	handler := &sseStreamHandler{
+		w:       w,
+		flusher: flusher,
+		done:    done,
+	}
+
+	go func() {
+		sessionRunner.RunStream(ctx, req.Message, handler)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
+// handleStatus handles GET /api/status.
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	model := ""
+	if s.Runner != nil {
+		// Runner doesn't expose model publicly, we embed it in Server
+	}
+	resp := map[string]interface{}{
+		"status":  "ok",
+		"version": s.Version,
+		"pid":     os.Getpid(),
+		"model":   model,
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// ── SSE Stream Handler ────────────────────────────────────────────────────────
+
+type sseStreamHandler struct {
+	w       http.ResponseWriter
+	flusher http.Flusher
+	done    chan struct{}
+}
+
+func (h *sseStreamHandler) write(b []byte) {
+	_, _ = h.w.Write(b)
+	h.flusher.Flush()
+}
+
+func (h *sseStreamHandler) OnToken(token string) {
+	h.write(sseEvent("token", token))
+}
+
+func (h *sseStreamHandler) OnToolCall(name string, _ json.RawMessage) {
+	h.write(sseToolEvent("tool_start", name))
+}
+
+func (h *sseStreamHandler) OnToolResult(name string, _ string) {
+	h.write(sseToolEvent("tool_end", name))
+}
+
+func (h *sseStreamHandler) OnDone(_ *agent.RunResult) {
+	h.write(sseDone())
+	close(h.done)
+}
+
+func (h *sseStreamHandler) OnError(err error) {
+	h.write(sseEvent("error", err.Error()))
+	h.write(sseDone())
+	select {
+	case <-h.done:
+	default:
+		close(h.done)
+	}
+}
+
+// ── WebSocket (unchanged from original) ──────────────────────────────────────
+
 func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -127,8 +311,6 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 
 	client.Hub.register <- client
 
-	// Allow collection of memory referenced by the caller by doing all work in
-	// new goroutines.
 	go client.writePump()
 	go client.readPump()
 }

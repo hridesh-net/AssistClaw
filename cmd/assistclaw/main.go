@@ -37,6 +37,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/provider/vertex"
 	"github.com/assistclaw/assistclaw/internal/skills"
 	"github.com/assistclaw/assistclaw/internal/tools"
+	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 
 	// Channels
 	"github.com/assistclaw/assistclaw/internal/channels/discord"
@@ -46,7 +47,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.3.12"
+const version = "v3.4.0"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -101,6 +102,7 @@ func rootCmd() *cobra.Command {
 		onboardCmd(flags),
 		skillsCmd(flags),
 		mcpCmd(flags),
+		serviceCmd(flags),
 		versionCmd(),
 	)
 	return root
@@ -803,7 +805,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 
-	// If --serve is active, start the Gateway too and wait
+	// If --serve is active, start the Gateway (+ embedded web UI) and wait
 	if serve {
 		pidFile := PidFile(cfg.StateDir)
 		if oldPid, err := ReadPID(pidFile); err == nil && CheckPID(oldPid) {
@@ -824,6 +826,18 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		srv := gateway.NewServer(cfg.Gateway.Port)
 		srv.Bind = cfg.Gateway.Bind
 		srv.Tailscale.Mode = cfg.Gateway.Tailscale.Mode
+		srv.Token = cfg.Gateway.Token
+		srv.Runner = runner
+		srv.Version = version
+
+		// Determine public-facing address for the web UI
+		webHost := cfg.Gateway.Host
+		if webHost == "" {
+			webHost = "localhost"
+		}
+		webURL := fmt.Sprintf("http://%s:%d", webHost, cfg.Gateway.Port)
+		fmt.Printf("\n🌐 Web UI: %s\n", webURL)
+		fmt.Printf("   Token: %s\n\n", cfg.Gateway.Token)
 
 		go func() {
 			if err := srv.Start(); err != nil && err != http.ErrServerClosed {

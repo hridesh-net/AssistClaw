@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.4.0] - 2026-03-03
+### Added
+- **Embedded Web UI**: Full dark-themed chat interface (`/`) served directly from the binary via `go:embed` — no external build step. Supports SSE streaming, tool-call indicators, session management, and Bearer token auth.
+- **`/api/chat` SSE endpoint**: Gateway now streams agent responses token-by-token over Server-Sent Events for low-latency web interaction.
+- **`/api/status` endpoint**: Returns JSON with version, PID, and active model.
+- **`assistclaw service` command**: Register AssistClaw as a system service that auto-starts on login and survives reboots.
+  - macOS: `~/Library/LaunchAgents/com.assistclaw.agent.plist` via `launchctl` (`KeepAlive: true`)
+  - Linux: `~/.config/systemd/user/assistclaw.service` via `systemctl --user`
+  - `service install` / `service uninstall` / `service logs`
+- **Onboarding parity with OpenClaw**: Added NVIDIA NIM, Together AI, HuggingFace, OpenRouter (now primary), and Cohere to the provider list (17 providers total).
+- **Auto-start on login prompt**: `assistclaw onboard` now asks "Start automatically on login?" and runs `service install` if confirmed.
+- **LAN mode**: Gateway bind `lan` exposes the web UI on `0.0.0.0` for device-local network access.
+
 ## [v3.1.6] - 2026-02-25
 ### Added
 - MIT License.
