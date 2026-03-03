@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.5.1] - 2026-03-03
+### Fixed — Web Search & Fetch
+- **`web_search`**: Root cause confirmed — DDG HTML returns a CAPTCHA challenge for server-side Go HTTP requests, and the Instant Answer API only works for Wikipedia-level entities (not niche queries like "openclaw"). Rewrote to use **SearXNG public JSON API** as primary backend (12 instances tried in order, 5s timeout each, 20s overall). Falls back to DDG Instant Answer, then returns a direct search URL for `web_fetch` as a last resort.
+- **`web_fetch`**: Upgraded from bare `curl` wrapper to a proper tool — adds `max_chars` (default 8000, max 32000), `raw` param, and automatic HTML tag stripping. Better description tells the agent to use it after `web_search`. Pairs cleanly as "search → fetch" workflow.
+
 ## [v3.5.0] - 2026-03-03
 ### Added — Graph-First Context Engineering (~66% token reduction)
 - **`internal/graph/tool_graph.go`** — Weighted directed ToolGraph with typed edges (`COMPANION`, `PREREQUISITE`, `DOMAIN`, `FALLBACK`), BFS traversal from keyword intent-matched seed nodes, and session inertia (recently-used tools boost their neighbours next turn). No embeddings required.

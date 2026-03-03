@@ -48,7 +48,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.5.0"
+const version = "v3.5.1"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)

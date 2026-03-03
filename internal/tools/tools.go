@@ -276,17 +276,31 @@ func (tool BashTool) Execute(ctx context.Context, input json.RawMessage) (string
 // Web fetch tool
 // ─────────────────────────────────────────────
 
-// WebFetchTool fetches content from a URL.
+// WebFetchTool fetches content from a URL and returns readable text.
+// Pairs naturally with web_search: search finds URLs, web_fetch reads them.
 type WebFetchTool struct{}
 
 func (WebFetchTool) Definition() provider.ToolDef {
 	return provider.ToolDef{
-		Name:        "web_fetch",
-		Description: "Fetch the text content of a URL. Converts HTML to readable text. Do not use for downloading binary files.",
+		Name: "web_fetch",
+		Description: "Fetch the text content of a URL. Strips HTML to readable text by default. " +
+			"Use after web_search to read full pages, docs, GitHub files, or any public URL. " +
+			"Also works for raw API endpoints that return JSON or plain text.",
 		InputSchema: provider.ToolParameter{
 			Type: "object",
 			Properties: map[string]any{
-				"url": map[string]any{"type": "string", "description": "URL to fetch"},
+				"url": map[string]any{
+					"type":        "string",
+					"description": "URL to fetch (http or https)",
+				},
+				"max_chars": map[string]any{
+					"type":        "integer",
+					"description": "Max characters to return (default 8000, max 32000)",
+				},
+				"raw": map[string]any{
+					"type":        "boolean",
+					"description": "Return raw HTML/content without stripping tags (default false)",
+				},
 			},
 			Required: []string{"url"},
 		},
@@ -295,19 +309,111 @@ func (WebFetchTool) Definition() provider.ToolDef {
 
 func (WebFetchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var args struct {
-		URL string `json:"url"`
+		URL      string `json:"url"`
+		MaxChars int    `json:"max_chars"`
+		Raw      bool   `json:"raw"`
 	}
 	if err := json.Unmarshal(input, &args); err != nil {
 		return "", err
 	}
+	if args.MaxChars <= 0 {
+		args.MaxChars = 8000
+	}
+	if args.MaxChars > 32000 {
+		args.MaxChars = 32000
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "curl", "-fsSL", "--max-filesize", "2097152", args.URL)
+	curlArgs := []string{"-fsSL", "--max-filesize", "4194304",
+		"-H", "User-Agent: Mozilla/5.0 (compatible; AssistClaw/3.5)",
+		"--compressed", args.URL}
+	cmd := exec.CommandContext(ctx, "curl", curlArgs...)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("web_fetch: %w", err)
 	}
-	return string(out), nil
+
+	text := string(out)
+	// Strip HTML by default (check for '<' prefix or HTML doctype)
+	if !args.Raw && (strings.HasPrefix(strings.TrimSpace(text), "<") || strings.Contains(text[:min(200, len(text))], "<!DOCTYPE")) {
+		text = webFetchHTMLToText(text)
+	}
+
+	runes := []rune(text)
+	truncated := false
+	if len(runes) > args.MaxChars {
+		runes = runes[:args.MaxChars]
+		truncated = true
+	}
+	result := strings.TrimSpace(string(runes))
+	if truncated {
+		result += fmt.Sprintf("\n\n[... truncated at %d chars. Use max_chars to increase.]", args.MaxChars)
+	}
+	return result, nil
+}
+
+// webFetchHTMLToText strips HTML tags and script/style blocks.
+func webFetchHTMLToText(html string) string {
+	// Remove script/style
+	for _, tag := range []string{"script", "style", "noscript", "nav", "footer"} {
+		open := "<" + tag
+		close := "</" + tag + ">"
+		for {
+			start := strings.Index(strings.ToLower(html), open)
+			if start == -1 {
+				break
+			}
+			end := strings.Index(strings.ToLower(html[start:]), close)
+			if end == -1 {
+				html = html[:start]
+				break
+			}
+			html = html[:start] + " " + html[start+end+len(close):]
+		}
+	}
+	// Strip remaining tags
+	var out strings.Builder
+	inTag := false
+	prevSpace := false
+	for _, c := range html {
+		if c == '<' {
+			inTag = true
+			out.WriteRune('\n')
+			prevSpace = false
+			continue
+		}
+		if c == '>' {
+			inTag = false
+			continue
+		}
+		if inTag {
+			continue
+		}
+		if c == '\r' || c == '\t' {
+			c = ' '
+		}
+		if c == ' ' {
+			if !prevSpace {
+				out.WriteRune(' ')
+				prevSpace = true
+			}
+		} else {
+			out.WriteRune(c)
+			prevSpace = (c == '\n')
+		}
+	}
+	text := out.String()
+	for strings.Contains(text, "\n\n\n") {
+		text = strings.ReplaceAll(text, "\n\n\n", "\n\n")
+	}
+	return strings.TrimSpace(text)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // ─────────────────────────────────────────────
