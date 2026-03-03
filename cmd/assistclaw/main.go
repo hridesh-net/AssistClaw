@@ -47,7 +47,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.4.1"
+const version = "v3.4.2"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -788,7 +788,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 		return memMgr.Semantic.GetSnippet(snippetCtx, path, startLine, endLine)
 	}
-	for _, t := range tools.Default(memSearchFn, memSnippetFn) {
+	for _, t := range tools.Default(memSearchFn, memSnippetFn, memMgr.Episodic, p, modelInfo.ID, nil) {
 		if tool, ok := t.(agent.Tool); ok {
 			toolReg.Register(tool)
 		}

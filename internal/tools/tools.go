@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/provider"
 )
 
@@ -407,12 +408,16 @@ func (t MemoryGetTool) Execute(ctx context.Context, input json.RawMessage) (stri
 // ─────────────────────────────────────────────
 
 // Default registers all built-in tools into a registry.
-// Pass a memSearchFn to wire up memory search.
 func Default(
 	memSearchFn func(ctx context.Context, query string, limit int) ([]string, error),
 	memSnippetFn func(ctx context.Context, source string, startLine, endLine int) (string, error),
+	episodic *memory.EpisodicMemory,
+	visionProvider provider.Provider,
+	visionModel string,
+	channelSenders map[string]ChannelSender,
 ) []interface{ Definition() provider.ToolDef } {
 	return []interface{ Definition() provider.ToolDef }{
+		// ── Tier 0: original tools ──────────────────────
 		ReadFileTool{},
 		WriteFileTool{},
 		ListDirTool{},
@@ -423,5 +428,19 @@ func Default(
 		MemoryGetTool{SnippetFn: memSnippetFn},
 		BrowserNavigate{},
 		BrowserScreenshot{},
+
+		// ── Tier 1: new core tools ───────────────────────
+		EditFileTool{},
+		WebSearchTool{},
+		ProcessTool{},
+		ApplyPatchTool{},
+		EnvTool{},
+
+		// ── Tier 2: intelligence tools ───────────────────
+		ImageUnderstandTool{Provider: visionProvider, Model: visionModel},
+		SessionsListTool{Episodic: episodic},
+		SessionsHistoryTool{Episodic: episodic},
+		CronTool{},
+		MessageTool{Senders: channelSenders},
 	}
 }

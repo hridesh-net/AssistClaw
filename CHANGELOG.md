@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.4.2] - 2026-03-03
+### Added
+- **21 built-in tools** (up from 10) — full OpenClaw tool parity:
+  - **Tier 1**: `edit` (str-replace in-place edits), `web_search` (DuckDuckGo, no API key), `process` (start/stop/logs background processes), `apply_patch` (unified diff), `env` (read/write .env + OS env)
+  - **Tier 2**: `image_understand` (vision model for screenshots/OCR), `sessions_list` + `sessions_history` (episodic memory browsing), `cron` (schedule recurring tasks), `message` (proactive channel sends)
+- `tools.Default()` now accepts episodic memory, vision provider, and channel senders for full wiring
+- `robfig/cron` v3 dependency for the cron scheduler
+
 ## [v3.4.1] - 2026-03-03
 ### Changed
 - **Daemon auto-starts after onboarding**: `assistclaw onboard` now launches the background daemon automatically on completion (no "Start now?" confirm) and displays a launch summary banner with the Web UI URL and token.
