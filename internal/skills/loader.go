@@ -151,32 +151,41 @@ func (l *loader) BuildContext(activeSkillNames []string) string {
 		return ""
 	}
 
-	var sb strings.Builder
-	sb.WriteString("\n\n<skill_graph>\n")
-	sb.WriteString("You have access to the following Skill Graphs. Each graph contains nodes you can read using the 'read_skill_node' tool.\n")
-
+	// Check which skills are actually eligible (all requirements met).
+	var eligible []string
+	var errors []string
 	for _, name := range activeSkillNames {
 		s, ok := l.skills[name]
 		if !ok {
 			continue
 		}
-
 		met, missing := l.CheckRequirements(s)
 		if !met {
-			sb.WriteString(fmt.Sprintf("\n<skill name=\"%s\" status=\"error\" error=\"missing dependencies: %s\" />\n", s.Name, strings.Join(missing, ", ")))
+			errors = append(errors, fmt.Sprintf("%s (missing: %s)", name, strings.Join(missing, ", ")))
 			continue
 		}
-
-		sb.WriteString(fmt.Sprintf("\n<skill name=\"%s\" description=\"%s\">\n", s.Name, s.Description))
-		sb.WriteString("  <nodes>\n")
-		for _, node := range s.Nodes {
-			sb.WriteString(fmt.Sprintf("    <node name=\"%s\" summary=\"%s\" />\n", node.Name, node.Summary))
-		}
-		sb.WriteString("  </nodes>\n")
-		sb.WriteString("</skill>\n")
+		eligible = append(eligible, name)
 	}
 
-	sb.WriteString("</skill_graph>\n")
+	if len(eligible) == 0 && len(errors) == 0 {
+		return ""
+	}
+
+	// Emit a compact 3-line header — no node summaries here.
+	// The agent uses skill_graph_index() to discover nodes on demand.
+	var sb strings.Builder
+	sb.WriteString("\n## Skills\n")
+	if len(eligible) > 0 {
+		sb.WriteString("Active: ")
+		sb.WriteString(strings.Join(eligible, ", "))
+		sb.WriteString("\n")
+	}
+	if len(errors) > 0 {
+		sb.WriteString("Unavailable (missing deps): ")
+		sb.WriteString(strings.Join(errors, "; "))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("Call `skill_graph_index()` to see available nodes, then `read_skill_node(skill, node)` to read one.\n")
 	return sb.String()
 }
 

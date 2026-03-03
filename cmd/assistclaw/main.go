@@ -27,6 +27,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/embeddings"
 	embedproviders "github.com/assistclaw/assistclaw/internal/embeddings/providers"
 	"github.com/assistclaw/assistclaw/internal/gateway"
+	"github.com/assistclaw/assistclaw/internal/graph"
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/provider/anthropic"
@@ -793,13 +794,41 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 			toolReg.Register(tool)
 		}
 	}
+	// Build the graph-based tool catalog for per-request token-efficient selection.
+	toolGraph := graph.NewToolGraph()
+	catalog := tools.NewCatalog(toolReg, toolGraph)
+
+	// Register find_tools (the Anthropic-pattern tool discovery tool).
+	toolReg.Register(tools.FindToolsTool{Catalog: catalog})
+
+	// Register skill_graph_index (on-demand skill node discovery).
+	// activeSkillNames is already populated above (cfg.Agent.EnabledSkills or all loaded skills).
+	toolReg.Register(&skills.SkillGraphIndexTool{
+		Registry:     skillReg,
+		ActiveSkills: activeSkillNames,
+	})
+
+	// Also register read_skill_node here (previously registered separately).
 	toolReg.Register(skills.NewReadSkillNodeTool(skillReg))
+
+	// Rebuild catalog to include all newly registered tools (find_tools, skill_graph_index, read_skill_node).
+	catalog = tools.NewCatalog(toolReg, toolGraph)
+
+	// Derive provider name for capability detection from the resolved model ID.
+	// e.g. "anthropic/claude-opus-4" → "anthropic", "claude-opus-4" → "" (uses default caps)
+	providerNameForCaps := ""
+	if modelInfo.ID != "" {
+		if idx := strings.Index(modelInfo.ID, "/"); idx > 0 {
+			providerNameForCaps = strings.ToLower(modelInfo.ID[:idx])
+		}
+	}
 
 	runner := agent.NewRunner(agent.Config{
 		MaxIterations:       cfg.Agent.MaxIterations,
 		Model:               modelInfo.ID,
 		ActiveSkillsContext: skillsCtx,
-	}, p, toolReg, memMgr, log, cfg.StateDir)
+		ProviderName:        providerNameForCaps,
+	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog)
 
 	if sessionID != "" {
 		// Restore session history into working memory

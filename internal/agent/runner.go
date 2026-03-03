@@ -67,6 +67,14 @@ func (r *ToolRegistry) Definitions() []provider.ToolDef {
 // Runner
 // ─────────────────────────────────────────────
 
+// ToolCatalog is the interface the Runner uses to select per-request tools.
+// Implemented by tools.Catalog. If nil, falls back to r.tools.Definitions().
+type ToolCatalog interface {
+	SelectForRequest(userMessage string, caps provider.ProviderCaps) []provider.ToolDef
+	RecordUsage(toolName string)
+	DecayInertia()
+}
+
 // Config holds runner-specific settings.
 type Config struct {
 	MaxIterations       int
@@ -78,6 +86,7 @@ type Config struct {
 	EmbeddingModel      string
 	SessionID           string // The persistent session ID for this runner
 	ChannelID           string // The message channel ID (e.g. "whatsapp", "telegram")
+	ProviderName        string // Lowercase provider ID for capability detection
 }
 
 // Runner is the main agent execution loop.
@@ -85,6 +94,7 @@ type Runner struct {
 	cfg      Config
 	provider provider.Provider
 	tools    *ToolRegistry
+	catalog  ToolCatalog // graph-based per-request tool selector (optional)
 	memory   *memory.Manager
 	working  *memory.WorkingMemory // Added working memory field
 	log      *zap.Logger
@@ -122,6 +132,13 @@ func NewRunner(
 		channelID:    cfg.ChannelID,
 		workspaceDir: workspaceDir,
 	}
+}
+
+// WithCatalog sets the graph-based tool catalog on an existing runner.
+// Call this after NewRunner to enable per-request tool filtering.
+func (r *Runner) WithCatalog(c ToolCatalog) *Runner {
+	r.catalog = c
+	return r
 }
 
 // plan generates a multi-step execution plan for the given query.
@@ -435,6 +452,11 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 		zap.String("input", truncate(string(inputJSON), 200)),
 	)
 
+	// Record tool usage for session inertia (boosts graph neighbours next turn).
+	if r.catalog != nil {
+		r.catalog.RecordUsage(tc.ToolName)
+	}
+
 	result, err := tool.Execute(ctx, inputJSON)
 	if err != nil {
 		r.log.Error("tool execution failed",
@@ -478,14 +500,27 @@ func (r *Runner) convertMessages(msgs []memory.Message) []provider.Message {
 }
 
 func (r *Runner) buildRequestV3(ctx context.Context, query string) *provider.CompletionRequest {
+	tools := r.selectTools(query)
 	return &provider.CompletionRequest{
 		Model:        r.cfg.Model,
 		Messages:     r.convertMessages(r.working.Messages()),
 		SystemPrompt: r.buildSystemPrompt(ctx, query),
-		Tools:        r.tools.Definitions(),
+		Tools:        tools,
 		MaxTokens:    8096,
 		Stream:       true,
 	}
+}
+
+// selectTools returns the tool definitions for this request.
+// Uses the Catalog for graph-based filtering if configured; falls back to all tools.
+func (r *Runner) selectTools(query string) []provider.ToolDef {
+	if r.catalog != nil {
+		caps := provider.CapsFor(r.cfg.ProviderName)
+		// Decay inertia from last turn before computing new selection
+		r.catalog.DecayInertia()
+		return r.catalog.SelectForRequest(query, caps)
+	}
+	return r.tools.Definitions() // backward-compat fallback
 }
 
 // buildRequest converts working memory messages to a provider request.
