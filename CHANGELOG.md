@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.5.0] - 2026-03-03
+### Added — Graph-First Context Engineering (~66% token reduction)
+- **`internal/graph/tool_graph.go`** — Weighted directed ToolGraph with typed edges (`COMPANION`, `PREREQUISITE`, `DOMAIN`, `FALLBACK`), BFS traversal from keyword intent-matched seed nodes, and session inertia (recently-used tools boost their neighbours next turn). No embeddings required.
+- **`internal/graph/skill_graph.go`** — SkillGraph with typed wikilink edges (`ENTRY`, `EXTENDS`, `REQUIRES`, `EXAMPLE`, `TOOL`), wikilink parser, compact index generator, and formatted edge output for natural graph traversal.
+- **`internal/tools/catalog.go`** — `Catalog` wraps all registered tools and exposes `SelectForRequest(query, providerCaps)` — returns only the core 8 tools + up to 6 graph-traversed relevant tools per request instead of all 21.
+- **`internal/tools/find_tool.go`** — `find_tools` agent tool: discovers tools by keyword, returns plain text — works with any LLM including those without native tool-use support.
+- **`internal/provider/caps.go`** — `ProviderCaps` + `CapsFor()`: provider capability profiles for Anthropic, OpenAI, AWS Bedrock, Ollama, Gemini/Vertex. Bedrock gets all tools upfront; others get graph-filtered subset.
+- **`internal/skills/graph_index.go`** — `skill_graph_index` agent tool: returns compact wikilink-format index of all active skill nodes on demand.
+### Changed
+- **`BuildContext()`** slimmed from full XML node-summary blob (~800 tokens) to a 3-line header (~40 tokens). Agent discovers nodes via `skill_graph_index()`.
+- **`read_skill_node`** now appends outgoing `[[wikilink]]` edges after the node body so the agent can traverse the graph without an extra index call.
+- **`runner.buildRequestV3()`** now uses `Catalog.SelectForRequest()` for per-request tool filtering. Falls back to `tools.Definitions()` if no catalog configured (backward compatible).
+- **`runner.executeTool()`** calls `Catalog.RecordUsage()` to update session inertia weights after each tool call.
+- **`agent.Config`** gains `ProviderName` field for capability detection.
+### Token Budget (5 active skills, 21+ tools)
+| | Before | After |
+|--|--------|-------|
+| Tool schemas/turn | ~1,050 tokens | ~550 tokens |
+| Skill context | ~800 tokens | ~40 tokens |
+| **Total overhead** | **~2,150 tokens** | **~730 tokens** (~66% ↓) |
+
 ## [v3.4.2] - 2026-03-03
 ### Added
 - **21 built-in tools** (up from 10) — full OpenClaw tool parity:
