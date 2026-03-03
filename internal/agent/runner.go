@@ -504,44 +504,38 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 	today := time.Now().Format("2006-01-02")
 	ws := r.workspaceDir
 
+	// ── Dynamic tool table — built from the live ToolRegistry ────────────────
+	// This means every newly registered tool (web_search, edit, process, etc.)
+	// is automatically surfaced to the LLM without manual edits here.
+	toolTable := r.buildToolTable()
+
 	// ── Core identity ────────────────────────────────────────────────────────
-	base := `You are AssistClaw — an autonomous coding and system agent. You have FULL ability to interact with the operating system, create files, run code, browse the web, and complete complex engineering tasks end-to-end.
+	base := `You are AssistClaw — an autonomous coding and system agent. You have FULL ability to interact with the operating system, create files, run code, browse the web, search the internet, and complete complex engineering tasks end-to-end.
 
-## What you CAN do (and SHOULD do proactively)
+## Available Tools — USE THEM, don't just describe what to do
 
-You have the following built-in tools — USE THEM, don't just describe what to do:
+` + toolTable + `
 
-| Tool | What it does |
-|------|-------------|
-| ` + "`bash`" + ` | Run ANY shell command: mkdir, git, npm/pip/go, run tests, compile, chmod, curl, etc. |
-| ` + "`write_file`" + ` | Create or overwrite any file (source code, configs, scripts, manifests) |
-| ` + "`read_file`" + ` | Read any file — source code, logs, configs, build output |
-| ` + "`list_dir`" + ` | Browse directories recursively to understand project structure |
-| ` + "`grep`" + ` | Search patterns across files (regex supported) |
-| ` + "`web_fetch`" + ` | Fetch documentation, APIs, package READMEs, or any public URL |
-| ` + "`browser_navigate`" + ` | Open a URL in a real browser session |
-| ` + "`browser_screenshot`" + ` | Capture a screenshot of what the browser shows |
-| ` + "`memory_search`" + ` | Search past conversations and indexed documents |
-
-## How to handle requests
+## Critical Rules
 
 **IMPORTANT: When a user asks you to DO something, DO IT using your tools.**
-**CRITICAL: Do NOT output conversational markdown code blocks (like ` + "`" + `bash ... ` + "`" + ` or ` + "`" + `json ... ` + "`" + `) expecting the user to run them or save them. You MUST use the ` + "`" + `write_file` + "`" + ` tool to save files and the ` + "`" + `bash` + "`" + ` tool to execute commands. If you output raw markdown blocks instead of calling the native JSON tools, your actions will not be executed!**
+**CRITICAL: Do NOT output markdown code blocks expecting the user to run them. You MUST use the ` + "`write_file`" + ` or ` + "`edit`" + ` tools to save files and the ` + "`bash`" + ` tool to execute commands.**
 
-Examples:
-- "Create a chrome extension" → use ` + "`write_file`" + ` to create manifest.json, content.js, etc. Use ` + "`bash`" + ` to zip it up.
-- "Write a Python script" → use ` + "`write_file`" + ` to create the script, then ` + "`bash`" + ` to run it and show output.
-- "Install numpy" → use ` + "`bash`" + ` with ` + "`pip install numpy`" + `.
-- "Run the tests" → use ` + "`bash`" + ` with the test command.
-- "Check if it works" → use ` + "`bash`" + ` to execute the code and return actual output.
+### When to use web_search vs web_fetch
+- **` + "`web_search`" + `** — use when you need to FIND information: latest docs, current prices, news, "what is X", "how to do Y". This searches DuckDuckGo and returns a list of results with snippets. **No API key required.**
+- **` + "`web_fetch`" + `** — use when you already HAVE a URL and want to read that specific page.
+- **NEVER answer from training knowledge alone when the user asks about something time-sensitive, version-specific, or real-world current. Always call ` + "`web_search`" + ` first.**
 
-## Coding task workflow
+## Common Workflows
 
-1. **Understand** the request (ask one clarifying question if truly ambiguous, then act)
-2. **Explore** with ` + "`list_dir`" + ` or ` + "`read_file`" + ` if working in an existing project
-3. **Implement** with ` + "`write_file`" + ` (create files) and/or ` + "`bash`" + ` (run commands)
-4. **Verify** by running the code with ` + "`bash`" + ` and including the real output in your reply
-5. **Report** what you created/changed and where it lives
+- "Research X" or "Look up X" → call ` + "`web_search`" + `, then ` + "`web_fetch`" + ` on relevant URLs
+- "Create a file" → ` + "`write_file`" + `
+- "Edit a specific line" → ` + "`edit`" + ` (str-replace, faster than rewriting the whole file)
+- "Run command" → ` + "`bash`" + `
+- "Search code" → ` + "`grep`" + `
+- "Start a dev server in background" → ` + "`process`" + ` (start)
+- "Look at a screenshot" → ` + "`image_understand`" + `
+- "Schedule a task" → ` + "`cron`" + `
 
 ## Workspace
 Your persistent workspace is at: ` + ws + `
@@ -552,7 +546,7 @@ Use ` + "`write_file`" + ` to record important insights to these files.`
 	var parts []string
 	parts = append(parts, base)
 
-	// Channel-specific tone adjustments (after identity, not replacing it)
+	// Channel-specific tone adjustments
 	if r.channelID == "whatsapp" {
 		parts = append(parts, "CHANNEL: WhatsApp. Keep replies concise. Use bullet points. Show only the most important output snippets — not full file contents. If you created files, say where they are and show a 3-5 line preview.")
 	}
@@ -582,6 +576,56 @@ Use ` + "`write_file`" + ` to record important insights to these files.`
 	}
 
 	return strings.Join(parts, "\n\n")
+}
+
+// buildToolTable generates a markdown table of all registered tools for the system prompt.
+// Called dynamically so new tools are automatically surfaced to the LLM.
+func (r *Runner) buildToolTable() string {
+	// Friendly one-line descriptions for the table (supplements the schema description)
+	friendlyDesc := map[string]string{
+		"read_file":          "Read any file — source code, logs, configs",
+		"write_file":         "Create or overwrite any file",
+		"edit":               "Str-replace targeted edit (faster than write_file for single changes)",
+		"apply_patch":        "Apply a unified diff (multi-hunk, multi-file edits)",
+		"list_dir":           "Browse directories recursively",
+		"grep":               "Regex pattern search across files",
+		"bash":               "Run ANY shell command",
+		"web_fetch":          "Fetch a specific URL and return its text content",
+		"web_search":         "Search the web via DuckDuckGo — no API key needed",
+		"memory_search":      "Semantic search over past conversations and indexed docs",
+		"memory_get":         "Read specific lines from memory/indexed files",
+		"browser_navigate":   "Open a URL in a real browser session",
+		"browser_screenshot": "Capture a screenshot of the current browser page",
+		"process":            "Start/stop/status/logs background processes (dev servers, watchers)",
+		"env":                "Read/write .env files and OS environment variables",
+		"image_understand":   "Analyze an image or screenshot with a vision model (OCR, UI review)",
+		"sessions_list":      "List all past session IDs in episodic memory",
+		"sessions_history":   "Read conversation history for a specific session",
+		"cron":               "Schedule recurring shell commands (cron expressions)",
+		"message":            "Proactively send a message to connected channels (Telegram, WhatsApp, etc.)",
+	}
+
+	defs := r.tools.Definitions()
+	if len(defs) == 0 {
+		return "_No tools registered._"
+	}
+
+	var sb strings.Builder
+	sb.WriteString("| Tool | Description |\n")
+	sb.WriteString("|------|-------------|\n")
+	for _, def := range defs {
+		desc := def.Description
+		if friendly, ok := friendlyDesc[def.Name]; ok {
+			desc = friendly
+		} else if idx := strings.Index(desc, "\n"); idx > 0 {
+			desc = desc[:idx] // first line only
+		}
+		if len(desc) > 120 {
+			desc = desc[:117] + "…"
+		}
+		sb.WriteString(fmt.Sprintf("| `%s` | %s |\n", def.Name, desc))
+	}
+	return sb.String()
 }
 
 // ─────────────────────────────────────────────
