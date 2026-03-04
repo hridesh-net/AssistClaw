@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.6.3] - 2026-03-03
+### Fixed
+- Fixed an issue where selecting `xai` as a provider during onboarding did not prompt the user for an API key.
+- Fixed 404 errors when using `xai` models by correcting the API endpoint base path sent to the compatibility router.
+
 ## [v3.6.2] - 2026-03-03
 ### Fixed
 - **Hotfix:** Resolved a startup panic on Linux/macOS caused by an unsupported Perl-style regex lookahead `(?!` in the generic PII detection module (SSN matching).

@@ -189,6 +189,7 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 		"deepseek":   true,
 		"perplexity": true,
 		"voyage":     true,
+		"xai":        true,
 	}
 
 	needsBaseURL := map[string]string{
