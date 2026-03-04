@@ -309,15 +309,15 @@ channels:
 
 | | OpenClaw | NanoClaw | ZeroClaw | **AssistClaw** |
 |:--|:--|:--|:--|:--|
-| **Language** | Python/Node | TypeScript | Rust | **Go** |
-| **Footprint** | ~1.5 GB | Minimal | ~5 MB | **~40 MB** |
-| **Providers** | Managed | Claude only | Trait-based | **15+** |
-| **Smart Routing** | ❌ | ❌ | ❌ | **✅ Plano** |
+| **Language** | Python / TypeScript | TypeScript | Rust | **Go** |
+| **Footprint** | High (>1 GB) | Minimal | Ultra-light (<5 MB) | **Light (~40 MB)** |
+| **Providers** | Managed | Anthropic mostly | 22+ providers | **15+ providers** |
+| **Smart Routing** | ❌ | ❌ | ❌ | **✅ Plano proxy** |
 | **MCP** | ❌ | ❌ | ❌ | **✅ Server + Client** |
-| **Security Layer** | ❌ | ❌ | ❌ | **✅ Guardrail + Audit** |
-| **Hardware** | Basic | None | None | **C++ Bridge** |
-| **Channels** | Limited | None | None | **WA/TG/Discord/Slack** |
-| **Raspberry Pi** | ❌ | ❌ | ❌ | **✅** |
+| **Security** | Known vulnerabilities | ✅ Container isolation | ✅ Strict allowlists | **✅ Guardrail + Audit Log** |
+| **Hardware** | Basic | ❌ | ❌ | **✅ C++ Sensing Bridge** |
+| **Channels** | Limited | ❌ | ❌ | **✅ WA/TG/Discord/Slack** |
+| **Raspberry Pi** | ❌ (Too heavy) | ✅ | ✅ | **✅ (Native ARM64)** |
 
 ---
 
