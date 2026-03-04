@@ -17,6 +17,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/provider"
+	"github.com/assistclaw/assistclaw/internal/security"
 )
 
 // ─────────────────────────────────────────────
@@ -99,6 +100,10 @@ type Runner struct {
 	working  *memory.WorkingMemory // Added working memory field
 	log      *zap.Logger
 
+	// Security layer (optional; both may be nil)
+	guardrail *security.Guardrail
+	auditLog  *security.AuditLog
+
 	sessionID    string
 	channelID    string
 	workspaceDir string
@@ -138,6 +143,17 @@ func NewRunner(
 // Call this after NewRunner to enable per-request tool filtering.
 func (r *Runner) WithCatalog(c ToolCatalog) *Runner {
 	r.catalog = c
+	return r
+}
+
+// WithSecurity attaches the guardrail and audit log to an existing runner.
+// Both are optional — pass nil to disable either.
+func (r *Runner) WithSecurity(g *security.Guardrail, a *security.AuditLog) *Runner {
+	r.guardrail = g
+	r.auditLog = a
+	if a != nil {
+		a.WriteSessionStart(r.sessionID, r.channelID)
+	}
 	return r
 }
 
@@ -447,6 +463,27 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 		return fmt.Sprintf("Error marshalling tool input: %v", err)
 	}
 
+	// ── Guardrail: pre-execution tool check ──────────────────────────────
+	if r.guardrail != nil {
+		check := r.guardrail.CheckToolCall(tc.ToolName, string(inputJSON))
+		if r.auditLog != nil && len(check.Findings) > 0 {
+			r.auditLog.WriteGuardrailEvent(r.sessionID, r.channelID, check)
+		}
+		if check.Blocked() {
+			r.log.Warn("guardrail blocked tool call",
+				zap.String("tool", tc.ToolName),
+				zap.String("reason", check.Message),
+			)
+			return "[Security] " + check.Message
+		}
+		if check.Action == security.ActionWarn {
+			r.log.Warn("guardrail warning on tool call",
+				zap.String("tool", tc.ToolName),
+				zap.String("warning", check.Message),
+			)
+		}
+	}
+
 	r.log.Info("tool call",
 		zap.String("tool", tc.ToolName),
 		zap.String("input", truncate(string(inputJSON), 200)),
@@ -457,7 +494,9 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 		r.catalog.RecordUsage(tc.ToolName)
 	}
 
+	start := time.Now()
 	result, err := tool.Execute(ctx, inputJSON)
+	dur := time.Since(start)
 	if err != nil {
 		r.log.Error("tool execution failed",
 			zap.String("tool", tc.ToolName),
@@ -468,6 +507,15 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 
 	if strings.TrimSpace(result) == "" {
 		result = "Command executed successfully with no output."
+	}
+
+	// ── Audit log: record tool call event ────────────────────────────────
+	if r.auditLog != nil {
+		r.auditLog.WriteToolCall(
+			r.sessionID, r.channelID, "", // actor resolved by channel layer
+			tc.ToolName, inputJSON, result, dur,
+			security.CheckResult{Action: security.ActionAllow},
+		)
 	}
 
 	r.log.Info("tool result",

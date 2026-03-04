@@ -47,6 +47,9 @@ type Config struct {
 
 	// MCP configures the Model Context Protocol server and external MCP client connections.
 	MCP MCPConfig `yaml:"mcp"`
+
+	// Security configures the runtime safety guardrail and audit log.
+	Security SecurityConfig `yaml:"security"`
 }
 
 // MCPConfig configures the MCP server and external MCP client connections.
@@ -259,6 +262,23 @@ type AgentConfig struct {
 	ToolsDir        string   `yaml:"tools_dir"`
 	SkillsDir       string   `yaml:"skills_dir"`
 	EnabledSkills   []string `yaml:"enabled_skills"`
+}
+
+// SecurityConfig configures the runtime safety guardrail and tamper-evident audit log.
+type SecurityConfig struct {
+	// Mode controls how findings are acted upon.
+	// Values: "monitor" (log only, default), "enforce" (block HIGH), "strict" (block MEDIUM+HIGH)
+	Mode string `yaml:"mode"`
+
+	// LogPath is the path to the NDJSON audit log.
+	// Defaults to <state_dir>/security/audit.ndjson
+	LogPath string `yaml:"log_path"`
+
+	// PIIMask replaces detected PII in audit log entries with [REDACTED:<type>].
+	PIIMask bool `yaml:"pii_mask"`
+
+	// BlockPatterns are additional regex patterns to block in input.
+	BlockPatterns []string `yaml:"block_patterns"`
 }
 
 // ChannelsConfig configures messaging channels.

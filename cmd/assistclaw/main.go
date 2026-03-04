@@ -36,6 +36,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/provider/openai"
 	"github.com/assistclaw/assistclaw/internal/provider/openaicompat"
 	"github.com/assistclaw/assistclaw/internal/provider/vertex"
+	"github.com/assistclaw/assistclaw/internal/security"
 	"github.com/assistclaw/assistclaw/internal/skills"
 	"github.com/assistclaw/assistclaw/internal/tools"
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
@@ -48,7 +49,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.5.1"
+const version = "v3.6.0"
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -104,6 +105,7 @@ func rootCmd() *cobra.Command {
 		skillsCmd(flags),
 		mcpCmd(flags),
 		serviceCmd(flags),
+		securityCmd(flags),
 		versionCmd(),
 	)
 	return root
@@ -829,6 +831,32 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		ActiveSkillsContext: skillsCtx,
 		ProviderName:        providerNameForCaps,
 	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog)
+
+	// ── Security: Guardrail + Audit Log ────────────────────────────────
+	guardrailMode := security.GuardrailMode(cfg.Security.Mode)
+	if guardrailMode == "" {
+		guardrailMode = security.ModeMonitor
+	}
+	guardrail, guardErr := security.NewGuardrail(guardrailMode, cfg.Security.BlockPatterns)
+	if guardErr != nil {
+		log.Warn("security guardrail init failed", zap.Error(guardErr))
+	}
+
+	secLogPath := cfg.Security.LogPath
+	if secLogPath == "" {
+		secLogPath = filepath.Join(cfg.StateDir, "security", "audit.ndjson")
+	}
+	auditLog, auditErr := security.NewAuditLog(secLogPath, cfg.Security.PIIMask, log)
+	if auditErr != nil {
+		log.Warn("security audit log init failed", zap.Error(auditErr))
+	}
+
+	runner = runner.WithSecurity(guardrail, auditLog)
+	log.Info("security layer active",
+		zap.String("mode", string(guardrailMode)),
+		zap.String("audit_log", secLogPath),
+	)
+	// ─────────────────────────────────────────────────────────────
 
 	if sessionID != "" {
 		// Restore session history into working memory

@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.6.0] - 2026-03-03
+### Added — Runtime Security Layer
+**I/O Safety Guardrail** (`internal/security/guardrail.go` + `pii.go`)
+- Pre-check on every user input: detects 14 prompt injection patterns (jailbreaks, DAN, `[INST]`, `<<SYS>>`, etc.) at HIGH/MEDIUM/LOW severity
+- Tool-check before every tool execution: blocks dangerous bash patterns (`rm -rf /`, `/etc/shadow`, fork bombs, pipe-to-shell), and system file paths
+- Post-check on LLM output: detects PII (email, phone, SSN, credit cards via Luhn algorithm, OpenAI/Anthropic/AWS/GitHub API keys) and exfiltration patterns
+- 3 configurable modes: `monitor` (log only, default), `enforce` (block HIGH), `strict` (block MEDIUM+HIGH)
+- PII masking: replaces detected PII with `[REDACTED:<type>]` when `security.pii_mask: true`
+
+**Tamper-Evident Audit Log** (`internal/security/audit.go` + `verify.go`)
+- Every tool call, skill node read, skill index call, and guardrail event logged to `~/.assistclaw/security/audit.ndjson`
+- HMAC-SHA256 hash chain: each entry includes `prev_hash` + its own `entry_hash = HMAC(secret, prev_hash+content)` — tampering breaks the chain
+- Machine-scoped HMAC secret auto-generated at first run (`audit.secret`, mode 0600)
+- Input/output stored as SHA-256 hashes only — no plain-text data in audit log
+
+**`assistclaw security` Subcommand**
+- `security status` — guardrail mode, PII masking, log path, size, event count
+- `security verify` — verifies full HMAC chain; prints first violation location if tampered
+- `security report` — summary by event type, top tools, skill node reads, actor activity, guardrail counts
+- `security tail` — streams live events (`tail -f` style)
+
+**Config** (`assistclaw.yaml`):
+```yaml
+security:
+  mode: enforce          # monitor | enforce | strict
+  pii_mask: true
+  block_patterns: []     # custom regex patterns
+```
+
 ## [v3.5.1] - 2026-03-03
 ### Fixed — Web Search & Fetch
 - **`web_search`**: Root cause confirmed — DDG HTML returns a CAPTCHA challenge for server-side Go HTTP requests, and the Instant Answer API only works for Wikipedia-level entities (not niche queries like "openclaw"). Rewrote to use **SearXNG public JSON API** as primary backend (12 instances tried in order, 5s timeout each, 20s overall). Falls back to DDG Instant Answer, then returns a direct search URL for `web_fetch` as a last resort.
