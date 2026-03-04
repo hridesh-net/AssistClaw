@@ -85,7 +85,6 @@ No vector databases, no cloud services. Everything local.
 |------|---------|----------|
 | **Working** | In-RAM | Active conversation context |
 | **Episodic** | SQLite FTS5 | Full-text search across all sessions |
-| **Semantic** | sqlite-vec | Vector similarity (finds related past conversations) |
 
 ### 🕸️ Skill Graph — 66% Fewer Tokens
 Skills aren't flat files — they're **lazy-loaded graphs**. The agent reads only the nodes it needs.
@@ -137,7 +136,7 @@ Works as **both** an MCP server (expose your agent to Claude Desktop / Cursor) a
 | Web UI | Built-in |
 
 ### 🦾 Hardware Sensing
-C++ bridge for Camera (OpenCV), Audio (PortAudio), GPIO (pigpio) — runs natively on Raspberry Pi 5.
+C++ bridge for Camera (OpenCV) and Audio (PortAudio) — runs natively on Raspberry Pi 5.
 
 ---
 
