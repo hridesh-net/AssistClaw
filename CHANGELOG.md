@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.6.1] - 2026-03-03
+### Added
+- Added native support for xAI (Grok) models (`grok-4-latest`, `grok-beta`, `grok-vision-beta`, `grok-2`).
+
+### Fixed
+- Fixed an `assistclaw onboard` issue where old provider configuration variables (like API keys or bedock regions) leaked and overwrote the config file when switching providers in the interactive CLI.
+- Fixed an issue causing a 404 error when selecting Groq due to an incorrect BaseURL API path endpoint.
+- Channel selectors in `onboard` will now accurately display `[Configured]` if they are already integrated in `assistclaw.yaml`.
+
 ## [v3.6.0] - 2026-03-03
 ### Added — Runtime Security Layer
 **I/O Safety Guardrail** (`internal/security/guardrail.go` + `pii.go`)
