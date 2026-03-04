@@ -1,177 +1,273 @@
 <p align="center">
-  <img src="https://github.com/hridesh-net/AssistClaw/blob/main/doc/assets/assistClaw.png" alt="AssistClaw" width="400">
+  <img src="https://github.com/hridesh-net/AssistClaw/blob/main/doc/assets/assistClaw.png" alt="AssistClaw Logo" width="320">
 </p>
 
 <h1 align="center">AssistClaw</h1>
 
 <p align="center">
-  <strong>The Autonomous Edge Intelligence System</strong>
+  <em>The Autonomous Edge Intelligence System — built in Go, runs anywhere.</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/hridesh-net/AssistClaw/actions"><img src="https://img.shields.io/github/actions/workflow/status/hridesh-net/AssistClaw/ci.yml?branch=main&style=for-the-badge" alt="CI Status"></a>
-  <a href="https://github.com/hridesh-net/AssistClaw/releases"><img src="https://img.shields.io/github/v/release/hridesh-net/AssistClaw?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+  <a href="https://github.com/hridesh-net/AssistClaw/actions"><img src="https://img.shields.io/github/actions/workflow/status/hridesh-net/AssistClaw/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI" alt="CI"></a>
+  <a href="https://github.com/hridesh-net/AssistClaw/releases"><img src="https://img.shields.io/github/v/release/hridesh-net/AssistClaw?include_prereleases&style=for-the-badge&logo=github&color=6f42c1" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT"></a>
+  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go" alt="Go">
+  <img src="https://img.shields.io/badge/Platforms-Linux%20•%20macOS%20•%20Windows%20•%20RPi-orange?style=for-the-badge" alt="Platforms">
 </p>
 
----
+<br>
 
-**AssistClaw** is a polyglot, production-grade AI assistant system written in **Go**. Designed for low-latency, high-concurrency edge computing — it runs anywhere from a Raspberry Pi 5 to a high-end workstation, on any LLM provider, across any messaging channel.
-
-## 🚀 Key Highlights
-
-- **⚡ Native Performance**: Built in Go for near-instant startup, low memory footprint (~40 MB), and true multi-core concurrency.
-- **🧠 Three-Tier Memory**: Local, zero-infrastructure memory system.
-  - **Working**: Context-aware in-RAM session memory.
-  - **Episodic**: SQLite FTS5 for fast full-text historical recall.
-  - **Semantic**: `sqlite-vec` for native vector similarity search.
-- **🗺️ Skill Graph**: Modular skill system where each skill is a lazy-loaded graph of markdown nodes — the agent traverses only what it needs, saving 90%+ of tool-context tokens.
-- **🤖 Plano Smart Routing** *(v3.2.0)*: Optional open-source AI proxy that auto-routes each prompt to the right model by complexity — cheap models for simple queries, powerful models for complex tasks.
-- **🔌 MCP Integration** *(v3.3.0)*: Token-efficient [Model Context Protocol](https://modelcontextprotocol.io) server (works with Claude Desktop, Cursor, etc.) **and** client (consume external MCP servers — filesystem, browser, etc. — as skill nodes).
-- **🛠️ Autonomous Intelligence**: The agent can autonomously write, validate, sandbox-execute, and persist its own Python tools.
-- **📡 Multi-Channel Connectivity**: Native support for WhatsApp, Telegram, Discord, Slack, and a high-performance REST/WebSocket Gateway.
-- **🦾 Hardware Sensing**: C++ bridge for Camera (OpenCV), Audio (PortAudio), and GPIO (pigpio).
-- **🎛️ Background Daemon**: Persistent background service with `start`, `stop`, `status`, and `restart` management.
+```
+╔══════════════════════════════════════════════════════════════╗
+║  You  →  AssistClaw  →  Any LLM  →  Tools + Skills + Memory ║
+║            ↑                                                  ║
+║     WhatsApp · Telegram · Discord · Slack · Web UI           ║
+╚══════════════════════════════════════════════════════════════╝
+```
 
 ---
 
-## ✅ Verified & Working
+## ⚡ Why AssistClaw?
 
-- **LLM Providers**: AWS Bedrock, OpenAI (GPT-4o / 4.1), Anthropic (Claude 3.x), Ollama, Groq, Mistral, Together AI, DeepSeek, Perplexity, OpenRouter, Cohere, HuggingFace, NVIDIA NIM, vLLM, LM Studio.
-- **Smart Routing**: Plano (Docker-based, auto-setup during onboarding).
-- **MCP**: stdio + HTTP-SSE server / client (tested with Claude Desktop and MCP Inspector).
-- **Messaging**: WhatsApp (multi-device), Telegram (Bot API), Gateway (REST+WS).
-- **Platforms**: Raspberry Pi 5 (ARM64), Linux (AMD64), macOS (Darwin), Windows.
+Most AI agents are either too simple or too heavy. AssistClaw hits the sweet spot:
 
----
-
-## 🆕 What's New
-
-### v3.3.0 — Skill-Graph MCP
-- **MCP Server**: Expose your agent's skills to Claude Desktop, Cursor, and any MCP-compatible client via `assistclaw mcp serve` (stdio) or HTTP-SSE.
-- **MCP Client**: Register external MCP servers (`assistclaw mcp add`). Their tools appear in the agent's skill graph as lazy-loaded nodes — same 90%+ token savings.
-- **Token-efficient by design**: Standard MCP dumps all specs upfront. AssistClaw serves a compact Map of Content and `read_skill_node` — specs are only fetched when the model actually needs them.
-
-### v3.2.0 — Plano Smart Routing
-- Opt-in AI proxy that auto-routes prompts to fast or powerful models based on complexity.
-- Docker setup happens automatically during `assistclaw onboard`.
-- When Plano is enabled, onboarding filters to show only OpenAI-compatible providers.
-- Fallback to your primary provider if Plano is unreachable.
-
-### v3.1.x — Daemon & Stability
-- Background daemon with PID management (`start --daemon`, `stop`, `restart`, `status`).
-- Windows cross-compile support.
-- Uninstall script (`uninstall.sh`).
+| | AssistClaw | Typical Python Agent |
+|---|---|---|
+| **Startup time** | ~50ms | 2–5s |
+| **Memory footprint** | ~40 MB | 400–1500 MB |
+| **LLM providers** | 15+ | 1–3 |
+| **Runs on Raspberry Pi** | ✅ | ❌ |
+| **Token optimization** | Graph-first (~66% savings) | None |
+| **Built-in security** | Guardrail + Audit log | None |
+| **Self-hostable** | ✅ | ✅ |
 
 ---
 
-## 🦞 The Claw Ecosystem
+## 🗺️ Architecture at a Glance
 
-| Feature | OpenClaw | NanoClaw | ZeroClaw | **AssistClaw** |
-| :--- | :--- | :--- | :--- | :--- |
-| **Language** | Python / Node.js | TypeScript | Rust | **Go** |
-| **Footprint** | Heavy (~1.5 GB) | Minimal | ~5 MB | **~40 MB** |
-| **LLM Providers** | Managed | Claude only | Trait-based | **15+ providers** |
-| **Smart Routing** | ❌ | ❌ | ❌ | **✅ Plano** |
-| **MCP** | ❌ | ❌ | ❌ | **✅ Server + Client** |
-| **Hardware** | Basic | None | None | **Native C++ Bridge** |
-| **Channels** | Limited | None | None | **WA/TG/Discord/Slack** |
+```
+                    ┌─────────────────────────────────┐
+                    │           AssistClaw             │
+                    │                                  │
+  Channels ──────►  │  ┌──────────┐  ┌─────────────┐  │
+  WhatsApp          │  │  Runner  │  │   Security  │  │
+  Telegram          │  │ (agent   │  │  Guardrail  │  │
+  Discord           │  │  loop)   │  │  Audit Log  │  │
+  Slack             │  └────┬─────┘  └─────────────┘  │
+  Web/REST/WS       │       │                          │
+                    │  ┌────▼──────────────────────┐   │
+                    │  │        Tool Graph          │   │
+                    │  │  bash · web · files · MCP │   │
+                    │  └────┬──────────────────────┘   │
+                    │       │                          │
+                    │  ┌────▼──────────────────────┐   │
+                    │  │      3-Tier Memory         │   │
+                    │  │  Working│Episodic│Semantic  │   │
+                    │  └───────────────────────────┘   │
+                    └────────┬────────────────────────┘
+                             │
+              ┌──────────────▼──────────────┐
+              │    Any LLM Provider          │
+              │  OpenAI · Anthropic · Ollama │
+              │  Bedrock · Groq · Mistral … │
+              └──────────────────────────────┘
+```
 
 ---
 
-## 🛠️ Installation
+## ✨ Features
 
-### Automated (Linux / macOS)
+### 🧠 Three-Tier Memory — Zero Infrastructure
+No vector databases, no cloud services. Everything local.
+
+| Tier | Storage | What for |
+|------|---------|----------|
+| **Working** | In-RAM | Active conversation context |
+| **Episodic** | SQLite FTS5 | Full-text search across all sessions |
+| **Semantic** | sqlite-vec | Vector similarity (finds related past conversations) |
+
+### 🕸️ Skill Graph — 66% Fewer Tokens
+Skills aren't flat files — they're **lazy-loaded graphs**. The agent reads only the nodes it needs.
+
+```
+coding/
+├── INDEX           ← agent reads this first (50 tokens)
+├── python.md       ← loaded only if query is Python
+├── debugging.md    ← loaded only if agent needs debug help
+└── testing.md      ← loaded only if tests are mentioned
+```
+
+Traditional skills: send **all** skill content every turn.  
+AssistClaw: send the **index** → agent traverses only what it needs. ~66% token reduction.
+
+### 🔒 Security Layer *(v3.6.0)*
+Production-grade runtime protection — no configuration needed to get started.
+
+- **Guardrail**: pre/post/tool-call checks for prompt injection, PII leakage, dangerous bash commands
+- **Audit Log**: every tool call + skill read logged with HMAC hash chain (tamper-evident)
+- **`assistclaw security verify`**: detects exactly which log entry was tampered with
+
+```yaml
+security:
+  mode: enforce      # monitor | enforce | strict
+  pii_mask: true     # [REDACTED:email] in logs
+```
+
+### 🤖 Plano Smart Routing *(v3.2.0)*
+Auto-routes each prompt to the right model by complexity.
+
+```
+Simple "what's 2+2?"  →  gpt-4o-mini  (fast, cheap)
+Complex code review   →  claude-opus  (powerful)
+```
+
+### 🔌 MCP Integration *(v3.3.0)*
+Works as **both** an MCP server (expose your agent to Claude Desktop / Cursor) and a client (consume external MCP servers as skill nodes).
+
+### 📡 Multi-Channel — One Agent, Everywhere
+
+| Channel | Notes |
+|---------|-------|
+| WhatsApp | Multi-device, no QR scanning |
+| Telegram | Bot API |
+| Discord | Bot |
+| Slack | App |
+| REST + WebSocket | Self-hosted gateway |
+| Web UI | Built-in |
+
+### 🦾 Hardware Sensing
+C++ bridge for Camera (OpenCV), Audio (PortAudio), GPIO (pigpio) — runs natively on Raspberry Pi 5.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Install
+
+**One-liner (Linux / macOS):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
 ```
 
-### Manual (All Platforms)
-1. Download the latest binary from [GitHub Releases](https://github.com/hridesh-net/AssistClaw/releases).
-2. Move to your PATH and make it executable.
-3. Run `assistclaw onboard` to start the interactive guided setup.
+**Or build from source:**
+```bash
+git clone https://github.com/hridesh-net/AssistClaw.git
+cd AssistClaw && make build
+```
 
-### Uninstall
+**Uninstall anytime:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/uninstall.sh | bash
 ```
 
----
+### 2. Onboard
+```bash
+assistclaw onboard
+```
+Interactive wizard — picks your LLM provider, configures channels, sets up Plano routing if you want it.
 
-## ⌨️ Commands
+### 3. Run
+```bash
+# Interactive REPL
+assistclaw agent
 
-### Core
-| Command | Description |
-|---|---|
-| `assistclaw onboard` | Interactive setup wizard |
-| `assistclaw agent` | Start interactive REPL session |
-| `assistclaw start --daemon` | Launch as background service |
-| `assistclaw stop` | Stop background service |
-| `assistclaw status` | Show PID and uptime |
-| `assistclaw restart` | Restart background service |
+# Background daemon
+assistclaw start --daemon
 
-### Skills
-| Command | Description |
-|---|---|
-| `assistclaw skills list` | Show installed skills |
-| `assistclaw skills install <name>` | Install a bundled skill |
-| `assistclaw skills remove <name>` | Remove a skill |
-
-### MCP *(v3.3.0)*
-| Command | Description |
-|---|---|
-| `assistclaw mcp serve` | Start MCP server (stdio, for Claude Desktop / Cursor) |
-| `assistclaw mcp serve --transport http` | Start HTTP-SSE MCP server (port 5173) |
-| `assistclaw mcp add --name <n> --command <cmd>` | Register external MCP server (stdio) |
-| `assistclaw mcp add --name <n> --url <url>` | Register external MCP server (HTTP) |
-| `assistclaw mcp list-tools` | Show compact tool index |
-| `assistclaw mcp status` | Show server status + connected servers |
-| `assistclaw mcp remove <name>` | Unregister external MCP server |
-
-### Providers & Memory
-| Command | Description |
-|---|---|
-| `assistclaw providers list` | List registered providers + models |
-| `assistclaw memory search <query>` | Search conversation history |
-| `assistclaw tools list` | List registered agent tools |
+# Single message
+assistclaw agent --message "Summarize this repo"
+```
 
 ---
 
-## ⚙️ Configuration (`~/.assistclaw/assistclaw.yaml`)
+## ⚙️ Configuration
+
+**Location:** `~/.assistclaw/assistclaw.yaml`
 
 ```yaml
-# Primary LLM provider
+# ─── LLM Provider ────────────────────────────────────────────
 providers:
-  openai:
-    api_key: "sk-..."
-    default_model: "gpt-4o-mini"
+  anthropic:
+    api_key: "sk-ant-..."
+    default_model: "claude-3-5-haiku-20241022"
 
-# Optional: Smart routing via Plano (v3.2.0+)
+  # Or OpenAI, Ollama, Bedrock, Groq, Mistral, DeepSeek ...
+
+# ─── Smart Routing (optional) ────────────────────────────────
 plano:
   enabled: true
   endpoint: "http://localhost:12000/v1"
-  fallback_provider: "openai"
   preferences:
-    - description: "Simple chat → fast model"
+    - description: "Simple queries"
       prefer_model: "openai/gpt-4o-mini"
-    - description: "Code/reasoning → powerful model"
-      prefer_model: "openai/gpt-4o"
+    - description: "Complex code/reasoning"
+      prefer_model: "anthropic/claude-opus-4"
 
-# Optional: MCP server + external servers (v3.3.0+)
+# ─── Security ────────────────────────────────────────────────
+security:
+  mode: enforce          # monitor | enforce | strict
+  pii_mask: true
+
+# ─── MCP (optional) ──────────────────────────────────────────
 mcp:
   server:
     enabled: true
-    transport: stdio       # or http
-    http_port: 5173
+    transport: stdio
   clients:
     - name: filesystem
       command: "npx @modelcontextprotocol/server-filesystem /home"
-    - name: browser
-      url: "http://localhost:5174"
+
+# ─── Messaging Channels (optional) ──────────────────────────
+channels:
+  telegram:
+    bot_token: "..."
+  discord:
+    bot_token: "..."
 ```
 
-### Claude Desktop / Cursor integration
-Add to your MCP config:
+---
+
+## 🛠️ Commands
+
+<details>
+<summary><strong>Core</strong></summary>
+
+| Command | What it does |
+|---------|-------------|
+| `assistclaw onboard` | Interactive setup wizard |
+| `assistclaw agent` | Start REPL session |
+| `assistclaw agent --message "..."` | Single-shot message |
+| `assistclaw start --daemon` | Launch as background service |
+| `assistclaw stop` | Stop background service |
+| `assistclaw status` | Show PID, uptime, connected channels |
+| `assistclaw restart` | Restart service |
+
+</details>
+
+<details>
+<summary><strong>Skills</strong></summary>
+
+| Command | What it does |
+|---------|-------------|
+| `assistclaw skills list` | Show installed skills |
+| `assistclaw skills install <name>` | Install a skill |
+| `assistclaw skills remove <name>` | Remove a skill |
+
+</details>
+
+<details>
+<summary><strong>MCP</strong></summary>
+
+| Command | What it does |
+|---------|-------------|
+| `assistclaw mcp serve` | MCP server over stdio (for Claude Desktop / Cursor) |
+| `assistclaw mcp serve --transport http` | MCP server over HTTP-SSE (port 5173) |
+| `assistclaw mcp add --name n --command cmd` | Register external MCP server |
+| `assistclaw mcp list-tools` | Compact tool index |
+| `assistclaw mcp status` | Server + client status |
+
+**Claude Desktop / Cursor config:**
 ```json
 {
   "mcpServers": {
@@ -183,23 +279,57 @@ Add to your MCP config:
 }
 ```
 
+</details>
+
+<details>
+<summary><strong>Security</strong></summary>
+
+| Command | What it does |
+|---------|-------------|
+| `assistclaw security status` | Guardrail mode, log size, event count |
+| `assistclaw security verify` | Verify HMAC chain — detects any tampering |
+| `assistclaw security report` | Events by type, tool, skill, and actor |
+| `assistclaw security tail` | Live audit event stream |
+
+</details>
+
+<details>
+<summary><strong>Providers & Memory</strong></summary>
+
+| Command | What it does |
+|---------|-------------|
+| `assistclaw providers list` | List LLM providers + available models |
+| `assistclaw memory search <query>` | Search conversation history |
+| `assistclaw tools list` | List all agent tools |
+
+</details>
+
 ---
 
-## 🏗️ Build from Source
+## 🦞 The Claw Ecosystem
 
-```bash
-git clone https://github.com/hridesh-net/AssistClaw.git
-cd AssistClaw
-make build
-```
+| | OpenClaw | NanoClaw | ZeroClaw | **AssistClaw** |
+|:--|:--|:--|:--|:--|
+| **Language** | Python/Node | TypeScript | Rust | **Go** |
+| **Footprint** | ~1.5 GB | Minimal | ~5 MB | **~40 MB** |
+| **Providers** | Managed | Claude only | Trait-based | **15+** |
+| **Smart Routing** | ❌ | ❌ | ❌ | **✅ Plano** |
+| **MCP** | ❌ | ❌ | ❌ | **✅ Server + Client** |
+| **Security Layer** | ❌ | ❌ | ❌ | **✅ Guardrail + Audit** |
+| **Hardware** | Basic | None | None | **C++ Bridge** |
+| **Channels** | Limited | None | None | **WA/TG/Discord/Slack** |
+| **Raspberry Pi** | ❌ | ❌ | ❌ | **✅** |
 
 ---
 
-## 📖 Documentation
+## 📚 Documentation
 
-- **[ASSISTCLAW.md](ASSISTCLAW.md)**: Feature reference and architecture.
-- **[Changelog](CHANGELOG.md)**: Release history and milestones.
-- **[Contributing](CONTRIBUTING.md)**: Developer guide and architecture overview.
+| Doc | Description |
+|-----|-------------|
+| [ASSISTCLAW.md](ASSISTCLAW.md) | Full feature reference and architecture deep dive |
+| [CHANGELOG.md](CHANGELOG.md) | What's new in each release |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Developer guide and architecture overview |
+| [doc/](doc/) | Additional docs, assets, and guides |
 
 ---
 
@@ -219,4 +349,7 @@ Licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
-*AssistClaw — The Autonomous Edge Intelligence System.*
+<p align="center">
+  <strong>AssistClaw</strong> — The Autonomous Edge Intelligence System<br>
+  <em>Built for the edge. Ready for production. Open forever.</em>
+</p>
