@@ -22,11 +22,11 @@ var piiPatterns = []piiPattern{
 		Re:       regexp.MustCompile(`\b(?:4[0-9]{12}(?:[0-9]{3})?|[25][1-7][0-9]{14}|6(?:011|5[0-9][0-9])[0-9]{12}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|(?:2131|1800|35\d{3})\d{11})\b`),
 	},
 
-	// US Social Security Number
+	// US Social Security Number (Format matching only, no negative lookaheads for RE2 compatibility)
 	{
 		Name:     "ssn",
 		Severity: SeverityHigh,
-		Re:       regexp.MustCompile(`\b(?!000|666|9\d{2})\d{3}[- ](?!00)\d{2}[- ](?!0{4})\d{4}\b`),
+		Re:       regexp.MustCompile(`\b\d{3}[- ]\d{2}[- ]\d{4}\b`),
 	},
 
 	// API keys — common provider patterns

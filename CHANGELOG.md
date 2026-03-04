@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.6.2] - 2026-03-03
+### Fixed
+- **Hotfix:** Resolved a startup panic on Linux/macOS caused by an unsupported Perl-style regex lookahead `(?!` in the generic PII detection module (SSN matching).
+
 ## [v3.6.1] - 2026-03-03
 ### Added
 - Added native support for xAI (Grok) models (`grok-4-latest`, `grok-beta`, `grok-vision-beta`, `grok-2`).
