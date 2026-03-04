@@ -81,6 +81,7 @@ var openAICompatProviders = map[string]bool{
 	"deepseek":   true,
 	"perplexity": true,
 	"nvidia":     true,
+	"xai":        true,
 }
 
 func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, initial provEntry) (provEntry, error) {
@@ -100,6 +101,7 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 		huh.NewOption("Groq", "groq"),
 		huh.NewOption("Mistral", "mistral"),
 		huh.NewOption("DeepSeek", "deepseek"),
+		huh.NewOption("xAI (Grok)", "xai"),
 		huh.NewOption("Perplexity", "perplexity"),
 		huh.NewOption("OpenRouter", "openrouter"),
 		huh.NewOption("NVIDIA NIM", "nvidia"),
@@ -119,6 +121,7 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 		huh.NewOption("OpenRouter", "openrouter"),
 		huh.NewOption("Azure OpenAI", "azure"),
 		huh.NewOption("DeepSeek", "deepseek"),
+		huh.NewOption("xAI (Grok)", "xai"),
 		huh.NewOption("Perplexity", "perplexity"),
 		huh.NewOption("AWS Bedrock", "bedrock"),
 		huh.NewOption("Google Vertex AI", "vertex"),
@@ -158,6 +161,21 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 
 	if err := formProvider.Run(); err != nil {
 		return provEntry{}, fmt.Errorf("onboarding interrupted")
+	}
+
+	// Prevent old config artifacts from leaking if user changed provider
+	if entry.provider != initial.provider {
+		entry.apiKey = ""
+		entry.baseURL = ""
+		entry.apiVersion = ""
+		entry.awsRegion = ""
+		entry.awsProfile = ""
+		entry.awsAccessKey = ""
+		entry.awsSecretKey = ""
+		entry.vertexProj = ""
+		entry.vertexLoc = ""
+		entry.vertexCreds = ""
+		entry.model = ""
 	}
 
 	var fields []huh.Field
@@ -291,6 +309,13 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 			huh.NewOption("Sonar Reasoning Pro", "sonar-reasoning-pro"),
 			huh.NewOption("Sonar Pro", "sonar-pro"),
 			huh.NewOption("Sonar Reasoning", "sonar-reasoning"),
+			huh.NewOption("Other / Custom...", "custom"),
+		},
+		"xai": {
+			huh.NewOption("Grok 4", "grok-4-latest"),
+			huh.NewOption("Grok Beta", "grok-beta"),
+			huh.NewOption("Grok Vision", "grok-vision-beta"),
+			huh.NewOption("Grok 2", "grok-2"),
 			huh.NewOption("Other / Custom...", "custom"),
 		},
 		"vertex": {
@@ -477,6 +502,11 @@ func runOnboarding(configPath string) (bool, error) {
 					primary.apiKey = existing.Providers.Perplexity.APIKey
 					primary.model = existing.Providers.Perplexity.DefaultModel
 				}
+			case "xai":
+				if existing.Providers.XAI != nil {
+					primary.apiKey = existing.Providers.XAI.APIKey
+					primary.model = existing.Providers.XAI.DefaultModel
+				}
 			case "vertex":
 				if existing.Providers.Vertex != nil {
 					primary.vertexProj = existing.Providers.Vertex.ProjectID
@@ -565,6 +595,11 @@ func runOnboarding(configPath string) (bool, error) {
 					if existing.Providers.Perplexity != nil {
 						secondary.apiKey = existing.Providers.Perplexity.APIKey
 						secondary.model = existing.Providers.Perplexity.DefaultModel
+					}
+				case "xai":
+					if existing.Providers.XAI != nil {
+						secondary.apiKey = existing.Providers.XAI.APIKey
+						secondary.model = existing.Providers.XAI.DefaultModel
 					}
 				case "vertex":
 					if existing.Providers.Vertex != nil {
@@ -944,15 +979,35 @@ func runOnboarding(configPath string) (bool, error) {
 		_ = formTS.Run()
 	}
 
+	tgLabel := "Telegram"
+	dcLabel := "Discord"
+	slLabel := "Slack"
+	waLabel := "WhatsApp"
+
+	if existing != nil {
+		if existing.Channels.Telegram != nil && existing.Channels.Telegram.BotToken != "" {
+			tgLabel = "Telegram [Configured]"
+		}
+		if existing.Channels.Discord != nil && existing.Channels.Discord.BotToken != "" {
+			dcLabel = "Discord [Configured]"
+		}
+		if existing.Channels.Slack != nil && existing.Channels.Slack.BotToken != "" {
+			slLabel = "Slack [Configured]"
+		}
+		if existing.Channels.WhatsApp != nil {
+			waLabel = "WhatsApp [Configured]"
+		}
+	}
+
 	formChannels := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Messaging Channels").
 				Options(
-					huh.NewOption("Telegram", "telegram"),
-					huh.NewOption("Discord", "discord"),
-					huh.NewOption("Slack", "slack"),
-					huh.NewOption("WhatsApp", "whatsapp"),
+					huh.NewOption(tgLabel, "telegram"),
+					huh.NewOption(dcLabel, "discord"),
+					huh.NewOption(slLabel, "slack"),
+					huh.NewOption(waLabel, "whatsapp"),
 				).
 				Value(&selectedChannels),
 		),

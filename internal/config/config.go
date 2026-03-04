@@ -126,6 +126,7 @@ type ProvidersConfig struct {
 	Cohere      *ProviderCreds    `yaml:"cohere"`
 	DeepSeek    *ProviderCreds    `yaml:"deepseek"`
 	Perplexity  *ProviderCreds    `yaml:"perplexity"`
+	XAI         *ProviderCreds    `yaml:"xai"`
 	Voyage      *ProviderCreds    `yaml:"voyage"`
 	HuggingFace *HuggingFaceCreds `yaml:"huggingface"`
 }
@@ -365,6 +366,13 @@ func LoadFromEnv() *Config {
 	}
 	if key := os.Getenv("GROQ_API_KEY"); key != "" && cfg.Providers.Groq == nil {
 		cfg.Providers.Groq = &ProviderCreds{APIKey: key}
+	}
+
+	if key := os.Getenv("ASSISTCLAW_XAI_API_KEY"); key != "" {
+		cfg.Providers.XAI = &ProviderCreds{APIKey: key}
+	}
+	if key := os.Getenv("XAI_API_KEY"); key != "" && cfg.Providers.XAI == nil {
+		cfg.Providers.XAI = &ProviderCreds{APIKey: key}
 	}
 	if key := os.Getenv("ASSISTCLAW_MISTRAL_API_KEY"); key != "" {
 		cfg.Providers.Mistral = &ProviderCreds{APIKey: key}

@@ -1159,6 +1159,12 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 			DefaultModel: prov.Perplexity.DefaultModel,
 		}))
 	}
+	if prov.XAI != nil {
+		register(openaicompat.New(openaicompat.Config{
+			Name: "xai", BaseURL: "https://api.x.ai/v1", APIKey: prov.XAI.APIKey,
+			DefaultModel: prov.XAI.DefaultModel,
+		}))
+	}
 	if prov.Vertex != nil {
 		v, err := vertex.New(ctx, vertex.Config{
 			ProjectID:    prov.Vertex.ProjectID,

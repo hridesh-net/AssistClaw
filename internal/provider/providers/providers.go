@@ -27,6 +27,7 @@ type Config struct {
 	Cohere      *CohereConfig      `yaml:"cohere"`
 	DeepSeek    *DeepSeekConfig    `yaml:"deepseek"`
 	Perplexity  *PerplexityConfig  `yaml:"perplexity"`
+	XAI         *XAIConfig         `yaml:"xai"`
 	HuggingFace *HuggingFaceConfig `yaml:"huggingface"`
 }
 
@@ -115,6 +116,11 @@ type PerplexityConfig struct {
 	DefaultModel string `yaml:"default_model"`
 }
 
+type XAIConfig struct {
+	APIKey       string `yaml:"api_key"`
+	DefaultModel string `yaml:"default_model"`
+}
+
 // Build creates all configured providers and registers them in the registry.
 func Build(cfg *Config) []provider.Provider {
 	var providers []provider.Provider
@@ -176,7 +182,7 @@ func Build(cfg *Config) []provider.Provider {
 	if cfg.Groq != nil {
 		providers = append(providers, openaicompat.New(openaicompat.Config{
 			Name:         "groq",
-			BaseURL:      "https://api.groq.com",
+			BaseURL:      "https://api.groq.com/openai/v1",
 			APIKey:       cfg.Groq.APIKey,
 			DefaultModel: orDefault(cfg.Groq.DefaultModel, "llama-3.3-70b-versatile"),
 			StaticModels: groqModels(),
@@ -268,6 +274,16 @@ func Build(cfg *Config) []provider.Provider {
 		}))
 	}
 
+	if cfg.XAI != nil {
+		providers = append(providers, openaicompat.New(openaicompat.Config{
+			Name:         "xai",
+			BaseURL:      "https://api.x.ai/v1",
+			APIKey:       cfg.XAI.APIKey,
+			DefaultModel: orDefault(cfg.XAI.DefaultModel, "grok-4-latest"),
+			StaticModels: xaiModels(),
+		}))
+	}
+
 	return providers
 }
 
@@ -332,5 +348,16 @@ func perplexityModels() []provider.ModelInfo {
 		{ID: "sonar-reasoning", Name: "Sonar Reasoning", Provider: "perplexity", Capabilities: reason, ContextWindow: 128000},
 		{ID: "sonar-pro", Name: "Sonar Pro", Provider: "perplexity", Capabilities: caps, ContextWindow: 128000},
 		{ID: "sonar", Name: "Sonar", Provider: "perplexity", Capabilities: caps, ContextWindow: 128000},
+	}
+}
+
+func xaiModels() []provider.ModelInfo {
+	caps := []provider.Capability{provider.CapabilityStreaming, provider.CapabilityTools}
+	vision := append(caps, provider.CapabilityVision)
+	return []provider.ModelInfo{
+		{ID: "grok-4-latest", Name: "Grok 4", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
+		{ID: "grok-beta", Name: "Grok Beta", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
+		{ID: "grok-vision-beta", Name: "Grok Vision", Provider: "xai", Capabilities: vision, ContextWindow: 8192},
+		{ID: "grok-2", Name: "Grok 2", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
 	}
 }
