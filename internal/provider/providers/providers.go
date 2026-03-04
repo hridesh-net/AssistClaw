@@ -277,7 +277,7 @@ func Build(cfg *Config) []provider.Provider {
 	if cfg.XAI != nil {
 		providers = append(providers, openaicompat.New(openaicompat.Config{
 			Name:         "xai",
-			BaseURL:      "https://api.x.ai",
+			BaseURL:      "https://api.x.ai/v1",
 			APIKey:       cfg.XAI.APIKey,
 			DefaultModel: orDefault(cfg.XAI.DefaultModel, "grok-4-latest"),
 			StaticModels: xaiModels(),

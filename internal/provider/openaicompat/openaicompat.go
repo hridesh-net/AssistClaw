@@ -267,7 +267,13 @@ func (p *Provider) SupportsNativeStreaming() bool { return true }
 // ─────────────────────────────────────────────
 
 func (p *Provider) newRequest(ctx context.Context, method, path string, body []byte) (*http.Request, error) {
-	url := p.cfg.BaseURL + "/v1" + path
+	url := p.cfg.BaseURL
+	if !strings.HasSuffix(url, "/v1") && !strings.Contains(url, "localhost") {
+		// Only append /v1 if the BaseURL doesn't already include a version path (like /v1)
+		// and it's not a local vllm/ollama instance which might have custom routing.
+		url += "/v1"
+	}
+	url += path
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

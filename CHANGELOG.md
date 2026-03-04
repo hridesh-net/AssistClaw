@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.6.4] - 2026-03-03
+### Fixed
+- Fixed an issue where OpenAI-compatible API endpoints that inherently require a `/v1` suffix (like `api.x.ai/v1`) were double-appending the `/v1` path (resulting in `/v1/v1/chat/completions`), leading to 404 stream timeouts. The router is now smarter about appending versions.
+
 ## [v3.6.3] - 2026-03-03
 ### Fixed
 - Fixed an issue where selecting `xai` as a provider during onboarding did not prompt the user for an API key.
