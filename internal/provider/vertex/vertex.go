@@ -102,6 +102,30 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 	// We return a static catalog of common Gemini models.
 	return []provider.ModelInfo{
 		{
+			ID: "gemini-2.0-flash-exp", Name: "Gemini 2.0 Flash Exp", Provider: providerName,
+			Capabilities:    []provider.Capability{provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming},
+			ContextWindow:   1000000,
+			MaxOutputTokens: 8192,
+		},
+		{
+			ID: "gemini-2.0-flash-thinking-exp-01-21", Name: "Gemini 2.0 Flash Thinking", Provider: providerName,
+			Capabilities:    []provider.Capability{provider.CapabilityReasoning, provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming},
+			ContextWindow:   1000000,
+			MaxOutputTokens: 8192,
+		},
+		{
+			ID: "gemini-2.0-flash", Name: "Gemini 2.0 Flash", Provider: providerName,
+			Capabilities:    []provider.Capability{provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming},
+			ContextWindow:   1000000,
+			MaxOutputTokens: 8192,
+		},
+		{
+			ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Provider: providerName,
+			Capabilities:    []provider.Capability{provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming},
+			ContextWindow:   2000000,
+			MaxOutputTokens: 8192,
+		},
+		{
 			ID: "gemini-1.5-pro", Name: "Gemini 1.5 Pro", Provider: providerName,
 			Capabilities:    []provider.Capability{provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming},
 			ContextWindow:   2000000,
@@ -109,12 +133,6 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 		},
 		{
 			ID: "gemini-1.5-flash", Name: "Gemini 1.5 Flash", Provider: providerName,
-			Capabilities:    []provider.Capability{provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming},
-			ContextWindow:   1000000,
-			MaxOutputTokens: 8192,
-		},
-		{
-			ID: "gemini-2.0-flash-exp", Name: "Gemini 2.0 Flash Exp", Provider: providerName,
 			Capabilities:    []provider.Capability{provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming},
 			ContextWindow:   1000000,
 			MaxOutputTokens: 8192,

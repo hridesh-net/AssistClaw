@@ -581,14 +581,23 @@ func bedrockModelCatalog(provName string) []provider.ModelInfo {
 	t := []provider.Capability{provider.CapabilityTools, provider.CapabilityStreaming}
 	return []provider.ModelInfo{
 		// Anthropic on Bedrock
+		{ID: "anthropic.claude-3-7-sonnet-20250219-v1:0", Name: "Claude 3.7 Sonnet (Bedrock)", Provider: provName, Capabilities: vt, ContextWindow: 200000},
 		{ID: "anthropic.claude-opus-4-5-20251101-v1:0", Name: "Claude Opus 4.5 (Bedrock)", Provider: provName, Capabilities: vt, ContextWindow: 200000},
 		{ID: "anthropic.claude-3-5-sonnet-20241022-v2:0", Name: "Claude 3.5 Sonnet (Bedrock)", Provider: provName, Capabilities: vt, ContextWindow: 200000},
 		{ID: "anthropic.claude-3-5-haiku-20241022-v1:0", Name: "Claude 3.5 Haiku (Bedrock)", Provider: provName, Capabilities: vt, ContextWindow: 200000},
+
+		// Amazon Nova on Bedrock
+		{ID: "amazon.nova-pro-v1:0", Name: "Amazon Nova Pro", Provider: provName, Capabilities: vt, ContextWindow: 300000},
+		{ID: "amazon.nova-lite-v1:0", Name: "Amazon Nova Lite", Provider: provName, Capabilities: vt, ContextWindow: 300000},
+		{ID: "amazon.nova-micro-v1:0", Name: "Amazon Nova Micro", Provider: provName, Capabilities: t, ContextWindow: 128000},
+
 		// Meta Llama on Bedrock
-		{ID: "meta.llama3-3-70b-instruct-v1:0", Name: "Llama 3.3 70B (Bedrock)", Provider: provName, Capabilities: t, ContextWindow: 128000},
+		{ID: "meta.llama-3-3-70b-instruct-v1:0", Name: "Llama 3.3 70B (Bedrock)", Provider: provName, Capabilities: t, ContextWindow: 128000},
 		{ID: "meta.llama3-1-405b-instruct-v1:0", Name: "Llama 3.1 405B (Bedrock)", Provider: provName, Capabilities: t, ContextWindow: 128000},
+
 		// Mistral on Bedrock
 		{ID: "mistral.mistral-large-2402-v1:0", Name: "Mistral Large (Bedrock)", Provider: provName, Capabilities: t, ContextWindow: 32768},
+
 		// Amazon Titan
 		{ID: "amazon.titan-text-premier-v1:0", Name: "Titan Text Premier", Provider: provName, Capabilities: []provider.Capability{provider.CapabilityStreaming}, ContextWindow: 32000},
 	}

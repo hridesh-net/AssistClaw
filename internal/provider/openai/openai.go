@@ -599,9 +599,50 @@ func openAIModelToInfo(id, provName string) provider.ModelInfo {
 		Name:     id,
 		Provider: provName,
 	}
+
+	// Exact name mapping for common/latest models
+	exactNames := map[string]string{
+		"gpt-4o":                     "GPT-4o",
+		"chatgpt-4o-latest":          "ChatGPT 4o Latest",
+		"gpt-4o-mini":                "GPT-4o Mini",
+		"gpt-4o-2024-11-20":          "GPT-4o (Nov 2024)",
+		"gpt-4o-2024-08-06":          "GPT-4o (Aug 2024)",
+		"gpt-4o-2024-05-13":          "GPT-4o (May 2024)",
+		"gpt-4o-audio-preview":       "GPT-4o Audio Preview",
+		"gpt-4o-mini-2024-07-18":     "GPT-4o Mini (Jul 2024)",
+		"o1":                         "o1",
+		"o1-2024-12-17":              "o1 (Dec 2024)",
+		"o1-preview":                 "o1 Preview",
+		"o1-preview-2024-09-12":      "o1 Preview (Sep 2024)",
+		"o1-mini":                    "o1 Mini",
+		"o1-mini-2024-09-12":         "o1 Mini (Sep 2024)",
+		"o3-mini":                    "o3 Mini",
+		"o3-mini-2025-01-31":         "o3 Mini (Jan 2025)",
+		"gpt-4.5-preview":            "GPT-4.5 Preview",
+		"gpt-4.5-preview-2025-02-27": "GPT-4.5 Preview (Feb 2025)",
+		"gpt-4-turbo":                "GPT-4 Turbo",
+		"gpt-4-turbo-2024-04-09":     "GPT-4 Turbo (Apr 2024)",
+		"gpt-4-0125-preview":         "GPT-4 (Jan 2024)",
+		"gpt-4-1106-preview":         "GPT-4 (Nov 2023)",
+		"gpt-4-0613":                 "GPT-4 (Jun 2023)",
+		"gpt-4":                      "GPT-4",
+		"gpt-3.5-turbo-0125":         "GPT-3.5 Turbo (Jan 2024)",
+		"gpt-3.5-turbo":              "GPT-3.5 Turbo",
+	}
+
+	if name, ok := exactNames[id]; ok {
+		info.Name = name
+	} else if strings.HasPrefix(strings.ToLower(id), "ft:") {
+		info.Name = "Fine-Tuned: " + id[3:]
+	}
+
 	// Apply known caps for well-known model families
 	lower := strings.ToLower(id)
-	if strings.Contains(lower, "gpt-4o") || strings.Contains(lower, "gpt-4-vision") {
+	if strings.Contains(lower, "gpt-4.5") {
+		info.Capabilities = []provider.Capability{provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming, provider.CapabilityJSON}
+		info.ContextWindow = 128000
+		info.MaxOutputTokens = 16384
+	} else if strings.Contains(lower, "gpt-4o") || strings.Contains(lower, "gpt-4-vision") {
 		info.Capabilities = []provider.Capability{provider.CapabilityVision, provider.CapabilityTools, provider.CapabilityStreaming, provider.CapabilityJSON}
 		info.ContextWindow = 128000
 		info.MaxOutputTokens = 16384

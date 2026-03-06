@@ -452,6 +452,7 @@ func anthropicModelCatalog(provName string) []provider.ModelInfo {
 		provider.CapabilityStreaming, provider.CapabilityJSON,
 	}
 	return []provider.ModelInfo{
+		{ID: "claude-3-7-sonnet-20250219", Name: "Claude 3.7 Sonnet", Provider: provName, Capabilities: visionTools, ContextWindow: 200000, MaxOutputTokens: 8192, InputCostPerM: 3, OutputCostPerM: 15},
 		{ID: "claude-opus-4-5", Name: "Claude Opus 4.5", Provider: provName, Capabilities: visionTools, ContextWindow: 200000, MaxOutputTokens: 32000, InputCostPerM: 15, OutputCostPerM: 75},
 		{ID: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5", Provider: provName, Capabilities: visionTools, ContextWindow: 200000, MaxOutputTokens: 16000, InputCostPerM: 3, OutputCostPerM: 15},
 		{ID: "claude-haiku-3-5", Name: "Claude Haiku 3.5", Provider: provName, Capabilities: visionTools, ContextWindow: 200000, MaxOutputTokens: 8192, InputCostPerM: 0.25, OutputCostPerM: 1.25},

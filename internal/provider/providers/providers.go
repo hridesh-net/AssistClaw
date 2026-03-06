@@ -306,6 +306,7 @@ func groqModels() []provider.ModelInfo {
 		{ID: "llama-3.3-70b-versatile", Name: "Llama 3.3 70B", Provider: "groq", Capabilities: caps, ContextWindow: 128000, MaxOutputTokens: 32768},
 		{ID: "llama-3.1-8b-instant", Name: "Llama 3.1 8B Instant", Provider: "groq", Capabilities: caps, ContextWindow: 128000, MaxOutputTokens: 8192},
 		{ID: "mixtral-8x7b-32768", Name: "Mixtral 8x7B", Provider: "groq", Capabilities: caps, ContextWindow: 32768, MaxOutputTokens: 32768},
+		{ID: "qwen-2.5-coder-32b", Name: "Qwen 2.5 Coder 32B", Provider: "groq", Capabilities: caps, ContextWindow: 128000, MaxOutputTokens: 8192},
 		{ID: "gemma2-9b-it", Name: "Gemma 2 9B", Provider: "groq", Capabilities: caps, ContextWindow: 8192, MaxOutputTokens: 8192},
 		{ID: "deepseek-r1-distill-llama-70b", Name: "DeepSeek R1 Distill 70B", Provider: "groq", Capabilities: append(caps, provider.CapabilityReasoning), ContextWindow: 128000, MaxOutputTokens: 16384},
 	}
@@ -357,6 +358,7 @@ func xaiModels() []provider.ModelInfo {
 	vision := append(caps, provider.CapabilityVision)
 	return []provider.ModelInfo{
 		{ID: "grok-3", Name: "Grok 3", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
+		{ID: "grok-3-vision", Name: "Grok 3 Vision", Provider: "xai", Capabilities: vision, ContextWindow: 32768},
 		{ID: "grok-2", Name: "Grok 2", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
 		{ID: "grok-2-vision", Name: "Grok 2 Vision", Provider: "xai", Capabilities: vision, ContextWindow: 32768},
 		{ID: "grok-2-1212", Name: "Grok 2 (Dec 2024)", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
