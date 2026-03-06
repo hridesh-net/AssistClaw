@@ -179,11 +179,26 @@ func (c *Channel) handleMessage(
 		if chunk == "" {
 			return nil
 		}
-		_, err := c.client.SendMessage(ctx, senderJID, &waProto.Message{
-			Conversation: proto.String(chunk),
-		})
-		if err != nil {
-			log.Printf("WhatsApp: send error to %s: %v", senderStr, err)
+
+		// WhatsApp has a hard limit on message size.
+		// Split into 4000-character chunks to safely bypass limit.
+		const maxLen = 4000
+		var err error
+		for len(chunk) > 0 {
+			cut := len(chunk)
+			if cut > maxLen {
+				cut = maxLen
+			}
+			part := chunk[:cut]
+			chunk = chunk[cut:]
+
+			_, sendErr := c.client.SendMessage(ctx, senderJID, &waProto.Message{
+				Conversation: proto.String(part),
+			})
+			if sendErr != nil {
+				log.Printf("WhatsApp: send error to %s: %v", senderStr, sendErr)
+				err = sendErr
+			}
 		}
 		return err
 	}
