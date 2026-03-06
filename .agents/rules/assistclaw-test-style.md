@@ -14,8 +14,8 @@ Before marking a feature as "tested" or "completed," the Agent must strictly fol
 
 ### 2. Remote Access
 
-* **SSH Connection:** Connect to the remote testing environment using:
-`ssh deros@100.96.25.105`
+* **SSH Connection:** Connect to the remote testing environment using the provided IP/credentials.
+`ssh deros@<REMOTE_IP>`
 * **Credential Handling:** When prompted for a password, the Agent must explicitly ask the user to enter it in the terminal.
 
 ### 3. Installation & Verification
