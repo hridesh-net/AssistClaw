@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.6.12] - 2026-03-06
+### Fixed
+- **Streaming Responsiveness**: Optimized `StreamingBuffer` to prevent "timer starvation" where tokens were delayed indefinitely during continuous streaming.
+- **WhatsApp Latency**: Shortened flush timeout to 500ms and restored real-time tool activation markers (e.g., `[🛠️ Activating bash...]`) for immediate user feedback.
+
+## [v3.6.11] - 2026-03-06
+### Added
+- **Self-Healing Skills**: Introduced `repair_skill` tool, allowing the agent to automatically install missing system dependencies (via `apt`, `brew`, `npm`) when requested.
+- **Maintenance Transparency**: Added visible `[Maintenance: Compacting session memory...]` indicator during silent memory flush turns.
+
+### Changed
+- **Context Optimization**: `skill_graph_index` now filters out skills with missing dependencies to reduce token bloat and prevent the agent from attempting to use broken tools.
+
+## [v3.6.10] - 2026-03-06
+### Fixed
+- **WhatsApp Message Size**: Implemented 4000-character chunking in the WhatsApp channel to prevent silent message dropping by the protocol for large payloads (e.g., full skill indexes).
+
+## [v3.6.9] - 2026-03-06
+### Fixed
+- **CI/CD Pipeline**: Fixed a regression in GitHub Actions where `ldflags` were omitted during binary compilation, resulting in "dev" version strings instead of git tags.
+
+## [v3.6.8] - 2026-03-06
+### Fixed
+- **Version Management**: Refactored `cmd/assistclaw/main.go` to remove hardcoded version strings in favor of build-time LDFlag injection.
+
 ## [v3.6.4] - 2026-03-03
 ### Fixed
 - Fixed an issue where OpenAI-compatible API endpoints that inherently require a `/v1` suffix (like `api.x.ai/v1`) were double-appending the `/v1` path (resulting in `/v1/v1/chat/completions`), leading to 404 stream timeouts. The router is now smarter about appending versions.
