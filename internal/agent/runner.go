@@ -939,6 +939,7 @@ func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
 		Content: prompt, CreatedAt: time.Now(),
 	}
 	r.working.Append(flushMsg)
+	r.log.Info("memory near capacity, triggering flush turn")
 
 	req := r.buildRequest()
 	stream, err := r.provider.Stream(ctx, req)
@@ -996,6 +997,7 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 		Content: prompt, CreatedAt: time.Now(),
 	}
 	r.working.Append(flushMsg)
+	handler.OnToken("\n[Maintenance: Compacting session memory...]\n")
 
 	stream, err := r.provider.Stream(ctx, r.buildRequest())
 	if err != nil {

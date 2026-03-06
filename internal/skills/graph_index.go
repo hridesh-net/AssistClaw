@@ -45,6 +45,11 @@ func (t *SkillGraphIndexTool) Execute(_ context.Context, _ json.RawMessage) (str
 			continue
 		}
 
+		// Skip skills that don't meet requirements
+		if met, _ := t.Registry.CheckRequirements(skill); !met {
+			continue
+		}
+
 		var nodeRefs []string
 		// SKILL node first
 		if _, hasEntry := skill.Nodes["SKILL"]; hasEntry {

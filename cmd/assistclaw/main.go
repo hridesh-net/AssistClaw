@@ -823,6 +823,9 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	// Also register read_skill_node here (previously registered separately).
 	toolReg.Register(skills.NewReadSkillNodeTool(skillReg))
 
+	// Register repair_skill (auto-installation of missing dependencies).
+	toolReg.Register(&skills.RepairSkillTool{Registry: skillReg})
+
 	// Rebuild catalog to include all newly registered tools (find_tools, skill_graph_index, read_skill_node).
 	catalog = tools.NewCatalog(toolReg, toolGraph)
 
