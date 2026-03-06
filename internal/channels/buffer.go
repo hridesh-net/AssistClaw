@@ -32,23 +32,21 @@ func (b *StreamingBuffer) Push(token string) error {
 
 	b.buffer.WriteString(token)
 
-	// Stop existing timer
-	if b.flushTimer != nil {
-		b.flushTimer.Stop()
-	}
-
 	// Check for "natural" breakpoints: end of sentence, paragraph, or code block.
 	content := b.buffer.String()
 	if b.shouldFlush(content) {
 		return b.flushLocked()
 	}
 
-	// Set timer for eventual flush if no more tokens come
-	b.flushTimer = time.AfterFunc(b.flushTimeout, func() {
-		b.mu.Lock()
-		defer b.mu.Unlock()
-		_ = b.flushLocked()
-	})
+	// Set timer for eventual flush if no more tokens come and one isn't already pending.
+	// This prevents "starvation" when tokens arrive faster than the timeout.
+	if b.flushTimer == nil {
+		b.flushTimer = time.AfterFunc(b.flushTimeout, func() {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			_ = b.flushLocked()
+		})
+	}
 
 	return nil
 }

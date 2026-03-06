@@ -907,11 +907,11 @@ func (h *channelStreamHandler) OnToken(token string) {
 }
 
 func (h *channelStreamHandler) OnToolCall(name string, _ json.RawMessage) {
-	// Optional: send status update to channel
+	_ = h.replyFn(fmt.Sprintf("\n[🛠️ Activating %s...]\n", name))
 }
 
 func (h *channelStreamHandler) OnToolResult(name string, _ string) {
-	// Optional: send status update to channel
+	_ = h.replyFn(fmt.Sprintf("\n[✅ %s finished]\n", name))
 }
 
 func (h *channelStreamHandler) OnDone(_ *RunResult) {

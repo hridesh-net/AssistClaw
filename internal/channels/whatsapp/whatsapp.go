@@ -203,7 +203,7 @@ func (c *Channel) handleMessage(
 		return err
 	}
 
-	buf := channels.NewStreamingBuffer(replyFn, 1*time.Second)
+	buf := channels.NewStreamingBuffer(replyFn, 500*time.Millisecond)
 	handler(ctx, msg, buf.Push)
 	_ = buf.Done()
 }
