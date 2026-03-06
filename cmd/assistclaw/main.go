@@ -49,7 +49,7 @@ import (
 	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
-const version = "v3.6.5"
+var version = "dev" // Overridden by -ldflags "-X main.version=..." during build
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
