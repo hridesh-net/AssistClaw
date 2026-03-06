@@ -249,9 +249,25 @@ setup_config() {
 # ─────────────────────────────────────────────
 verify() {
   if "$INSTALL_DIR/assistclaw" version >/dev/null 2>&1; then
-    ok "Installation verified"
+    ok "Installation verified at $INSTALL_DIR/assistclaw"
   else
-    warn "Binary installed but 'assistclaw version' failed — check PATH"
+    warn "Binary installed but '$INSTALL_DIR/assistclaw version' failed to execute"
+  fi
+
+  # Check if another assistclaw is shadowing it in PATH
+  if command -v assistclaw >/dev/null 2>&1; then
+    local resolved_bin
+    resolved_bin="$(command -v assistclaw)"
+    if [[ "$resolved_bin" != "$INSTALL_DIR/assistclaw" ]]; then
+      echo ""
+      warn "WARNING: Another AssistClaw installation was found at $resolved_bin"
+      warn "This is taking precedence over the newly installed version."
+      warn "Please remove the old version to fix this:"
+      warn "    sudo rm -f $resolved_bin"
+      echo ""
+    fi
+  else
+    warn "AssistClaw ($INSTALL_DIR) is not in your PATH. Please add it to your profile."
   fi
 }
 

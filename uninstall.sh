@@ -173,6 +173,7 @@ remove_binary() {
     "$INSTALL_DIR/assistclaw"
     "$HOME/.local/bin/assistclaw"
     "/usr/bin/assistclaw"
+    "/usr/local/bin/assistclaw"
     "/opt/assistclaw/assistclaw"
   )
 
@@ -181,12 +182,25 @@ remove_binary() {
     if [[ -f "$bin" ]]; then
       local dir
       dir="$(dirname "$bin")"
-      rm -f "$bin"
-      ok "Removed binary: $bin"
-      # Remove bundled skills directory next to binary (if present)
-      if [[ -d "$dir/skills" ]]; then
-        rm -rf "$dir/skills"
-        ok "Removed bundled skills: $dir/skills"
+      if [[ -w "$dir" && -w "$bin" ]]; then
+        rm -f "$bin"
+        ok "Removed binary: $bin"
+        # Remove bundled skills directory next to binary (if present)
+        if [[ -d "$dir/skills" ]]; then
+          rm -rf "$dir/skills"
+          ok "Removed bundled skills: $dir/skills"
+        fi
+      else
+        if command -v sudo >/dev/null 2>&1; then
+          sudo rm -f "$bin"
+          ok "Removed binary (via sudo): $bin"
+          if [[ -d "$dir/skills" ]]; then
+            sudo rm -rf "$dir/skills"
+            ok "Removed bundled skills (via sudo): $dir/skills"
+          fi
+        else
+          warn "Cannot remove $bin - permission denied and sudo not available"
+        fi
       fi
       found=true
     fi
