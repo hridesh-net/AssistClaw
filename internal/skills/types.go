@@ -45,10 +45,11 @@ type Skill struct {
 
 // Node represents an individual markdown file within a skill, acting as a graph node.
 type Node struct {
-	Name         string `yaml:"name"`    // Simple filename (e.g. "risk-management")
-	Summary      string `yaml:"summary"` // Short description from frontmatter
-	Instructions string `yaml:"-"`       // Full body content (populated after parsing)
-	FilePath     string `yaml:"-"`       // Absolute path
+	Name         string   `yaml:"name"`    // Simple filename (e.g. "risk-management")
+	Summary      string   `yaml:"summary"` // Short description from frontmatter
+	Instructions string   `yaml:"-"`       // Full body content (populated after parsing)
+	FilePath     string   `yaml:"-"`       // Absolute path
+	Links        []string `yaml:"-"`       // Names of other nodes linked via [[wikilinks]]
 }
 
 // SkillTool represents a callable tool within a skill directory.
@@ -92,4 +93,6 @@ type Registry interface {
 
 	// InstallDependency attempts to install missing dependencies for a skill.
 	InstallDependency(ctx context.Context, skill *Skill) error
+	// FindBridges looks for intermediate nodes connecting the given file paths.
+	FindBridges(paths []string) []*Node
 }

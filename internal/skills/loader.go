@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -189,6 +191,52 @@ func (l *loader) BuildContext(activeSkillNames []string) string {
 	return sb.String()
 }
 
+func (l *loader) FindBridges(paths []string) []*Node {
+	if len(paths) < 2 {
+		return nil
+	}
+
+	// 1. Find which skill and node each path belongs to
+	skillToNodes := make(map[string][]string)
+	for _, p := range paths {
+		absPath, err := filepath.Abs(p)
+		if err != nil {
+			absPath = p
+		}
+
+		found := false
+		for _, s := range l.skills {
+			for _, n := range s.Nodes {
+				if n.FilePath == absPath {
+					skillToNodes[s.Name] = append(skillToNodes[s.Name], n.Name)
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+	}
+
+	// 2. For each skill that has at least 2 nodes involved, find bridges
+	var bridges []*Node
+	for skillName, nodeNames := range skillToNodes {
+		if len(nodeNames) < 2 {
+			continue
+		}
+		skill := l.skills[skillName]
+		bridgeNames := FindBridges(skill, nodeNames)
+		for _, bn := range bridgeNames {
+			if node, ok := skill.Nodes[bn]; ok {
+				bridges = append(bridges, node)
+			}
+		}
+	}
+
+	return bridges
+}
+
 func (l *loader) InstallDependency(ctx context.Context, skill *Skill) error {
 	if skill.Metadata.OpenClaw.Install == nil {
 		return fmt.Errorf("no installation instructions for skill %s", skill.Name)
@@ -342,7 +390,31 @@ func (l *loader) parseNodeFile(path string) (*Node, error) {
 		node.Summary = extractSummary(node.Instructions)
 	}
 
+	// Extract outgoing links
+	node.Links = extractLinks(node.Instructions)
+
 	return &node, nil
+}
+
+var linkRegex = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
+
+func extractLinks(body string) []string {
+	matches := linkRegex.FindAllStringSubmatch(body, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var links []string
+	for _, m := range matches {
+		link := strings.TrimSpace(m[1])
+		if link != "" && !seen[link] {
+			seen[link] = true
+			links = append(links, link)
+		}
+	}
+	sort.Strings(links)
+	return links
 }
 
 // extractSummary derives a short one-line summary from markdown body text.

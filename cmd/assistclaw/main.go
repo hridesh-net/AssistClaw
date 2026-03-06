@@ -106,6 +106,7 @@ func rootCmd() *cobra.Command {
 		mcpCmd(flags),
 		serviceCmd(flags),
 		securityCmd(flags),
+		logicTestCmd(flags),
 		versionCmd(),
 	)
 	return root
@@ -775,8 +776,17 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		if vec, err := embedReg.EmbedQuery(searchCtx, query); err == nil {
 			docs, err := memMgr.Semantic.SearchWithModel(searchCtx, vec, limit)
 			if err == nil {
+				var docPaths []string
 				for _, d := range docs {
+					docPaths = append(docPaths, d.Source)
 					out = append(out, fmt.Sprintf("[semantic] [score:%.2f] [%s / %s] source=%s: %s", d.Score, d.Model, d.CreatedAt.Format("2006-01-02 15:04"), d.Source, d.Content))
+				}
+
+				// QueryWeaver Logic: Discover bridges between matched skill nodes
+				if bridges := skillReg.FindBridges(docPaths); len(bridges) > 0 {
+					for _, b := range bridges {
+						out = append(out, fmt.Sprintf("[semantic] [bridge] source=%s: %s", b.FilePath, b.Instructions))
+					}
 				}
 			}
 		}

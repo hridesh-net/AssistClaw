@@ -176,24 +176,17 @@ func TestBuildContext_ContainsOnlyNodeSummaries(t *testing.T) {
 
 	ctx := reg.BuildContext([]string{"legal"})
 
-	// Should contain the skill name
-	if !strings.Contains(ctx, `name="legal"`) {
-		t.Errorf("expected skill name in context")
+	// Should contain the skill name in the Active list
+	if !strings.Contains(ctx, "Active: legal") {
+		t.Errorf("expected skill 'legal' in Active list")
 	}
-	// Should contain node names
-	if !strings.Contains(ctx, `name="SKILL"`) {
-		t.Errorf("expected SKILL node in Map of Content")
+	// Should contain the instruction to call skill_graph_index
+	if !strings.Contains(ctx, "skill_graph_index()") {
+		t.Errorf("expected skill_graph_index mention in context")
 	}
-	if !strings.Contains(ctx, `name="risk-management"`) {
-		t.Errorf("expected risk-management node in Map of Content")
-	}
-	// Should contain summaries, not full body
-	if !strings.Contains(ctx, "Managing legal risk across jurisdictions") {
-		t.Errorf("expected node summary in context")
-	}
-	// Should NOT contain the full node instructions
-	if strings.Contains(ctx, "Very detailed risk management instructions spanning many pages") {
-		t.Errorf("BuildContext leaked full node body — should only include summaries")
+	// Should NOT contain node summaries or full body (since they are now in the graph index)
+	if strings.Contains(ctx, "Managing legal risk") || strings.Contains(ctx, "Very detailed risk management") {
+		t.Errorf("BuildContext leaked node content — should be compact header only")
 	}
 }
 
