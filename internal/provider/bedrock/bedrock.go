@@ -122,13 +122,28 @@ func New(cfg Config) (*Provider, error) {
 func (p *Provider) Name() string { return providerName }
 
 func (p *Provider) HealthCheck(ctx context.Context) error {
-	// Minimal call to verify credentials are valid.
-	_, err := p.Complete(ctx, &provider.CompletionRequest{
-		Model:     orDefault(p.cfg.DefaultModel, "anthropic.claude-3-haiku-20240307-v1:0"),
-		Messages:  []provider.Message{provider.NewTextMessage(provider.RoleUser, "ping")},
-		MaxTokens: 1,
-	})
-	return err
+	return p.ValidateModel(ctx, p.cfg.DefaultModel)
+}
+
+func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
+	if modelID == "" {
+		modelID = p.cfg.DefaultModel
+	}
+	if modelID == "" {
+		return nil
+	}
+
+	models, _ := p.ListModels(ctx)
+	for _, m := range models {
+		if m.ID == modelID {
+			return nil
+		}
+	}
+	return &provider.ProviderError{
+		Provider:   providerName,
+		StatusCode: http.StatusNotFound,
+		Message:    fmt.Sprintf("model %q not found", modelID),
+	}
 }
 
 // ListModels returns the static Bedrock model catalog.

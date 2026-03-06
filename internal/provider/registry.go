@@ -84,7 +84,7 @@ func (r *Registry) ListModels() []ModelInfo {
 // ResolveModel parses a model string in "provider/model-id" format and returns
 // the matching provider and model info. If only a model ID is provided (no "/"),
 // it searches all providers for a matching model.
-func (r *Registry) ResolveModel(modelStr string) (Provider, ModelInfo, error) {
+func (r *Registry) ResolveModel(ctx context.Context, modelStr string) (Provider, ModelInfo, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -100,7 +100,10 @@ func (r *Registry) ResolveModel(modelStr string) (Provider, ModelInfo, error) {
 		info, ok := r.catalog[key]
 		if !ok {
 			// Model may be valid but not in catalog (dynamic provider); create
-			// a minimal ModelInfo so the request can proceed.
+			// a minimal ModelInfo AFTER validating with the provider.
+			if err := p.ValidateModel(ctx, modelID); err != nil {
+				return nil, ModelInfo{}, err
+			}
 			info = ModelInfo{ID: modelID, Provider: providerName}
 		}
 		return p, info, nil

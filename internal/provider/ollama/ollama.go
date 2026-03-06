@@ -46,16 +46,31 @@ func New(cfg Config) *Provider {
 func (p *Provider) Name() string { return providerName }
 
 func (p *Provider) HealthCheck(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.cfg.BaseURL+"/api/version", nil)
+	return p.ValidateModel(ctx, p.cfg.DefaultModel)
+}
+
+func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
+	if modelID == "" {
+		modelID = p.cfg.DefaultModel
+	}
+	if modelID == "" {
+		return nil
+	}
+
+	models, err := p.ListModels(ctx)
 	if err != nil {
 		return err
 	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return &provider.ProviderError{Provider: providerName, Message: "ollama not reachable", Err: err, Retryable: true}
+	for _, m := range models {
+		if m.ID == modelID {
+			return nil
+		}
 	}
-	defer resp.Body.Close()
-	return nil
+	return &provider.ProviderError{
+		Provider:   providerName,
+		StatusCode: http.StatusNotFound,
+		Message:    fmt.Sprintf("model %q not found in local Ollama instance — please run 'ollama pull %s'", modelID, modelID),
+	}
 }
 
 // ListModels auto-discovers all pulled models from the local Ollama instance.

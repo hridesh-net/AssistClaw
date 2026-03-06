@@ -70,19 +70,35 @@ func (p *Provider) Name() string {
 
 // HealthCheck verifies the API key and endpoint are reachable.
 func (p *Provider) HealthCheck(ctx context.Context) error {
-	req, err := p.newRequest(ctx, http.MethodGet, modelsPath, nil)
+	return p.ValidateModel(ctx, p.cfg.DefaultModel)
+}
+
+func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
+	if modelID == "" {
+		modelID = p.cfg.DefaultModel
+	}
+	if modelID == "" {
+		return nil
+	}
+
+	// For OpenAI, we can check against ListModels, but since they have many models
+	// and often add new ones, we'll allow it if it matches a known prefix or
+	// we just let the request fail later for unknown ones but at least we tried.
+	// Actually, strict validation is better for cloud providers.
+	models, err := p.ListModels(ctx)
 	if err != nil {
-		return err
+		return err // If we can't list, we can't validate (maybe API key issue)
 	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return &provider.ProviderError{Provider: p.Name(), Message: "health check failed", Err: err, Retryable: true}
+	for _, m := range models {
+		if m.ID == modelID {
+			return nil
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return &provider.ProviderError{Provider: p.Name(), StatusCode: resp.StatusCode, Message: "unexpected status", Retryable: false}
+	return &provider.ProviderError{
+		Provider:   p.Name(),
+		StatusCode: http.StatusNotFound,
+		Message:    fmt.Sprintf("model %q not found", modelID),
 	}
-	return nil
 }
 
 // ListModels returns all available models from OpenAI.

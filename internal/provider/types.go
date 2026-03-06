@@ -251,6 +251,9 @@ type Provider interface {
 
 	// Embed generates a vector representation of the given text.
 	Embed(ctx context.Context, model string, text string) ([]float32, error)
+
+	// ValidateModel verifies if a model ID is valid for this provider.
+	ValidateModel(ctx context.Context, modelID string) error
 }
 
 // StreamingProvider optionally indicates the provider supports streaming in

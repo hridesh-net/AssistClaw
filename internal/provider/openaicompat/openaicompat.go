@@ -49,18 +49,41 @@ func New(cfg Config) *Provider {
 func (p *Provider) Name() string { return p.cfg.Name }
 
 func (p *Provider) HealthCheck(ctx context.Context) error {
-	req, err := p.newRequest(ctx, http.MethodGet, "/models", nil)
-	if err != nil {
-		return err
+	return p.ValidateModel(ctx, p.cfg.DefaultModel)
+}
+
+func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
+	if modelID == "" {
+		modelID = p.cfg.DefaultModel
 	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return &provider.ProviderError{Provider: p.Name(), Message: "health check", Err: err, Retryable: true}
+	if modelID == "" {
+		return nil // No model to validate
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return &provider.ProviderError{Provider: p.Name(), StatusCode: resp.StatusCode, Message: "health check failed"}
+
+	// Always allow local vLLM/Ollama/LMStudio to be dynamic
+	if isLocalURL(p.cfg.BaseURL) {
+		return nil
 	}
+
+	// For cloud providers (Groq, Mistral, xAI), if we didn't discover it, it's invalid
+	// unless DiscoverModels is disabled.
+	if p.cfg.DiscoverModels {
+		models, err := p.ListModels(ctx)
+		if err != nil {
+			return err
+		}
+		for _, m := range models {
+			if m.ID == modelID {
+				return nil
+			}
+		}
+		return &provider.ProviderError{
+			Provider:   p.Name(),
+			StatusCode: http.StatusNotFound,
+			Message:    fmt.Sprintf("model %q not found or not supported by this provider", modelID),
+		}
+	}
+
 	return nil
 }
 
@@ -484,6 +507,7 @@ func parseError(provName string, resp *http.Response) error {
 	var errBody struct {
 		Error struct {
 			Message string `json:"message"`
+			Code    string `json:"code"`
 		} `json:"error"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&errBody)
@@ -491,6 +515,11 @@ func parseError(provName string, resp *http.Response) error {
 	if msg == "" {
 		msg = fmt.Sprintf("http %d", resp.StatusCode)
 	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		msg = fmt.Sprintf("model not found (404): %s", msg)
+	}
+
 	return &provider.ProviderError{
 		Provider:   provName,
 		StatusCode: resp.StatusCode,

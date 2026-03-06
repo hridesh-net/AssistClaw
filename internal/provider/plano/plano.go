@@ -63,15 +63,21 @@ func (p *Provider) Name() string { return ProviderName }
 
 // HealthCheck verifies Plano is reachable.
 func (p *Provider) HealthCheck(ctx context.Context) error {
+	return p.ValidateModel(ctx, "")
+}
+
+func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
+	// Plano usually handles routing, so if it's reachable, it's "healthy".
+	// But we can check its /models endpoint.
 	cl := &http.Client{Timeout: 3 * time.Second}
 	resp, err := cl.Get(p.cfg.Endpoint + "/models")
 	if err != nil {
 		if p.fallback != nil {
-			return fmt.Errorf("plano unreachable (%w); use fallback provider %q", err, p.fallback.Name())
+			return p.fallback.ValidateModel(ctx, modelID)
 		}
 		return fmt.Errorf("plano unreachable: %w", err)
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("plano health check failed (HTTP %d)", resp.StatusCode)
 	}
@@ -109,6 +115,8 @@ func (p *Provider) Stream(ctx context.Context, req *provider.CompletionRequest) 
 	}
 	return ch, err
 }
+
+func (p *Provider) SupportsNativeStreaming() bool { return p.inner.SupportsNativeStreaming() }
 
 // planoStaticModels builds a model list from routing preferences so that
 // ListModels returns something sensible even before Plano is running.

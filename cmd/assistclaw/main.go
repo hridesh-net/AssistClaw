@@ -721,7 +721,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		return fmt.Errorf("no model configured — set routing.default in config or use --model")
 	}
 
-	p, modelInfo, err := reg.ResolveModel(resolvedModel)
+	p, modelInfo, err := reg.ResolveModel(ctx, resolvedModel)
 	if err != nil {
 		return fmt.Errorf("resolve model %q: %w", resolvedModel, err)
 	}

@@ -279,7 +279,8 @@ func Build(cfg *Config) []provider.Provider {
 			Name:         "xai",
 			BaseURL:      "https://api.x.ai/v1",
 			APIKey:       cfg.XAI.APIKey,
-			DefaultModel: orDefault(cfg.XAI.DefaultModel, "grok-4-latest"),
+			DefaultModel: orDefault(cfg.XAI.DefaultModel, "grok-3"),
+
 			StaticModels: xaiModels(),
 		}))
 	}
@@ -355,9 +356,9 @@ func xaiModels() []provider.ModelInfo {
 	caps := []provider.Capability{provider.CapabilityStreaming, provider.CapabilityTools}
 	vision := append(caps, provider.CapabilityVision)
 	return []provider.ModelInfo{
-		{ID: "grok-4-latest", Name: "Grok 4", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
-		{ID: "grok-beta", Name: "Grok Beta", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
-		{ID: "grok-vision-beta", Name: "Grok Vision", Provider: "xai", Capabilities: vision, ContextWindow: 8192},
+		{ID: "grok-3", Name: "Grok 3", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
 		{ID: "grok-2", Name: "Grok 2", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
+		{ID: "grok-2-vision", Name: "Grok 2 Vision", Provider: "xai", Capabilities: vision, ContextWindow: 32768},
+		{ID: "grok-2-1212", Name: "Grok 2 (Dec 2024)", Provider: "xai", Capabilities: caps, ContextWindow: 131072},
 	}
 }

@@ -73,11 +73,28 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 func (p *Provider) Name() string { return providerName }
 
 func (p *Provider) HealthCheck(ctx context.Context) error {
-	if p.ts == nil {
-		return fmt.Errorf("vertex: no credentials configured")
+	return p.ValidateModel(ctx, p.cfg.DefaultModel)
+}
+
+func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
+	if modelID == "" {
+		modelID = p.cfg.DefaultModel
 	}
-	_, err := p.ts.Token()
-	return err
+	if modelID == "" {
+		return nil
+	}
+
+	models, _ := p.ListModels(ctx)
+	for _, m := range models {
+		if m.ID == modelID {
+			return nil
+		}
+	}
+	return &provider.ProviderError{
+		Provider:   providerName,
+		StatusCode: http.StatusNotFound,
+		Message:    fmt.Sprintf("model %q not found", modelID),
+	}
 }
 
 func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {

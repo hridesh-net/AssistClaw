@@ -52,9 +52,28 @@ func New(cfg Config) *Provider {
 func (p *Provider) Name() string { return providerName }
 
 func (p *Provider) HealthCheck(ctx context.Context) error {
-	// Anthropic doesn't have a dedicated health endpoint; do a minimal models list.
-	_, err := p.ListModels(ctx)
-	return err
+	return p.ValidateModel(ctx, p.cfg.DefaultModel)
+}
+
+func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
+	if modelID == "" {
+		modelID = p.cfg.DefaultModel
+	}
+	if modelID == "" {
+		return nil
+	}
+
+	models, _ := p.ListModels(ctx)
+	for _, m := range models {
+		if m.ID == modelID {
+			return nil
+		}
+	}
+	return &provider.ProviderError{
+		Provider:   providerName,
+		StatusCode: http.StatusNotFound,
+		Message:    fmt.Sprintf("model %q not found", modelID),
+	}
 }
 
 // ListModels returns the Anthropic model catalog.
