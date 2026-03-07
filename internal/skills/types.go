@@ -93,6 +93,10 @@ type Registry interface {
 
 	// InstallDependency attempts to install missing dependencies for a skill.
 	InstallDependency(ctx context.Context, skill *Skill) error
+
+	// RepairAllEnabled iterates through the given skill names and attempts to install missing dependencies for each.
+	RepairAllEnabled(ctx context.Context, enabledNames []string) error
+
 	// FindBridges looks for intermediate nodes connecting the given file paths.
 	FindBridges(paths []string) []*Node
 }

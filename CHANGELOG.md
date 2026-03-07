@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.6.14] - 2026-03-07
+### Added
+- **Self-Healing Startup**: AssistClaw now automatically checks and repairs dependencies for all enabled skills during the agent's boot sequence. This ensures existing skills become active without manual intervention.
+
 ## [v3.6.13] - 2026-03-07
 ### Added
 - **Automated Skill Dependency Management**: The `assistclaw skills add` and `skills install` commands now automatically detect missing system dependencies (binaries) and attempt to install them (supporting `apt`, `brew`, `npm`, `pip`, `go`).

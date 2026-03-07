@@ -237,6 +237,25 @@ func (l *loader) FindBridges(paths []string) []*Node {
 	return bridges
 }
 
+func (l *loader) RepairAllEnabled(ctx context.Context, enabledNames []string) error {
+	for _, name := range enabledNames {
+		skill, ok := l.skills[name]
+		if !ok {
+			continue
+		}
+		met, _ := l.CheckRequirements(skill)
+		if !met {
+			fmt.Printf("🔧 Proactive self-healing: Skill %q is missing dependencies. Attempting repair...\n", name)
+			if err := l.InstallDependency(ctx, skill); err != nil {
+				fmt.Printf("❌ Proactive repair failed for %q: %v\n", name, err)
+			} else {
+				fmt.Printf("✅ Proactive repair succeeded for %q.\n", name)
+			}
+		}
+	}
+	return nil
+}
+
 func (l *loader) InstallDependency(ctx context.Context, skill *Skill) error {
 	if skill.Metadata.OpenClaw.Install == nil {
 		return fmt.Errorf("no installation instructions for skill %s", skill.Name)
