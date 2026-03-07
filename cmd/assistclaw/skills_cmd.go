@@ -136,7 +136,8 @@ func skillsListCmd(gf *globalFlags) *cobra.Command {
 // ─────────────────────────────────────────────
 
 func skillsAddCmd(gf *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	var noDeps bool
+	cmd := &cobra.Command{
 		Use:   "add <name>",
 		Short: "Copy a bundled skill into your active skills directory",
 		Args:  cobra.ExactArgs(1),
@@ -159,10 +160,30 @@ func skillsAddCmd(gf *globalFlags) *cobra.Command {
 			}
 			fmt.Printf("✔ Installed to %s\n", dest)
 
+			// Check and offer dependency install
+			if !noDeps {
+				reg := skills.NewRegistry()
+				_ = reg.LoadAll(context.Background(), dest)
+				s, ok := reg.Get(name)
+				if ok {
+					met, missing := reg.CheckRequirements(s)
+					if !met {
+						fmt.Printf("⚠ Missing dependencies: %s. Attempting auto-repair...\n", strings.Join(missing, ", "))
+						if err := reg.InstallDependency(context.Background(), s); err != nil {
+							fmt.Printf("❌ Auto-repair failed: %v. You may need to install them manually.\n", err)
+						} else {
+							fmt.Printf("✅ Dependencies installed successfully.\n")
+						}
+					}
+				}
+			}
+
 			// Auto-enable in config
 			return toggleSkillInConfig(gf.configPath, name, true)
 		},
 	}
+	cmd.Flags().BoolVar(&noDeps, "no-deps", false, "Skip automatic dependency installation")
+	return cmd
 }
 
 // ─────────────────────────────────────────────
@@ -245,7 +266,8 @@ func skillsDisableCmd(gf *globalFlags) *cobra.Command {
 // ─────────────────────────────────────────────
 
 func skillsInstallCmd(gf *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	var noDeps bool
+	cmd := &cobra.Command{
 		Use:   "install <url-or-name>",
 		Short: "Install a skill from the marketplace, GitHub URL, or shorthand",
 		Args:  cobra.ExactArgs(1),
@@ -276,17 +298,23 @@ func skillsInstallCmd(gf *globalFlags) *cobra.Command {
 			reg := skills.NewRegistry()
 			_ = reg.LoadAll(context.Background(), dest)
 			s, ok := reg.Get(name)
-			if ok {
+			if ok && !noDeps {
 				met, missing := reg.CheckRequirements(s)
 				if !met {
-					fmt.Printf("⚠ Missing dependencies: %s\n", strings.Join(missing, ", "))
-					fmt.Println("  Run: assistclaw onboard   — to install them interactively")
+					fmt.Printf("⚠ Missing dependencies: %s. Attempting auto-repair...\n", strings.Join(missing, ", "))
+					if err := reg.InstallDependency(context.Background(), s); err != nil {
+						fmt.Printf("❌ Auto-repair failed: %v. You may need to install them manually.\n", err)
+					} else {
+						fmt.Printf("✅ Dependencies installed successfully.\n")
+					}
 				}
 			}
 
 			return toggleSkillInConfig(gf.configPath, name, true)
 		},
 	}
+	cmd.Flags().BoolVar(&noDeps, "no-deps", false, "Skip automatic dependency installation")
+	return cmd
 }
 
 // ─────────────────────────────────────────────

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.6.13] - 2026-03-07
+### Added
+- **Automated Skill Dependency Management**: The `assistclaw skills add` and `skills install` commands now automatically detect missing system dependencies (binaries) and attempt to install them (supporting `apt`, `brew`, `npm`, `pip`, `go`).
+- **CLI Overhead Control**: Added a `--no-deps` flag to skills commands to bypass automatic installation if desired.
+
 ## [v3.6.12] - 2026-03-06
 ### Fixed
 - **Streaming Responsiveness**: Optimized `StreamingBuffer` to prevent "timer starvation" where tokens were delayed indefinitely during continuous streaming.

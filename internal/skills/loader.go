@@ -260,6 +260,9 @@ func (l *loader) InstallDependency(ctx context.Context, skill *Skill) error {
 		case "apt":
 			pkg, _ := inst["package"].(string)
 			cmd = exec.CommandContext(ctx, "sudo", "apt-get", "install", "-y", pkg)
+		case "npm":
+			pkg, _ := inst["package"].(string)
+			cmd = exec.CommandContext(ctx, "npm", "install", "-g", pkg)
 		case "python", "pip":
 			pkg, _ := inst["package"].(string)
 			cmd = exec.CommandContext(ctx, "pip", "install", pkg)
