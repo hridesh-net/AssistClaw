@@ -107,6 +107,8 @@ type Runner struct {
 	sessionID    string
 	channelID    string
 	workspaceDir string
+
+	commands map[string]func(ctx context.Context, replyFn channels.StreamingReplyFunc) error
 }
 
 // NewRunner creates a new agent runner.
@@ -920,6 +922,60 @@ func (h *channelStreamHandler) OnDone(_ *RunResult) {
 
 func (h *channelStreamHandler) OnError(err error) {
 	_ = h.replyFn(fmt.Sprintf("\n[Error: %v]", err))
+}
+
+// HandleChatCommand processes slash commands like /reset, /status.
+// Returns true if the message was a command and was handled.
+func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn channels.StreamingReplyFunc) bool {
+	parts := strings.Fields(text)
+	if len(parts) == 0 {
+		return false
+	}
+	cmd := strings.ToLower(parts[0])
+
+	switch cmd {
+	case "/reset":
+		r.working.Clear()
+		_ = replyFn("✨ Session memory cleared. Starting fresh!")
+		return true
+
+	case "/status":
+		status := fmt.Sprintf("🤖 *AssistClaw Status*\n")
+		status += fmt.Sprintf("• *Model:* `%s`\n", r.cfg.Model)
+		status += fmt.Sprintf("• *Provider:* `%s`\n", r.cfg.ProviderName)
+		status += fmt.Sprintf("• *Session ID:* `%s`\n", r.sessionID)
+		status += fmt.Sprintf("• *Memory Usage:* %d messages\n", len(r.working.Messages()))
+		_ = replyFn(status)
+		return true
+
+	case "/skills":
+		// Find skill_graph_index tool to reuse its logic
+		tool, ok := r.tools.Get("skill_graph_index")
+		if !ok {
+			_ = replyFn("❌ Skill index tool not available.")
+			return true
+		}
+
+		// Execute the tool (empty input)
+		res, err := tool.Execute(ctx, json.RawMessage("{}"))
+		if err != nil {
+			_ = replyFn(fmt.Sprintf("❌ Failed to list skills: %v", err))
+		} else {
+			_ = replyFn("🧠 *Skills Report*\n" + res)
+		}
+		return true
+
+	case "/help":
+		help := "📋 *Available Commands*\n"
+		help += "• `/reset` - Clear chat history (start fresh)\n"
+		help += "• `/status` - Show model and provider info\n"
+		help += "• `/skills` - List active and broken skills\n"
+		help += "• `/help` - Show this message\n"
+		_ = replyFn(help)
+		return true
+	}
+
+	return false
 }
 
 func (r *Runner) shouldFlush() bool {
