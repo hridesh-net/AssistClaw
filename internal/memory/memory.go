@@ -286,6 +286,12 @@ func (m *EpisodicMemory) ListSessions(ctx context.Context, limit int) ([]string,
 	return ids, rows.Err()
 }
 
+// DeleteSession removes all messages for a given session.
+func (m *EpisodicMemory) DeleteSession(ctx context.Context, sessionID string) error {
+	_, err := m.db.ExecContext(ctx, `DELETE FROM messages WHERE session_id=?`, sessionID)
+	return err
+}
+
 // Close closes the database.
 func (m *EpisodicMemory) Close() error { return m.db.Close() }
 
@@ -570,7 +576,40 @@ type Manager struct {
 	Semantic *SemanticMemory
 }
 
-// Working returns the working memory for a specific session.
+// ListSessions returns all session IDs from both working and episodic memory.
+func (m *Manager) ListSessions(ctx context.Context) ([]string, error) {
+	m.mu.RLock()
+	workingIDs := make(map[string]bool)
+	for id := range m.sessions {
+		workingIDs[id] = true
+	}
+	m.mu.RUnlock()
+
+	episodicIDs, err := m.Episodic.ListSessions(ctx, 100)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, id := range episodicIDs {
+		workingIDs[id] = true
+	}
+
+	var all []string
+	for id := range workingIDs {
+		all = append(all, id)
+	}
+	return all, nil
+}
+
+// DeleteSession clears working memory and episodic memory for a session.
+func (m *Manager) DeleteSession(ctx context.Context, sessionID string) error {
+	m.mu.Lock()
+	delete(m.sessions, sessionID)
+	m.mu.Unlock()
+
+	return m.Episodic.DeleteSession(ctx, sessionID)
+}
+
 func (m *Manager) GetWorking(sessionID string) *WorkingMemory {
 	m.mu.Lock()
 	defer m.mu.Unlock()

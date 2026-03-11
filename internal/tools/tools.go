@@ -521,6 +521,7 @@ func Default(
 	visionProvider provider.Provider,
 	visionModel string,
 	channelSenders map[string]ChannelSender,
+	stateDir string,
 ) []interface{ Definition() provider.ToolDef } {
 	return []interface{ Definition() provider.ToolDef }{
 		// ── Tier 0: original tools ──────────────────────
@@ -538,7 +539,7 @@ func Default(
 		// ── Tier 1: new core tools ───────────────────────
 		EditFileTool{},
 		WebSearchTool{},
-		ProcessTool{},
+		ProcessTool{PersistencePath: filepath.Join(stateDir, "processes.json")},
 		ApplyPatchTool{},
 		EnvTool{},
 
@@ -546,7 +547,9 @@ func Default(
 		ImageUnderstandTool{Provider: visionProvider, Model: visionModel},
 		SessionsListTool{Episodic: episodic},
 		SessionsHistoryTool{Episodic: episodic},
-		CronTool{},
+		CronTool{PersistencePath: filepath.Join(stateDir, "cron_jobs.json")},
 		MessageTool{Senders: channelSenders},
+		SendMediaTool{},
+		ListHardwareTool{},
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/security"
+	"github.com/assistclaw/assistclaw/internal/system"
 )
 
 // ─────────────────────────────────────────────
@@ -92,17 +93,20 @@ type Config struct {
 
 // Runner is the main agent execution loop.
 type Runner struct {
-	cfg      Config
-	provider provider.Provider
-	tools    *ToolRegistry
-	catalog  ToolCatalog // graph-based per-request tool selector (optional)
-	memory   *memory.Manager
-	working  *memory.WorkingMemory // Added working memory field
-	log      *zap.Logger
+	cfg           Config
+	provider      provider.Provider
+	tools         *ToolRegistry
+	catalog       ToolCatalog // graph-based per-request tool selector (optional)
+	memory        *memory.Manager
+	working       *memory.WorkingMemory   // Added working memory field
+	mediaFn       channels.MediaReplyFunc // Callback for sending media
+	sessionRunner bool                    // Flag for session-specific runner
+	log           *zap.Logger
 
 	// Security layer (optional; both may be nil)
 	guardrail *security.Guardrail
 	auditLog  *security.AuditLog
+	hardware  *system.HardwareReport
 
 	sessionID    string
 	channelID    string
@@ -129,15 +133,17 @@ func NewRunner(
 	}
 
 	return &Runner{
-		cfg:          cfg,
-		provider:     p,
-		tools:        tools,
-		memory:       mem,
-		working:      mem.GetWorking(sessionID),
-		log:          log,
-		sessionID:    sessionID,
-		channelID:    cfg.ChannelID,
-		workspaceDir: workspaceDir,
+		cfg:           cfg,
+		provider:      p,
+		tools:         tools,
+		memory:        mem,
+		working:       mem.GetWorking(sessionID),
+		sessionRunner: false, // This is the base runner, not session-specific
+		log:           log,
+		sessionID:     sessionID,
+		channelID:     cfg.ChannelID,
+		workspaceDir:  workspaceDir,
+		hardware:      &system.HardwareReport{},
 	}
 }
 
@@ -145,6 +151,14 @@ func NewRunner(
 // Call this after NewRunner to enable per-request tool filtering.
 func (r *Runner) WithCatalog(c ToolCatalog) *Runner {
 	r.catalog = c
+	return r
+}
+
+// WithHardware sets the hardware report on an existing runner.
+func (r *Runner) WithHardware(h *system.HardwareReport) *Runner {
+	if h != nil {
+		r.hardware = h
+	}
 	return r
 }
 
@@ -229,15 +243,19 @@ Format your response inside <reflexion> tags.
 // WithSession returns a new Runner clone for a specific session ID.
 func (r *Runner) WithSession(sessionID string) *Runner {
 	return &Runner{
-		cfg:          r.cfg,
-		provider:     r.provider,
-		tools:        r.tools,
-		memory:       r.memory,
-		working:      r.memory.GetWorking(sessionID),
-		log:          r.log,
-		sessionID:    sessionID,
-		channelID:    r.channelID,
-		workspaceDir: r.workspaceDir,
+		cfg:           r.cfg,
+		provider:      r.provider,
+		tools:         r.tools,
+		catalog:       r.catalog,
+		memory:        r.memory,
+		working:       r.memory.GetWorking(sessionID),
+		mediaFn:       r.mediaFn,
+		hardware:      r.hardware,
+		sessionRunner: true,
+		log:           r.log,
+		sessionID:     sessionID,
+		channelID:     r.channelID,
+		workspaceDir:  r.workspaceDir,
 	}
 }
 
@@ -254,14 +272,15 @@ type RunResult struct {
 
 // Run processes a user message and returns the assistant's final response.
 // It handles the complete tool-use loop: LLM → tool calls → tool results → LLM.
-func (r *Runner) Run(ctx context.Context, userMessage string) (*RunResult, error) {
+func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error) {
+	userMessage := msg.Content
 	// Append user message to working memory.
-	userMsg := memory.Message{
-		ID:        uuid.New().String(),
-		SessionID: r.sessionID,
-		Role:      memory.RoleUser,
-		Content:   userMessage,
-		CreatedAt: time.Now(),
+	userMsg := msg
+	if userMsg.ID == "" {
+		userMsg.ID = uuid.New().String()
+	}
+	if userMsg.CreatedAt.IsZero() {
+		userMsg.CreatedAt = time.Now()
 	}
 	r.working.Append(userMsg)
 	if err := r.memory.Episodic.Save(ctx, userMsg); err != nil {
@@ -497,6 +516,9 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 	}
 
 	start := time.Now()
+	if r.mediaFn != nil {
+		ctx = context.WithValue(ctx, channels.MediaFnKey, r.mediaFn)
+	}
 	result, err := tool.Execute(ctx, inputJSON)
 	dur := time.Since(start)
 	if err != nil {
@@ -589,6 +611,22 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 	today := time.Now().Format("2006-01-02")
 	ws := r.workspaceDir
 
+	// ── Hardware Environment ────────────────────────────────────────────────
+	hwStr := ""
+	if r.hardware != nil {
+		hw := r.hardware
+		hwStr += "\n## Hardware Environment\n"
+		if len(hw.Cameras) > 0 {
+			hwStr += fmt.Sprintf("- Cameras: %s\n", strings.Join(hw.Cameras, ", "))
+		}
+		if len(hw.AudioDevices) > 0 {
+			hwStr += fmt.Sprintf("- Audio: %s\n", strings.Join(hw.AudioDevices, ", "))
+		}
+		if len(hw.InputDevices) > 0 {
+			hwStr += fmt.Sprintf("- Input Devices: %s\n", strings.Join(hw.InputDevices, ", "))
+		}
+	}
+
 	// ── Dynamic tool table — built from the live ToolRegistry ────────────────
 	// This means every newly registered tool (web_search, edit, process, etc.)
 	// is automatically surfaced to the LLM without manual edits here.
@@ -596,6 +634,8 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 
 	// ── Core identity ────────────────────────────────────────────────────────
 	base := `You are AssistClaw — an autonomous coding and system agent. You have FULL ability to interact with the operating system, create files, run code, browse the web, search the internet, and complete complex engineering tasks end-to-end.
+
+` + hwStr + `
 
 ## Available Tools — USE THEM, don't just describe what to do
 
@@ -727,18 +767,21 @@ type StreamHandler interface {
 }
 
 // RunStream runs the agent loop and calls handler methods as events occur.
-// Designed for live terminal interaction.
-func (r *Runner) RunStream(ctx context.Context, userMessage string, handler StreamHandler) {
-	// Append user message.
-	userMsg := memory.Message{
-		ID:        uuid.New().String(),
-		SessionID: r.sessionID,
-		Role:      memory.RoleUser,
-		Content:   userMessage,
-		CreatedAt: time.Now(),
+// RunStream processes a user message and streams the assistant's response.
+func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler StreamHandler) {
+	userMessage := msg.Content
+	// Append user message to working memory and persistence.
+	userMsg := msg
+	if userMsg.ID == "" {
+		userMsg.ID = uuid.New().String()
+	}
+	if userMsg.CreatedAt.IsZero() {
+		userMsg.CreatedAt = time.Now()
 	}
 	r.working.Append(userMsg)
-	_ = r.memory.Episodic.Save(ctx, userMsg)
+	if err := r.memory.Episodic.Save(ctx, userMsg); err != nil {
+		r.log.Warn("episodic save failed", zap.Error(err))
+	}
 
 	var totalUsage provider.TokenUsage
 	var fullResponse strings.Builder
@@ -878,7 +921,10 @@ func (r *Runner) RunStream(ctx context.Context, userMessage string, handler Stre
 }
 
 // HandleChannelMessage is a background message handler for messaging channels.
-func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message, replyFn channels.StreamingReplyFunc) {
+func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message, replyFn channels.StreamingReplyFunc,
+	reactFn channels.ReactionFunc,
+	mediaFn channels.MediaReplyFunc,
+) {
 	r.log.Info("inbound message",
 		zap.String("channel", msg.ChannelID),
 		zap.String("session", msg.SessionID),
@@ -891,17 +937,39 @@ func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message,
 	// Use a dedicated runner instance for this session ID and channel
 	sessionRunner := r.WithSession(msg.SessionID)
 	sessionRunner.channelID = msg.ChannelID
+	sessionRunner.mediaFn = mediaFn
+
+	// Intercept Chat Commands
+	if strings.HasPrefix(strings.TrimSpace(msg.Text), "/") {
+		if handled := sessionRunner.HandleChatCommand(ctx, msg.Text, replyFn); handled {
+			return
+		}
+	}
 
 	handler := &channelStreamHandler{
 		replyFn: replyFn,
+		reactFn: reactFn,
+		mediaFn: mediaFn,
 	}
 
-	sessionRunner.RunStream(ctx, msg.Text, handler)
+	// Save user message to memory
+	userMsg := memory.Message{
+		ID:        msg.ID,
+		SessionID: msg.SessionID,
+		Role:      memory.RoleUser,
+		Content:   msg.Text,
+		Parts:     msg.Parts,
+		CreatedAt: time.Now(),
+	}
+
+	sessionRunner.RunStream(ctx, userMsg, handler)
 }
 
 // channelStreamHandler routes agent tokens back to a messaging channel.
 type channelStreamHandler struct {
 	replyFn channels.StreamingReplyFunc
+	reactFn channels.ReactionFunc
+	mediaFn channels.MediaReplyFunc
 }
 
 func (h *channelStreamHandler) OnToken(token string) {
@@ -909,6 +977,9 @@ func (h *channelStreamHandler) OnToken(token string) {
 }
 
 func (h *channelStreamHandler) OnToolCall(name string, _ json.RawMessage) {
+	if h.reactFn != nil {
+		_ = h.reactFn("⏳")
+	}
 	_ = h.replyFn(fmt.Sprintf("\n[🛠️ Activating %s...]\n", name))
 }
 
@@ -917,10 +988,16 @@ func (h *channelStreamHandler) OnToolResult(name string, _ string) {
 }
 
 func (h *channelStreamHandler) OnDone(_ *RunResult) {
+	if h.reactFn != nil {
+		_ = h.reactFn("✅")
+	}
 	_ = h.replyFn("") // signal done
 }
 
 func (h *channelStreamHandler) OnError(err error) {
+	if h.reactFn != nil {
+		_ = h.reactFn("❌")
+	}
 	_ = h.replyFn(fmt.Sprintf("\n[Error: %v]", err))
 }
 
@@ -965,11 +1042,43 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		}
 		return true
 
+	case "/sessions":
+		ids, err := r.memory.ListSessions(ctx)
+		if err != nil {
+			_ = replyFn(fmt.Sprintf("❌ Failed to list sessions: %v", err))
+			return true
+		}
+		res := "🗂️ *Active & Historical Sessions*\n"
+		for _, id := range ids {
+			marker := "•"
+			if id == r.sessionID {
+				marker = "⭐️"
+			}
+			res += fmt.Sprintf("%s `%s`\n", marker, id)
+		}
+		_ = replyFn(res)
+		return true
+
+	case "/forget":
+		target := r.sessionID
+		if len(parts) > 1 {
+			target = parts[1]
+		}
+		err := r.memory.DeleteSession(ctx, target)
+		if err != nil {
+			_ = replyFn(fmt.Sprintf("❌ Failed to forget session `%s`: %v", target, err))
+		} else {
+			_ = replyFn(fmt.Sprintf("🛡️ Session `%s` has been permanently forgotten.", target))
+		}
+		return true
+
 	case "/help":
 		help := "📋 *Available Commands*\n"
-		help += "• `/reset` - Clear chat history (start fresh)\n"
+		help += "• `/reset` - Clear current working memory\n"
 		help += "• `/status` - Show model and provider info\n"
 		help += "• `/skills` - List active and broken skills\n"
+		help += "• `/sessions` - List all persistent sessions\n"
+		help += "• `/forget [id]` - Permanently delete a session\n"
 		help += "• `/help` - Show this message\n"
 		_ = replyFn(help)
 		return true

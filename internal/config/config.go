@@ -50,6 +50,15 @@ type Config struct {
 
 	// Security configures the runtime safety guardrail and audit log.
 	Security SecurityConfig `yaml:"security"`
+
+	// Cron configures static scheduled jobs.
+	Cron []CronJobConfig `yaml:"cron"`
+}
+
+type CronJobConfig struct {
+	ID       string `yaml:"id"`
+	Schedule string `yaml:"schedule"`
+	Prompt   string `yaml:"prompt"`
 }
 
 // MCPConfig configures the MCP server and external MCP client connections.

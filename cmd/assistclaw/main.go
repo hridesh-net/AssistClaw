@@ -17,13 +17,19 @@ import (
 
 	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/assistclaw/assistclaw/internal/agent"
 	"github.com/assistclaw/assistclaw/internal/autotool"
+	"github.com/assistclaw/assistclaw/internal/channels/discord"
+	"github.com/assistclaw/assistclaw/internal/channels/slack"
+	"github.com/assistclaw/assistclaw/internal/channels/telegram"
+	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 	"github.com/assistclaw/assistclaw/internal/config"
+	"github.com/assistclaw/assistclaw/internal/cron"
 	"github.com/assistclaw/assistclaw/internal/embeddings"
 	embedproviders "github.com/assistclaw/assistclaw/internal/embeddings/providers"
 	"github.com/assistclaw/assistclaw/internal/gateway"
@@ -35,18 +41,13 @@ import (
 	"github.com/assistclaw/assistclaw/internal/provider/ollama"
 	"github.com/assistclaw/assistclaw/internal/provider/openai"
 	"github.com/assistclaw/assistclaw/internal/provider/openaicompat"
+	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 	"github.com/assistclaw/assistclaw/internal/provider/vertex"
 	"github.com/assistclaw/assistclaw/internal/security"
 	"github.com/assistclaw/assistclaw/internal/skills"
+	"github.com/assistclaw/assistclaw/internal/system"
 	"github.com/assistclaw/assistclaw/internal/tools"
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
-
-	// Channels
-	"github.com/assistclaw/assistclaw/internal/channels/discord"
-	"github.com/assistclaw/assistclaw/internal/channels/slack"
-	"github.com/assistclaw/assistclaw/internal/channels/telegram"
-	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
-	planoprovider "github.com/assistclaw/assistclaw/internal/provider/plano"
 )
 
 var version = "dev" // Overridden by -ldflags "-X main.version=..." during build
@@ -801,7 +802,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 		return memMgr.Semantic.GetSnippet(snippetCtx, path, startLine, endLine)
 	}
-	for _, t := range tools.Default(memSearchFn, memSnippetFn, memMgr.Episodic, p, modelInfo.ID, nil) {
+	for _, t := range tools.Default(memSearchFn, memSnippetFn, memMgr.Episodic, p, modelInfo.ID, nil, cfg.StateDir) {
 		if tool, ok := t.(agent.Tool); ok {
 			toolReg.Register(tool)
 		}
@@ -841,12 +842,13 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 
+	hw, _ := system.Detect(ctx)
 	runner := agent.NewRunner(agent.Config{
 		MaxIterations:       cfg.Agent.MaxIterations,
 		Model:               modelInfo.ID,
 		ActiveSkillsContext: skillsCtx,
 		ProviderName:        providerNameForCaps,
-	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog)
+	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog).WithHardware(hw)
 
 	// ── Security: Guardrail + Audit Log ────────────────────────────────
 	guardrailMode := security.GuardrailMode(cfg.Security.Mode)
@@ -872,6 +874,39 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		zap.String("mode", string(guardrailMode)),
 		zap.String("audit_log", secLogPath),
 	)
+
+	// ── Cron Daemon ───────────────────────────────────────────────────
+	var cronJobs []cron.Job
+	for _, j := range cfg.Cron {
+		cronJobs = append(cronJobs, cron.Job{
+			ID:       j.ID,
+			Schedule: j.Schedule,
+			Prompt:   j.Prompt,
+		})
+	}
+
+	cronDaemon := cron.NewDaemon(
+		cronJobs,
+		p,
+		toolReg,
+		memMgr,
+		agent.Config{
+			MaxIterations:       cfg.Agent.MaxIterations,
+			Model:               modelInfo.ID,
+			ActiveSkillsContext: skillsCtx,
+			ProviderName:        providerNameForCaps,
+		},
+		log,
+		cfg.StateDir,
+		filepath.Join(cfg.StateDir, "cron_jobs.json"),
+	)
+	if err := cronDaemon.Start(); err != nil {
+		log.Warn("failed to start cron daemon", zap.Error(err))
+	} else {
+		log.Info("cron daemon started", zap.Int("static_jobs", len(cronJobs)))
+		defer cronDaemon.Stop()
+	}
+
 	// ─────────────────────────────────────────────────────────────
 
 	if sessionID != "" {
@@ -888,7 +923,13 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	// Single message mode
 	if message != "" {
 		if noStream {
-			result, err := runner.Run(ctx, message)
+			result, err := runner.Run(ctx, memory.Message{
+				ID:        uuid.New().String(),
+				SessionID: sessionID, // using the sessionID derived earlier or "cli"
+				Role:      memory.RoleUser,
+				Content:   message,
+				CreatedAt: time.Now(),
+			})
 			if err != nil {
 				return err
 			}
@@ -897,7 +938,13 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 		// Streaming mode
 		done := make(chan error, 1)
-		runner.RunStream(ctx, message, &cliStreamHandler{done: done})
+		runner.RunStream(ctx, memory.Message{
+			ID:        uuid.New().String(),
+			SessionID: sessionID,
+			Role:      memory.RoleUser,
+			Content:   message,
+			CreatedAt: time.Now(),
+		}, &cliStreamHandler{done: done})
 		return <-done
 	}
 
@@ -1363,7 +1410,13 @@ type agentRunnerAdapter struct {
 
 func (a *agentRunnerAdapter) SessionID() string { return a.runner.SessionID() }
 func (a *agentRunnerAdapter) Run(ctx context.Context, msg string) (*tui.RunResult, error) {
-	res, err := a.runner.Run(ctx, msg)
+	res, err := a.runner.Run(ctx, memory.Message{
+		ID:        uuid.New().String(),
+		SessionID: a.runner.SessionID(),
+		Role:      memory.RoleUser,
+		Content:   msg,
+		CreatedAt: time.Now(),
+	})
 	if err != nil || res == nil {
 		return nil, err
 	}

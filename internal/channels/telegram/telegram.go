@@ -109,7 +109,7 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 
 				// Process message async
 				go func() {
-					handler(ctx, msg, replyFn)
+					handler(ctx, msg, replyFn, nil, nil) // Reactions & Media not yet supported for TG
 					// Flush remaining buffer
 					if buffer != "" {
 						tgMsg := tgbotapi.NewMessage(chatID, buffer)

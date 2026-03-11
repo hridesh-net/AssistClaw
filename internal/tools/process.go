@@ -18,6 +18,7 @@ import (
 var globalProcessRegistry = &processRegistry{
 	procs: make(map[string]*managedProcess),
 }
+var processOnce sync.Once
 
 type managedProcess struct {
 	name    string
@@ -29,15 +30,73 @@ type managedProcess struct {
 	mu      sync.Mutex
 }
 
+type PersistedProcess struct {
+	Name    string    `json:"name"`
+	Cmd     string    `json:"cmd"`
+	Pid     int       `json:"pid"`
+	Started time.Time `json:"started"`
+}
+
 type processRegistry struct {
-	mu    sync.Mutex
-	procs map[string]*managedProcess
+	mu              sync.Mutex
+	procs           map[string]*managedProcess
+	persistencePath string
+}
+
+func (r *processRegistry) init(path string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.persistencePath = path
+	if path == "" {
+		return
+	}
+
+	if data, err := os.ReadFile(path); err == nil {
+		var persisted []PersistedProcess
+		if err := json.Unmarshal(data, &persisted); err == nil {
+			for _, p := range persisted {
+				// Check if process still running
+				proc, err := os.FindProcess(p.Pid)
+				if err == nil {
+					// On Unix, FindProcess always succeeds.
+					// Use Signal(0) to check if it's actually alive.
+					if err := proc.Signal(os.Signal(nil)); err == nil {
+						r.procs[p.Name] = &managedProcess{
+							name:    p.Name,
+							cmd:     p.Cmd,
+							pid:     p.Pid,
+							proc:    proc,
+							started: p.Started,
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func (r *processRegistry) save() {
+	if r.persistencePath == "" {
+		return
+	}
+	var persisted []PersistedProcess
+	for _, mp := range r.procs {
+		persisted = append(persisted, PersistedProcess{
+			Name:    mp.name,
+			Cmd:     mp.cmd,
+			Pid:     mp.pid,
+			Started: mp.started,
+		})
+	}
+	data, _ := json.MarshalIndent(persisted, "", "  ")
+	_ = os.WriteFile(r.persistencePath, data, 0o644)
 }
 
 func (r *processRegistry) add(name string, mp *managedProcess) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.procs[name] = mp
+	r.save()
 }
 
 func (r *processRegistry) get(name string) (*managedProcess, bool) {
@@ -51,6 +110,7 @@ func (r *processRegistry) remove(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.procs, name)
+	r.save()
 }
 
 func (r *processRegistry) list() []map[string]any {
@@ -76,7 +136,9 @@ func (r *processRegistry) list() []map[string]any {
 }
 
 // ProcessTool manages background processes: start, stop, status, logs.
-type ProcessTool struct{}
+type ProcessTool struct {
+	PersistencePath string
+}
 
 func (ProcessTool) Definition() provider.ToolDef {
 	return provider.ToolDef{
@@ -101,7 +163,7 @@ Commands:
 	}
 }
 
-func (ProcessTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+func (t ProcessTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var args struct {
 		Command string `json:"command"`
 		Name    string `json:"name"`
@@ -111,6 +173,10 @@ func (ProcessTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	if err := json.Unmarshal(input, &args); err != nil {
 		return "", err
 	}
+
+	processOnce.Do(func() {
+		globalProcessRegistry.init(t.PersistencePath)
+	})
 
 	switch strings.ToLower(args.Command) {
 	case "start":

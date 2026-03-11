@@ -2,7 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.6.15] - 2026-03-07
+## [v3.6.18] - 2026-03-07
+### Added
+- **Persistent Cron & Background Tasks**: Scheduled jobs and background processes now survive agent restarts via JSON persistence (`cron_jobs.json`, `processes.json`).
+- **Static Cron Support**: Permanent scheduled tasks can now be defined directly in `assistclaw.yaml`.
+- **Background Daemon Mastery**: Full integration of the Cron daemon into the agent's core startup sequence.
+
+## [v3.6.17] - 2026-03-07
+### Added
+- **Hardware Sensing & Registration**: Automatic detection of cameras, microphones, and USB input devices on macOS.
+- **`list_hardware` Tool**: Enables the agent to perform on-demand hardware re-scans.
+- **Sensory Awareness**: Hardware details are now injected into the agent's system prompt for immediate relative awareness.
+
+## [v3.6.16] - 2026-03-07
+### Added
+- **WhatsApp Parity (OpenClaw)**: Support for WhatsApp emoji reactions (⏳, ✅, ❌) for status updates and shared group context via JID-to-SessionID mapping.
+- **Multimodal Vision Integration**: Support for `image_understand` tool (OCR, screenshot analysis) across all vision-capable providers.
+- **Session Intelligence**: Added `/sessions` and `/forget` commands for granular chat history management.
+- **Proactive Media Support**: Added `SendMediaTool` for autonomous file and image dispatch.
 ### Added
 - **Chat Commands**: Optimized agent overhead by introducing slash commands for administrative tasks. Supported: `/reset`, `/status`, `/skills`, `/help`.
 

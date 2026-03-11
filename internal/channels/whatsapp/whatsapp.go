@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/assistclaw/assistclaw/internal/channels"
+	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -98,6 +99,40 @@ func extractText(m *waProto.Message) string {
 	return ""
 }
 
+// extractMultimodal extracts both text and media parts from a message.
+func (c *Channel) extractMultimodal(ctx context.Context, m *waProto.Message) ([]provider.ContentPart, string) {
+	if m == nil {
+		return nil, ""
+	}
+
+	var parts []provider.ContentPart
+	txt := extractText(m)
+
+	// Always add the text part if present
+	if txt != "" {
+		parts = append(parts, provider.ContentPart{
+			Type: provider.ContentTypeText,
+			Text: txt,
+		})
+	}
+
+	// Handle Image Media
+	if img := m.GetImageMessage(); img != nil {
+		data, err := c.client.Download(ctx, img)
+		if err == nil {
+			parts = append(parts, provider.ContentPart{
+				Type:          provider.ContentTypeImage,
+				ImageData:     data,
+				ImageMimeType: img.GetMimetype(),
+			})
+		} else {
+			log.Printf("WhatsApp: failed to download image: %v", err)
+		}
+	}
+
+	return parts, txt
+}
+
 func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) error {
 	c.client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
@@ -129,8 +164,8 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 				}
 			}
 
-			txt := extractText(v.Message)
-			if txt == "" {
+			parts, txt := c.extractMultimodal(ctx, v.Message)
+			if len(parts) == 0 {
 				// Unsupported media type — acknowledge with a note if in pairing mode
 				if c.dmMode != "disabled" {
 					log.Printf("WhatsApp: received non-text message from %s (type ignored)", sender)
@@ -138,13 +173,15 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 				return
 			}
 
-			// Snapshot sender JID before launching goroutine to avoid data race
+			// Snapshot sender and chat JIDs before launching goroutine
 			senderJID := v.Info.Sender
+			chatJID := v.Info.Chat
+			msgID := v.Info.ID
 
 			// Run the agent call in a separate goroutine so we don't block
 			// the WhatsApp event pump (which would cause keepalive misses
 			// and eventual disconnection under load).
-			go c.handleMessage(ctx, handler, senderJID, sender, txt)
+			go c.handleMessage(ctx, handler, senderJID, chatJID, msgID, sender, txt, parts, handler)
 
 		case *events.Disconnected:
 			log.Printf("WhatsApp: disconnected — will auto-reconnect")
@@ -166,13 +203,24 @@ func (c *Channel) handleMessage(
 	ctx context.Context,
 	handler channels.MessageHandler,
 	senderJID types.JID,
+	chatJID types.JID,
+	msgID string,
 	senderStr string,
 	txt string,
+	parts []provider.ContentPart,
+	msgHandler channels.MessageHandler,
 ) {
+	sessionID := senderStr
+	if chatJID.Server == "g.us" {
+		sessionID = chatJID.String() // Shared context for groups
+	}
+
 	msg := channels.Message{
+		ID:        msgID,
 		ChannelID: c.Name(),
-		SessionID: senderStr,
+		SessionID: sessionID,
 		Text:      txt,
+		Parts:     parts,
 	}
 
 	replyFn := func(chunk string) error {
@@ -203,8 +251,53 @@ func (c *Channel) handleMessage(
 		return err
 	}
 
+	reactFn := func(emoji string) error {
+		_, err := c.client.SendMessage(ctx, chatJID, &waProto.Message{
+			ReactionMessage: &waProto.ReactionMessage{
+				Key: &waProto.MessageKey{
+					RemoteJID: proto.String(chatJID.String()),
+					FromMe:    proto.Bool(false),
+					ID:        proto.String(msgID),
+					Participant: func() *string {
+						if chatJID.Server == "g.us" {
+							return proto.String(senderJID.String())
+						}
+						return nil
+					}(),
+				},
+				Text:              proto.String(emoji),
+				GroupingKey:       proto.String(emoji),
+				SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
+			},
+		})
+		return err
+	}
+
 	buf := channels.NewStreamingBuffer(replyFn, 500*time.Millisecond)
-	handler(ctx, msg, buf.Push)
+	mediaFn := func(data []byte, fileName string, mimeType string) error {
+		// Upload media to WhatsApp servers
+		resp, err := c.client.Upload(ctx, data, whatsmeow.MediaImage) // Default to Image for now
+		if err != nil {
+			return fmt.Errorf("whatsapp: failed to upload media: %w", err)
+		}
+
+		// Send message with media
+		msg := &waProto.Message{
+			ImageMessage: &waProto.ImageMessage{
+				URL:           proto.String(resp.URL),
+				DirectPath:    proto.String(resp.DirectPath),
+				MediaKey:      resp.MediaKey,
+				Mimetype:      proto.String(mimeType),
+				FileSHA256:    resp.FileSHA256,
+				FileEncSHA256: resp.FileEncSHA256,
+				FileLength:    proto.Uint64(resp.FileLength),
+			},
+		}
+		_, err = c.client.SendMessage(ctx, chatJID, msg)
+		return err
+	}
+
+	msgHandler(ctx, msg, replyFn, reactFn, mediaFn)
 	_ = buf.Done()
 }
 

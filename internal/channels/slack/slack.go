@@ -118,16 +118,8 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 								return nil
 							}
 
-							go func() {
-								handler(ctx, msg, replyFn)
-								if buffer != "" {
-									opts := []slack.MsgOption{slack.MsgOptionText(buffer, false)}
-									if ev.ThreadTimeStamp != "" {
-										opts = append(opts, slack.MsgOptionTS(ev.ThreadTimeStamp))
-									}
-									c.client.PostMessage(ev.Channel, opts...)
-								}
-							}()
+							// Process message async
+							go handler(ctx, msg, replyFn, nil, nil)
 						}
 					}
 				}

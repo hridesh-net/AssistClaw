@@ -16,6 +16,7 @@ import (
 	"tailscale.com/tsnet"
 
 	"github.com/assistclaw/assistclaw/internal/agent"
+	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/webui"
 )
 
@@ -227,7 +228,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		sessionRunner.RunStream(ctx, req.Message, handler)
+		sessionRunner.RunStream(ctx, memory.Message{
+			ID:        uuid.New().String(),
+			SessionID: sessionID,
+			Role:      memory.RoleUser,
+			Content:   req.Message,
+			CreatedAt: time.Now(),
+		}, handler)
 	}()
 
 	select {

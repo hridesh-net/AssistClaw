@@ -91,7 +91,7 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 		}
 
 		go func() {
-			handler(ctx, msg, replyFn)
+			handler(ctx, msg, replyFn, nil, nil)
 			if buffer != "" {
 				s.ChannelMessageSend(m.ChannelID, buffer)
 			}
