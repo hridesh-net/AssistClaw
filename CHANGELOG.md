@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.7.0] - 2026-03-12
+### Added
+- **Native Voice Support**: Integrated local STT (Whisper) and TTS (VoxCPM) via a managed Python microservice.
+- **WhatsApp Voice Conversations**: Automated transcription of voice notes and AI-synthesized voice replies for continuous hands-free interaction.
+- **Live Discord Voice interaction**: Real-time listening and speaking in Discord voice channels. Use `!join` and `!leave` to control the agent.
+- **Advanced Automation**: Added Webhook support for external triggers and Gmail Pub/Sub integration for real-time email-based workflows.
+- **Embedded Voice Management**: Automated Python environment setup and service lifecycle management within the AssistClaw binary.
+
 ## [v3.6.18] - 2026-03-07
 ### Added
 - **Persistent Cron & Background Tasks**: Scheduled jobs and background processes now survive agent restarts via JSON persistence (`cron_jobs.json`, `processes.json`).
