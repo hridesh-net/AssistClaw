@@ -212,7 +212,7 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 			// Run the agent call in a separate goroutine so we don't block
 			// the WhatsApp event pump (which would cause keepalive misses
 			// and eventual disconnection under load).
-			go c.handleMessage(ctx, handler, senderJID, chatJID, msgID, sender, txt, parts, handler)
+			go c.handleMessage(ctx, senderJID, chatJID, msgID, sender, txt, parts, handler)
 
 		case *events.Disconnected:
 			log.Printf("WhatsApp: disconnected — will auto-reconnect")
@@ -232,7 +232,6 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 // is never blocked while the LLM thinks.
 func (c *Channel) handleMessage(
 	ctx context.Context,
-	handler channels.MessageHandler,
 	senderJID types.JID,
 	chatJID types.JID,
 	msgID string,
@@ -302,7 +301,7 @@ func (c *Channel) handleMessage(
 			part := chunk[:cut]
 			chunk = chunk[cut:]
 
-			_, sendErr := c.client.SendMessage(ctx, senderJID, &waProto.Message{
+			_, sendErr := c.client.SendMessage(ctx, chatJID, &waProto.Message{
 				Conversation: proto.String(part),
 			})
 			if sendErr != nil {
@@ -359,7 +358,7 @@ func (c *Channel) handleMessage(
 		return err
 	}
 
-	msgHandler(ctx, msg, replyFn, reactFn, mediaFn)
+	msgHandler(ctx, msg, buf.Push, reactFn, mediaFn)
 	_ = buf.Done()
 }
 

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.7.1] - 2026-03-12
+### Fixed
+- **WhatsApp Response Fragmentation**: Fixed an issue where the agent would send every token as a separate message. Responses are now correctly buffered and grouped into sentences.
+- **Group Chat JID Handling**: Corrected message routing in WhatsApp groups to ensure replies are sent to the conversation thread, not just the sender's private DM.
+
 ## [v3.7.0] - 2026-03-12
 ### Added
 - **Native Voice Support**: Integrated local STT (Whisper) and TTS (VoxCPM) via a managed Python microservice.
