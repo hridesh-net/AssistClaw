@@ -33,19 +33,26 @@ def load_models():
 from pydub import AudioSegment
 
 @app.post("/stt")
-async def speech_to_text(audio: UploadFile = File(...), format: str = Form("wav")):
+async def speech_to_text(audio: UploadFile = File(...), format: str = Form(None)):
     audio_bytes = await audio.read()
-    
-    # Use pydub to handle various formats (including concat opus packets if possible)
-    # Note: Discord Opus packets without Ogg headers might need special handling.
-    # For now, we assume we send WAV/MP3 from Go or a file with headers.
-    
     audio_stream = io.BytesIO(audio_bytes)
-    audio_seg = AudioSegment.from_file(audio_stream, format=format)
-    audio_seg.export("temp_stt.wav", format="wav")
     
-    result = stt_model.transcribe("temp_stt.wav")
-    return {"text": result["text"]}
+    try:
+        # If format is passed, try to use it; otherwise let pydub probe.
+        if format and format.lower() == "wav":
+             audio_seg = AudioSegment.from_wav(audio_stream)
+        elif format and format.lower() == "mp3":
+             audio_seg = AudioSegment.from_mp3(audio_stream)
+        else:
+             # probe automatically
+             audio_seg = AudioSegment.from_file(audio_stream)
+             
+        audio_seg.export("temp_stt.wav", format="wav")
+        result = stt_model.transcribe("temp_stt.wav")
+        return {"text": result["text"]}
+    except Exception as e:
+        print(f"STT Error: {e}")
+        return {"error": str(e), "text": ""}
 
 @app.post("/tts")
 async def text_to_speech(text: str = Form(...), reference_audio: UploadFile = File(None), output_format: str = Form("wav")):

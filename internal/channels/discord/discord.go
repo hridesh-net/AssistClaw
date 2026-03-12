@@ -72,7 +72,7 @@ func (c *Channel) listenVoice(ctx context.Context, vc *discordgo.VoiceConnection
 				audioBuffer.Reset()
 				
 				go func(d []byte) {
-					text, err := c.voiceClient.STT(d)
+					text, err := c.voiceClient.STT(d, "opus")
 					if err == nil && text != "" {
 						msg := channels.Message{
 							ChannelID: c.Name(),

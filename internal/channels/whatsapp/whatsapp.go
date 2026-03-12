@@ -145,16 +145,26 @@ func (c *Channel) extractMultimodal(ctx context.Context, m *waProto.Message) ([]
 
 			// pro-actively transcribe if voice client is available
 			if c.voice != nil {
-				transcription, err := c.voice.STT(data)
-				if err == nil {
+				// try to determine format from mimetype
+				format := "ogg"
+				if strings.Contains(aud.GetMimetype(), "mp4") {
+					format = "mp4"
+				}
+				transcription, err := c.voice.STT(data, format)
+				if err == nil && transcription != "" {
 					txt += "\n[Voice Note]: " + transcription
 					parts = append(parts, provider.ContentPart{
 						Type: provider.ContentTypeText,
 						Text: "[Voice Note Transcription]: " + transcription,
 					})
 				} else {
-					log.Printf("WhatsApp: transcription failed: %v", err)
+					log.Printf("WhatsApp: transcription failed or empty: %v", err)
 				}
+			}
+
+			// If we have an audio part but no text, add a fallback to avoid agent errors
+			if txt == "" {
+				txt = "[Audio Message]"
 			}
 		} else {
 			log.Printf("WhatsApp: failed to download audio: %v", err)

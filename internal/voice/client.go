@@ -24,12 +24,16 @@ func NewClient(cfg config.VoiceConfig) *Client {
 	return &Client{cfg: cfg}
 }
 
-func (c *Client) STT(audioData []byte) (string, error) {
+func (c *Client) STT(audioData []byte, format string) (string, error) {
+	if format == "" {
+		format = "wav"
+	}
 	url := fmt.Sprintf("http://127.0.0.1:%d/stt", c.cfg.ServicePort)
 	
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("audio", "audio.wav")
+	_ = writer.WriteField("format", format)
+	part, err := writer.CreateFormFile("audio", "audio."+format)
 	if err != nil {
 		return "", err
 	}
