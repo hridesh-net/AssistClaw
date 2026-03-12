@@ -52,7 +52,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "dev" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.7.0" // Overridden by -ldflags "-X main.version=..." during build
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
