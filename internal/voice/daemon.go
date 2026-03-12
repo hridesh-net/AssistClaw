@@ -29,12 +29,13 @@ func (d *Daemon) Start(ctx context.Context) error {
 		return nil
 	}
 
-	stateDir := d.cfg.VenvPath
-	if stateDir == "" {
-		stateDir = filepath.Join(os.Getenv("HOME"), ".assistclaw")
+	venvPath := d.cfg.VenvPath
+	if venvPath == "" {
+		// Fallback for older configs: stateDir + voice_env
+		stateDir := filepath.Join(os.Getenv("HOME"), ".assistclaw")
+		venvPath = filepath.Join(stateDir, "voice_env")
 	}
 	
-	venvPath := filepath.Join(stateDir, "voice_env")
 	pythonPath := filepath.Join(venvPath, "bin", "python")
 	if os.PathSeparator == '\\' {
 		pythonPath = filepath.Join(venvPath, "Scripts", "python.exe")
@@ -43,7 +44,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 	// Check if venv exists
 	if _, err := os.Stat(pythonPath); os.IsNotExist(err) {
 		log.Printf("voice: venv not found at %s. Running setup...", venvPath)
-		setupCmd := exec.Command("python3", "scripts/setup_voice.py", stateDir)
+		// setup_voice.py expects the BASE directory where it will create 'voice_env'
+		baseDir := filepath.Dir(venvPath)
+		setupCmd := exec.Command("python3", "scripts/setup_voice.py", baseDir)
 		setupCmd.Stdout = os.Stdout
 		setupCmd.Stderr = os.Stderr
 		if err := setupCmd.Run(); err != nil {
@@ -54,7 +57,16 @@ func (d *Daemon) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	d.cancel = cancel
 
-	d.cmd = exec.CommandContext(ctx, pythonPath, "scripts/voice_server.py")
+	execPath, _ := os.Executable()
+	baseDir := filepath.Dir(execPath)
+	
+	// Try local scripts first, then relative to executable
+	scriptsDir := "scripts"
+	if _, err := os.Stat(filepath.Join(scriptsDir, "voice_server.py")); os.IsNotExist(err) {
+		scriptsDir = filepath.Join(baseDir, "scripts")
+	}
+
+	d.cmd = exec.CommandContext(ctx, pythonPath, filepath.Join(scriptsDir, "voice_server.py"))
 	d.cmd.Env = append(os.Environ(), fmt.Sprintf("VOICE_PORT=%d", d.cfg.ServicePort))
 	d.cmd.Stdout = os.Stdout
 	d.cmd.Stderr = os.Stderr

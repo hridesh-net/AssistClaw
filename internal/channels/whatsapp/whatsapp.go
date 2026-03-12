@@ -165,6 +165,10 @@ func (c *Channel) extractMultimodal(ctx context.Context, m *waProto.Message) ([]
 			// If we have an audio part but no text, add a fallback to avoid agent errors
 			if txt == "" {
 				txt = "[Audio Message]"
+				parts = append(parts, provider.ContentPart{
+					Type: provider.ContentTypeText,
+					Text: txt,
+				})
 			}
 		} else {
 			log.Printf("WhatsApp: failed to download audio: %v", err)

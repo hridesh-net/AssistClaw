@@ -412,6 +412,9 @@ func convertMessage(m provider.Message) (openAIMessage, error) {
 					Arguments string `json:"arguments"`
 				}{Name: cp.ToolName, Arguments: string(argsJSON)},
 			})
+		case provider.ContentTypeAudio:
+			// Fallback: If transcription failed, at least indicate there is audio
+			parts = append(parts, contentPart{Type: "text", Text: "[Audio Received]"})
 		case provider.ContentTypeToolResult:
 			oai.Role = "tool"
 			oai.Content = cp.ToolResultContent

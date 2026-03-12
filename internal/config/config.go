@@ -459,6 +459,11 @@ func LoadFromEnv() *Config {
 		cfg.Providers.Ollama = &LocalCreds{BaseURL: "http://localhost:11434"}
 	}
 
+	// Voice
+	if os.Getenv("ASSISTCLAW_VOICE_ENABLED") == "1" || os.Getenv("ASSISTCLAW_VOICE_ENABLED") == "true" {
+		cfg.Voice.Enabled = true
+	}
+
 	return cfg
 }
 
@@ -498,6 +503,20 @@ func applyDefaults(cfg *Config) {
 	}
 	if len(cfg.Embeddings.Priority) == 0 {
 		cfg.Embeddings.Priority = []string{"openai", "ollama", "cohere", "voyage", "mistral", "google", "huggingface"}
+	}
+
+	// Voice Defaults
+	if cfg.Voice.ServicePort == 0 {
+		cfg.Voice.ServicePort = 11000
+	}
+	if cfg.Voice.STTModel == "" {
+		cfg.Voice.STTModel = "base"
+	}
+	if cfg.Voice.TTSModel == "" {
+		cfg.Voice.TTSModel = "voxcpm"
+	}
+	if cfg.Voice.VenvPath == "" {
+		cfg.Voice.VenvPath = filepath.Join(cfg.StateDir, "voice_env")
 	}
 }
 
