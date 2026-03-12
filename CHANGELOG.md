@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.7.2] - 2026-03-12
+### Fixed
+- **WhatsApp Audio Transcription**: Corrected audio format detection (OGG/MP4) to ensure voice notes are transcribed successfully by Whisper.
+- **Empty Message Fallback**: Added "[Audio Message]" placeholder for any voice notes where transcription might fail, preventing agent errors.
+- **Discord Voice Transcription**: Updated live audio processing to match the improved server-side STT signature.
+
 ## [v3.7.1] - 2026-03-12
 ### Fixed
 - **WhatsApp Response Fragmentation**: Fixed an issue where the agent would send every token as a separate message. Responses are now correctly buffered and grouped into sentences.
