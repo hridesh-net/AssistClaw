@@ -10,6 +10,7 @@ import (
 
 	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/assistclaw/assistclaw/internal/provider"
+	"github.com/assistclaw/assistclaw/internal/voice"
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -25,9 +26,10 @@ type Channel struct {
 	sessionID string
 	dmMode    string
 	allowFrom []string
+	voice     *voice.Client
 }
 
-func New(dbPath string, sessionID string, dmMode string, allowFrom []string, logLevel string) (*Channel, error) {
+func New(dbPath string, sessionID string, dmMode string, allowFrom []string, logLevel string, voiceClient *voice.Client) (*Channel, error) {
 	waLevel := "WARN"
 	switch strings.ToLower(logLevel) {
 	case "debug":
@@ -59,6 +61,7 @@ func New(dbPath string, sessionID string, dmMode string, allowFrom []string, log
 		sessionID: sessionID,
 		dmMode:    dmMode,
 		allowFrom: allowFrom,
+		voice:     voiceClient,
 	}, nil
 }
 
@@ -127,6 +130,34 @@ func (c *Channel) extractMultimodal(ctx context.Context, m *waProto.Message) ([]
 			})
 		} else {
 			log.Printf("WhatsApp: failed to download image: %v", err)
+		}
+	}
+
+	// Handle Audio Media (Voice Notes)
+	if aud := m.GetAudioMessage(); aud != nil {
+		data, err := c.client.Download(ctx, aud)
+		if err == nil {
+			parts = append(parts, provider.ContentPart{
+				Type:          provider.ContentTypeAudio,
+				ImageData:     data, // Store in ImageData or a new field if we want to be explicit
+				ImageMimeType: aud.GetMimetype(),
+			})
+
+			// pro-actively transcribe if voice client is available
+			if c.voice != nil {
+				transcription, err := c.voice.STT(data)
+				if err == nil {
+					txt += "\n[Voice Note]: " + transcription
+					parts = append(parts, provider.ContentPart{
+						Type: provider.ContentTypeText,
+						Text: "[Voice Note Transcription]: " + transcription,
+					})
+				} else {
+					log.Printf("WhatsApp: transcription failed: %v", err)
+				}
+			}
+		} else {
+			log.Printf("WhatsApp: failed to download audio: %v", err)
 		}
 	}
 
@@ -228,8 +259,39 @@ func (c *Channel) handleMessage(
 			return nil
 		}
 
-		// WhatsApp has a hard limit on message size.
-		// Split into 4000-character chunks to safely bypass limit.
+		// If the incoming message was audio, try to reply with audio (continuous conversation)
+		isAudio := false
+		for _, p := range parts {
+			if p.Type == provider.ContentTypeAudio {
+				isAudio = true
+				break
+			}
+		}
+
+		if isAudio && c.voice != nil {
+			voiceData, err := c.voice.TTS(chunk, "")
+			if err == nil {
+				resp, err := c.client.Upload(ctx, voiceData, whatsmeow.MediaAudio)
+				if err == nil {
+					_, err = c.client.SendMessage(ctx, chatJID, &waProto.Message{
+						AudioMessage: &waProto.AudioMessage{
+							URL:           proto.String(resp.URL),
+							DirectPath:    proto.String(resp.DirectPath),
+							MediaKey:      resp.MediaKey,
+							Mimetype:      proto.String("audio/ogg; codecs=opus"),
+							FileSHA256:    resp.FileSHA256,
+							FileEncSHA256: resp.FileEncSHA256,
+							FileLength:    proto.Uint64(resp.FileLength),
+							PTT:           proto.Bool(true), // Send as voice note
+						},
+					})
+					return err
+				}
+			}
+			log.Printf("WhatsApp: voice synthesis/upload failed: %v", err)
+		}
+
+		// Fallback to text if not audio or audio failed
 		const maxLen = 4000
 		var err error
 		for len(chunk) > 0 {

@@ -23,7 +23,9 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/assistclaw/assistclaw/internal/agent"
+	"github.com/assistclaw/assistclaw/internal/automation"
 	"github.com/assistclaw/assistclaw/internal/autotool"
+	"github.com/assistclaw/assistclaw/internal/voice"
 	"github.com/assistclaw/assistclaw/internal/channels/discord"
 	"github.com/assistclaw/assistclaw/internal/channels/slack"
 	"github.com/assistclaw/assistclaw/internal/channels/telegram"
@@ -584,6 +586,14 @@ Subcommands:
 			srv.Tailscale.Mode = cfg.Gateway.Tailscale.Mode
 			srv.Token = cfg.Gateway.Token
 			srv.Version = version
+			srv.Config = cfg
+
+			if cfg.Gmail.Enabled {
+				srv.Gmail = automation.NewGmailWatcher(cfg.Gmail, log)
+			}
+			if cfg.Voice.Enabled {
+				srv.Voice = voice.NewDaemon(cfg.Voice)
+			}
 
 			webHost := cfg.Gateway.Host
 			if webHost == "" {
@@ -947,6 +957,12 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}, &cliStreamHandler{done: done})
 		return <-done
 	}
+	
+	// Initialize Voice Client
+	var voiceClient *voice.Client
+	if cfg.Voice.Enabled {
+		voiceClient = voice.NewClient(cfg.Voice)
+	}
 
 	// Start Messaging Channels
 	activeChannels := 0
@@ -959,7 +975,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 	if cfg.Channels.Discord != nil {
-		dc, err := discord.New(cfg.Channels.Discord.BotToken, cfg.Channels.Discord.DMMode, cfg.Channels.Discord.AllowFrom)
+		dc, err := discord.New(cfg.Channels.Discord.BotToken, cfg.Channels.Discord.DMMode, cfg.Channels.Discord.AllowFrom, voiceClient)
 		if err == nil {
 			go dc.Start(ctx, runner.HandleChannelMessage)
 			log.Info("Discord channel active")
@@ -975,7 +991,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 	if cfg.Channels.WhatsApp != nil {
-		wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID, cfg.Channels.WhatsApp.DMMode, cfg.Channels.WhatsApp.AllowFrom, gf.logLevel)
+		wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID, cfg.Channels.WhatsApp.DMMode, cfg.Channels.WhatsApp.AllowFrom, gf.logLevel, voiceClient)
 		if err == nil {
 			go wa.Start(ctx, runner.HandleChannelMessage)
 			log.Info("WhatsApp channel active")

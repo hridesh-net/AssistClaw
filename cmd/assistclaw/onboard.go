@@ -1128,7 +1128,7 @@ func runOnboarding(configPath string) (bool, error) {
 				if home, err := os.UserHomeDir(); err == nil {
 					dbPath = filepath.Join(home, ".assistclaw", "whatsapp.db")
 				}
-				wa, err := whatsapp.New(dbPath, waSessionID, waDMMode, allowFrom, "INFO")
+				wa, err := whatsapp.New(dbPath, waSessionID, waDMMode, allowFrom, "INFO", nil)
 				if err == nil {
 					if !wa.IsLinked() {
 						fmt.Println("\n--- WhatsApp Pairing ---")

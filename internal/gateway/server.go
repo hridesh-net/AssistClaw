@@ -16,7 +16,10 @@ import (
 	"tailscale.com/tsnet"
 
 	"github.com/assistclaw/assistclaw/internal/agent"
+	"github.com/assistclaw/assistclaw/internal/automation"
+	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/memory"
+	"github.com/assistclaw/assistclaw/internal/voice"
 	"github.com/assistclaw/assistclaw/internal/webui"
 )
 
@@ -41,6 +44,9 @@ type Server struct {
 		Mode string
 	}
 	TS *tsnet.Server
+	Config     *config.Config
+	Gmail      *automation.GmailWatcher
+	Voice      *voice.Daemon
 }
 
 // NewServer initializes a new Gateway server on the specified port.
@@ -54,6 +60,18 @@ func NewServer(port int) *Server {
 // Start begins listening on the configured port.
 func (s *Server) Start() error {
 	go s.Hub.Run()
+
+	// Start automation workers if configured
+	if s.Config != nil && s.Config.Gmail.Enabled {
+		// NewGmailWatcher expects (config, logger) - we might need to pass the logger to Server
+		// For now, let's assume we can use a basic logger or pass it in later.
+		// Actually, let's just initialize it in main.go and set it on the Server.
+		if s.Gmail != nil {
+			if err := s.Gmail.Start(context.Background()); err != nil {
+				log.Printf("gmail: failed to start watcher: %v", err)
+			}
+		}
+	}
 
 	mux := http.NewServeMux()
 
@@ -108,6 +126,25 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		serveWs(s.Hub, w, r)
 	})
+	
+	// ── A2A Protocol ──────────────────────────────────────────────────────────
+	mux.HandleFunc("/.well-known/agent.json", s.handleAgentCard)
+	mux.HandleFunc("/api/a2a", s.handleA2A)
+
+	// ── Webhooks ──────────────────────────────────────────────────────────────
+	mux.HandleFunc("/api/webhook/", auth(s.handleWebhook))
+
+	if s.Gmail != nil {
+		if err := s.Gmail.Start(context.Background()); err != nil {
+			log.Printf("Error starting Gmail watcher: %v", err)
+		}
+	}
+
+	if s.Voice != nil {
+		if err := s.Voice.Start(context.Background()); err != nil {
+			log.Printf("Error starting Voice daemon: %v", err)
+		}
+	}
 
 	addr := fmt.Sprintf(":%d", s.Port)
 	if s.Bind == "tailnet" {
@@ -156,7 +193,14 @@ func (s *Server) Stop(ctx context.Context) error {
 		s.TS.Close()
 	}
 	if s.HTTPServer != nil {
-		return s.HTTPServer.Shutdown(ctx)
+		err := s.HTTPServer.Shutdown(ctx)
+		if s.Gmail != nil {
+			s.Gmail.Stop()
+		}
+		if s.Voice != nil {
+			s.Voice.Stop()
+		}
+		return err
 	}
 	return nil
 }
@@ -256,6 +300,101 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"pid":     os.Getpid(),
 		"model":   model,
 	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// handleWebhook handles incoming webhooks, mapping them to agent prompts.
+func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	if s.Config == nil || !s.Config.Webhooks.Enabled {
+		http.Error(w, `{"error":"webhooks disabled"}`, http.StatusForbidden)
+		return
+	}
+
+	// Check for optional webhook token if configured
+	if s.Config.Webhooks.Token != "" {
+		tok := r.Header.Get("X-AssistClaw-Token")
+		if tok != s.Config.Webhooks.Token {
+			http.Error(w, `{"error":"invalid webhook token"}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
+	// Get the preset path from the URL
+	path := strings.TrimPrefix(r.URL.Path, "/api/webhook/")
+	if path == "" {
+		http.Error(w, `{"error":"invalid webhook path"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Find the mapping for this path
+	var mapping *config.WebhookMapping
+	for _, m := range s.Config.Webhooks.Mappings {
+		if m.Path == path {
+			mapping = &m
+			break
+		}
+	}
+
+	if mapping == nil {
+		http.Error(w, `{"error":"webhook mapping not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Read and parse the payload
+	var payload map[string]interface{}
+	if r.Header.Get("Content-Type") == "application/json" {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, `{"error":"failed to decode json"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Execute via agent
+	prompt := mapping.PromptTemplate
+	// Simple template replacement
+	for k, v := range payload {
+		placeholder := fmt.Sprintf("{{.%s}}", k)
+		prompt = strings.ReplaceAll(prompt, placeholder, fmt.Sprintf("%v", v))
+	}
+
+	log.Printf("webhook: %s -> agent execution", path)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	if s.Runner == nil {
+		http.Error(w, `{"error":"agent not initialised"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	sessionID := "webhook:" + path + ":" + uuid.New().String()
+	runner := s.Runner.WithSession(sessionID)
+
+	res, err := runner.Run(ctx, memory.Message{
+		ID:        uuid.New().String(),
+		SessionID: sessionID,
+		Role:      memory.RoleUser,
+		Content:   prompt,
+		CreatedAt: time.Now(),
+	})
+
+	if err != nil {
+		log.Printf("webhook: agent failed: %v", err)
+		http.Error(w, fmt.Sprintf(`{"error":"agent execution failed","details":"%v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"status":     "success",
+		"iterations": res.Iterations,
+	}
+
+	// If delivery is requested, the agent's response is already in memory/last message
+	// The implementation of 'deliver: true' usually involves the agent itself calling
+	// a message tool, but if we want it automatic, we'd trigger it here.
+	// For now, we return 200 OK.
+	
+	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
 

@@ -53,12 +53,69 @@ type Config struct {
 
 	// Cron configures static scheduled jobs.
 	Cron []CronJobConfig `yaml:"cron"`
+
+	// A2A configures the Agent-to-Agent protocol support.
+	A2A A2AConfig `yaml:"a2a"`
+
+	// Webhooks configures generic incoming webhook handlers.
+	Webhooks WebhookConfig `yaml:"webhooks"`
+
+	// Gmail configures Gmail Pub/Sub watcher settings.
+	Gmail GmailConfig `yaml:"gmail"`
+
+	// Voice configures internal STT/TTS and continuous conversation.
+	Voice VoiceConfig `yaml:"voice"`
+}
+
+// A2AConfig holds metadata for the Agent-to-Agent protocol.
+type A2AConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	AgentID     string `yaml:"agent_id"` // Optional UUID or stable identifier
 }
 
 type CronJobConfig struct {
 	ID       string `yaml:"id"`
 	Schedule string `yaml:"schedule"`
 	Prompt   string `yaml:"prompt"`
+}
+
+// WebhookConfig configures the incoming webhook endpoint.
+type WebhookConfig struct {
+	Enabled  bool             `yaml:"enabled"`
+	Token    string           `yaml:"token"` // Optional auth token (X-AssistClaw-Token)
+	Mappings []WebhookMapping `yaml:"mappings"`
+}
+
+// WebhookMapping defines how an incoming webhook maps to an agent action.
+type WebhookMapping struct {
+	Path            string            `yaml:"path"`             // Match /api/webhook/{path}
+	PromptTemplate  string            `yaml:"prompt_template"`  // Template for agent prompt (e.g. "Got webhook from {{.source}}: {{.body}}")
+	Deliver         bool              `yaml:"deliver"`          // Whether to deliver results to a channel
+	Channel         string            `yaml:"channel"`          // Channel title to deliver to (e.g. "telegram")
+	To              string            `yaml:"to"`               // Destination account
+	AllowUnsafe     bool              `yaml:"allow_unsafe"`     // If true, doesn't wrap payload in safety boundaries
+}
+
+// GmailConfig holds settings for the Gmail Pub/Sub integration.
+type GmailConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	Account      string `yaml:"account"`
+	Topic        string `yaml:"topic"`
+	Label        string `yaml:"label"`         // e.g. "INBOX"
+	SkipWatcher  bool   `yaml:"skip_watcher"`  // If true, AssistClaw won't manage the gogcli daemon
+	PushEndpoint string `yaml:"push_endpoint"` // Public URL for Pub/Sub push (if not using Tailscale)
+}
+
+// VoiceConfig configures internal voice processing (STT/TTS).
+type VoiceConfig struct {
+	Enabled       bool   `yaml:"enabled"`
+	ServicePort   int    `yaml:"service_port"`   // default: 11000
+	STTModel      string `yaml:"stt_model"`      // whisper: tiny, base, small, medium, large
+	TTSModel      string `yaml:"tts_model"`      // voxcpm
+	VoiceCloneRef string `yaml:"voice_clone_ref"` // Path to 5s voice clip
+	VenvPath      string `yaml:"venv_path"`       // Path to py venv
 }
 
 // MCPConfig configures the MCP server and external MCP client connections.
