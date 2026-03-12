@@ -506,6 +506,7 @@ func applyDefaults(cfg *Config) {
 	}
 
 	// Voice Defaults
+	cfg.Voice.Enabled = true // Enabled by default as an inbuilt feature
 	if cfg.Voice.ServicePort == 0 {
 		cfg.Voice.ServicePort = 11000
 	}
