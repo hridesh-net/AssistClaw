@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.8.1] - 2026-03-13
+### Fixed
+- **Onboarding Formatting**: Fixed a YAML indentation error in the `plano` configuration generator.
+- **Documentation**: Finalized changelog entries for v3.7.x and v3.8.0.
+
+## [v3.8.0] - 2026-03-12
+### Added
+- **Inbuilt Voice Support**: Voice features (STT/TTS) are now enabled by default. AssistClaw will automatically set up the internal voice microservice on first run without requiring manual configuration.
+- **Improved Portability**: Voice daemon now resolves script paths relative to the executable, allowing it to run from any directory.
+
+## [v3.7.3] - 2026-03-12
+### Fixed
+- **WhatsApp Empty Message**: Resolved an issue where voice notes on WhatsApp resulted in blank responses due to gaps in OpenAI provider modality handling.
+- **Graceful Audio Fallback**: OpenAI provider now handles audio parts as text placeholders if transcription is unavailable, preventing agent crashes.
+
 ## [v3.7.2] - 2026-03-12
 ### Fixed
 - **WhatsApp Audio Transcription**: Corrected audio format detection (OGG/MP4) to ensure voice notes are transcribed successfully by Whisper.

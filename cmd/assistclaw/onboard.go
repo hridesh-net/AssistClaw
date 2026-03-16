@@ -1410,12 +1410,12 @@ func runOnboarding(configPath string) (bool, error) {
 	// Plano smart routing config
 	if usePlano {
 		sb.WriteString("\nplano:\n")
-		sb.WriteString(fmt.Sprintf("  enabled: true\n"))
+		sb.WriteString("  enabled: true\n")
 		sb.WriteString(fmt.Sprintf("  endpoint: \"%s\"\n", planoEndpoint))
 		sb.WriteString("  preferences:\n")
-		sb.WriteString(fmt.Sprintf("    - description: \"Route simple greetings, weather, casual chat, and short questions to the fast model\"\n"))
+		sb.WriteString("    - description: \"Route simple greetings, weather, casual chat, and short questions to the fast model\"\n")
 		sb.WriteString(fmt.Sprintf("      prefer_model: \"%s\"\n", planoFastModel))
-		sb.WriteString(fmt.Sprintf("    - description: \"Route code generation, debugging, analysis, and multi-step reasoning to the powerful model\"\n"))
+		sb.WriteString("    - description: \"Route code generation, debugging, analysis, and multi-step reasoning to the powerful model\"\n")
 		sb.WriteString(fmt.Sprintf("      prefer_model: \"%s\"\n", planoPowerfulModel))
 	}
 
