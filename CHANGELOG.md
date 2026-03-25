@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.0] - 2026-03-25
+### Added
+- **Continuous Autonomous Mode**: Introduced a new background agent loop (`RunAutonomous`) capable of pursuing complex, multi-step goals endlessly without stopping after a single response.
+- **Finish Task Tool**: Added `finish_task` to the standard tool catalog, granting the LLM explicit control over when an overarching objective is completed.
+- **`assistclaw auto` CLI Command**: Launch continuous background workflows directly from the terminal.
+- **`/auto` Chat Command**: Spawn continuous autonomous background tasks straight from Telegram, Discord, Slack, and WhatsApp.
+
 ## [v3.8.1] - 2026-03-13
 ### Fixed
 - **Onboarding Formatting**: Fixed a YAML indentation error in the `plano` configuration generator.

@@ -52,7 +52,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.8.1" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.9.0" // Overridden by -ldflags "-X main.version=..." during build
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -94,6 +94,7 @@ func rootCmd() *cobra.Command {
 	root.PersistentFlags().BoolVar(&flags.noColor, "no-color", false, "Disable color output")
 
 	root.AddCommand(
+		autoCmd(flags),
 		agentCmd(flags),
 		startCmd(flags),
 		stopCmd(flags),
@@ -119,6 +120,26 @@ func rootCmd() *cobra.Command {
 // agent command
 // ─────────────────────────────────────────────
 
+func autoCmd(gf *globalFlags) *cobra.Command {
+	var (
+		model     string
+		sessionID string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "auto [goal]",
+		Short: "Start a continuous autonomous agent loop targeting a specific goal",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAgent(gf, gf.configPath, model, args[0], sessionID, false, false, true)
+		},
+	}
+
+	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. anthropic/claude-3-5-sonnet)")
+	cmd.Flags().StringVar(&sessionID, "session", "", "Resume an existing session by ID")
+	return cmd
+}
+
 func agentCmd(gf *globalFlags) *cobra.Command {
 	var (
 		message   string
@@ -132,7 +153,7 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 		Use:   "agent",
 		Short: "Start an interactive agent session or send a single message",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAgent(gf, gf.configPath, model, message, sessionID, serve, noStream)
+			return runAgent(gf, gf.configPath, model, message, sessionID, serve, noStream, false)
 		},
 	}
 
@@ -157,7 +178,7 @@ func startCmd(gf *globalFlags) *cobra.Command {
 			if daemon {
 				return Detach("start")
 			}
-			return runAgent(gf, gf.configPath, "", "", "", true, false)
+			return runAgent(gf, gf.configPath, "", "", "", true, false, false)
 		},
 	}
 	cmd.Flags().BoolVarP(&daemon, "daemon", "d", false, "Run detached in the background")
@@ -660,7 +681,7 @@ func loadConfig(path string, log *zap.Logger) (*config.Config, error) {
 	return config.Load(path)
 }
 
-func runAgent(gf *globalFlags, configPath string, model string, message string, sessionID string, serve bool, noStream bool) error {
+func runAgent(gf *globalFlags, configPath string, model string, message string, sessionID string, serve bool, noStream bool, auto bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -928,6 +949,18 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 				wm.Append(m)
 			}
 		}
+	}
+
+	// Autonomous mode
+	if auto && message != "" {
+		log.Info("Starting autonomous mode", zap.String("goal", message))
+		fmt.Printf("\n🚀 Starting autonomous agent. Goal: %s\n\n", message)
+		result, err := runner.RunAutonomous(ctx, message)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("\n✅ Autonomous agent finished. Response: %s\n", result.Response)
+		return nil
 	}
 
 	// Single message mode

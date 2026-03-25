@@ -1072,6 +1072,24 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		}
 		return true
 
+	case "/auto":
+		goal := strings.Join(parts[1:], " ")
+		if goal == "" {
+			_ = replyFn("❌ Please provide a goal. Usage: /auto <goal>")
+			return true
+		}
+		_ = replyFn(fmt.Sprintf("🚀 Starting autonomous agent in background. Goal: %s", goal))
+		go func() {
+			// run in background
+			res, err := r.RunAutonomous(context.Background(), goal)
+			if err != nil {
+				_ = replyFn(fmt.Sprintf("❌ Autonomous task failed: %v", err))
+			} else {
+				_ = replyFn(fmt.Sprintf("✅ Autonomous task finished: %s", res.Response))
+			}
+		}()
+		return true
+
 	case "/help":
 		help := "📋 *Available Commands*\n"
 		help += "• `/reset` - Clear current working memory\n"
@@ -1079,6 +1097,7 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		help += "• `/skills` - List active and broken skills\n"
 		help += "• `/sessions` - List all persistent sessions\n"
 		help += "• `/forget [id]` - Permanently delete a session\n"
+		help += "• `/auto [goal]` - Start a continuous background autonomous task\n"
 		help += "• `/help` - Show this message\n"
 		_ = replyFn(help)
 		return true

@@ -542,6 +542,7 @@ func Default(
 		ProcessTool{PersistencePath: filepath.Join(stateDir, "processes.json")},
 		ApplyPatchTool{},
 		EnvTool{},
+		FinishTaskTool{},
 
 		// ── Tier 2: intelligence tools ───────────────────
 		ImageUnderstandTool{Provider: visionProvider, Model: visionModel},
