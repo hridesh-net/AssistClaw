@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.6] - 2026-04-01
+### Fixed
+- **Workspace Templates Actually Written Now**: The root cause of templates never appearing on disk was `InitializeWorkspace` being called with the raw `--config` flag value which is an empty string when the flag isn't passed. `filepath.Dir("")` resolves to `"."` (current directory), not `~/.assistclaw`. Now uses `cfg.StateDir` (the already-resolved state directory) to guarantee templates land in the correct location.
+- **Agent Persona Now Properly Overridden**: `SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `USER.md` now become the primary identity block when present, replacing the hardcoded fallback text instead of being appended below it where they had no effect.
+
 ## [v3.9.5] - 2026-04-01
 ### Fixed
 - **Workspace Identity Now Active**: Fixed two critical bugs that prevented `SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `USER.md` etc. from having any effect:
