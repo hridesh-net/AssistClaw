@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.5] - 2026-04-01
+### Fixed
+- **Workspace Identity Now Active**: Fixed two critical bugs that prevented `SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `USER.md` etc. from having any effect:
+  1. `InitializeWorkspace` was defined but never called — templates were never seeded to disk on first run. Now called at startup.
+  2. Workspace identity files were appended *after* the hardcoded `"You are AssistClaw"` block, effectively ignoring them. Now when workspace files exist they *replace* the hardcoded identity (exact OpenClaw parity). The hardcoded block is only a fallback for bare installs.
+
 ## [v3.9.4] - 2026-04-01
 ### Fixed
 - **Bedrock Validation Exception**: Handled edge cases where AWS Bedrock `ConverseStream` crashes with `ValidationException (The value at messages...toolUse.input is empty)` if an LLM calls a parameter-less tool (e.g., `skill_graph_index`) and returns a blank JSON payload. Strict coercion to an empty map `{}` prevents this strict Bedrock schema error.

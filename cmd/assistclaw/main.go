@@ -52,7 +52,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.9.4" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.9.5" // Overridden by -ldflags "-X main.version=..." during build
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -692,6 +692,12 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	cfg, err := loadConfig(configPath, log)
 	if err != nil {
 		return err
+	}
+
+	// Seed workspace identity files (SOUL.md, IDENTITY.md, AGENTS.md, etc.)
+	// to ~/.assistclaw on first run — mirrors OpenClaw's bootstrapping behaviour.
+	if wsErr := config.InitializeWorkspace(configPath); wsErr != nil {
+		log.Warn("workspace init failed", zap.Error(wsErr))
 	}
 
 	// Boot all subsystems

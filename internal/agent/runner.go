@@ -653,15 +653,23 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 		}
 	}
 
-	// ── Workspace Context (OpenClaw Parity) ─────────────────────────────────
-	workspaceCtx := ""
-	for _, fn := range []string{"SOUL.md", "IDENTITY.md", "USER.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"} {
-		if data, err := os.ReadFile(filepath.Join(ws, fn)); err == nil && len(data) > 0 {
-			workspaceCtx += fmt.Sprintf("\n## %s\n%s\n", fn, string(data))
-		}
+	// ── Workspace Identity (OpenClaw Parity) ────────────────────────────────
+	// Read each identity file and build a persona block. When SOUL.md is
+	// present it becomes the PRIMARY identity, replacing the hardcoded default.
+	type wsFile struct{ name, header string }
+	identityFiles := []wsFile{
+		{"SOUL.md", "Agent Soul / Persona"},
+		{"IDENTITY.md", "Identity"},
+		{"USER.md", "User Context"},
+		{"AGENTS.md", "Agent Rules"},
+		{"BOOTSTRAP.md", "Bootstrap Instructions"},
+		{"TOOLS.md", "Tool Preferences"},
 	}
-	if workspaceCtx != "" {
-		hwStr += "\n" + workspaceCtx
+	personaFromWorkspace := ""
+	for _, wf := range identityFiles {
+		if data, err := os.ReadFile(filepath.Join(ws, wf.name)); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+			personaFromWorkspace += fmt.Sprintf("\n## %s\n%s\n", wf.header, strings.TrimSpace(string(data)))
+		}
 	}
 
 	// ── Dynamic tool table — built from the live ToolRegistry ────────────────
@@ -670,7 +678,16 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 	toolTable := r.buildToolTable()
 
 	// ── Core identity ────────────────────────────────────────────────────────
-	base := `You are AssistClaw — an autonomous coding and system agent. You have FULL ability to interact with the operating system, create files, run code, browse the web, search the internet, and complete complex engineering tasks end-to-end.
+	// If workspace identity files exist (OpenClaw parity), they ARE the identity.
+	// The hardcoded block is the fallback for bare installs with no workspace files.
+	var identityBlock string
+	if personaFromWorkspace != "" {
+		identityBlock = personaFromWorkspace
+	} else {
+		identityBlock = `You are AssistClaw — an autonomous coding and system agent. You have FULL ability to interact with the operating system, create files, run code, browse the web, search the internet, and complete complex engineering tasks end-to-end.`
+	}
+
+	base := identityBlock + `
 
 ` + hwStr + `
 
