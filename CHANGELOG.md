@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.4] - 2026-04-01
+### Fixed
+- **Bedrock Validation Exception**: Handled edge cases where AWS Bedrock `ConverseStream` crashes with `ValidationException (The value at messages...toolUse.input is empty)` if an LLM calls a parameter-less tool (e.g., `skill_graph_index`) and returns a blank JSON payload. Strict coercion to an empty map `{}` prevents this strict Bedrock schema error.
+
 ## [v3.9.3] - 2026-04-01
 ### Added
 - **Dynamic Workspace Bootstrapping**: Added logic to automatically seed the `~/.assistclaw` state directory with standard OpenClaw markdown templates (`SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `USER.md`, `BOOTSTRAP.md`, `TOOLS.md`) via Go embedding if they do not exist.

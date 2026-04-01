@@ -397,9 +397,23 @@ func buildConverseMessages(req *provider.CompletionRequest) ([]types.Message, []
 				}
 				content = append(content, &types.ContentBlockMemberText{Value: text})
 			} else if cp.Type == provider.ContentTypeToolUse {
+				input := cp.ToolInput
+				if input == nil {
+					input = map[string]any{}
+				} else if s, ok := input.(string); ok {
+					if strings.TrimSpace(s) == "" || strings.TrimSpace(s) == "{}" {
+						input = map[string]any{}
+					} else {
+						var parsed map[string]any
+						if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+							input = parsed
+						}
+					}
+				}
+
 				content = append(content, &types.ContentBlockMemberToolUse{
 					Value: types.ToolUseBlock{
-						Input:     document.NewLazyDocument(cp.ToolInput),
+						Input:     document.NewLazyDocument(input),
 						Name:      aws.String(cp.ToolName),
 						ToolUseId: aws.String(cp.ToolUseID),
 					},
