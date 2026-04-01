@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.1] - 2026-04-01
+### Added
+- **OpenClaw Parity**: Full integration of the workspace memory system mapping `SOUL.md`, `IDENTITY.md`, `USER.md`, and `AGENTS.md` exactly as OpenClaw handles injection.
+- **Security Profile Controls**: Implementation of the `tools.profile` setting mapping string options like `coding` to strictly filter agent tool registries (e.g. blocking web browsing or proactive messaging for clean sandbox execution).
+- **Persistent Cron CLI**: Complete the `cron` command package mapping OpenClaw's exact command capability (`list`, `add`, `remove`) and background heartbeat/headless execution system natively over Go logic.
+
 ## [v3.9.0] - 2026-03-25
 ### Added
 - **Continuous Autonomous Mode**: Introduced a new background agent loop (`RunAutonomous`) capable of pursuing complex, multi-step goals endlessly without stopping after a single response.
