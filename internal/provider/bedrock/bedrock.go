@@ -139,6 +139,14 @@ func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
 			return nil
 		}
 	}
+	// AWS adds new models constantly. If it has a typical Bedrock prefix but is missing
+	// from our catalog, allow it through and let the AWS API reject it if invalid.
+	for _, prefix := range []string{"anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.", "qwen."} {
+		if strings.HasPrefix(modelID, prefix) {
+			return nil
+		}
+	}
+	
 	return &provider.ProviderError{
 		Provider:   providerName,
 		StatusCode: http.StatusNotFound,
@@ -600,5 +608,9 @@ func bedrockModelCatalog(provName string) []provider.ModelInfo {
 
 		// Amazon Titan
 		{ID: "amazon.titan-text-premier-v1:0", Name: "Titan Text Premier", Provider: provName, Capabilities: []provider.Capability{provider.CapabilityStreaming}, ContextWindow: 32000},
+
+		// Qwen on Bedrock
+		{ID: "qwen.qwen3-coder-30b-a3b-v1:0", Name: "Qwen3 Coder 30B (Bedrock)", Provider: provName, Capabilities: t, ContextWindow: 32768},
+		{ID: "qwen.qwen3-235b-a22b-2507-v1:0", Name: "Qwen3 235B (Bedrock)", Provider: provName, Capabilities: t, ContextWindow: 32768},
 	}
 }
