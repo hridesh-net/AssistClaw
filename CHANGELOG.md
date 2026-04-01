@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.3] - 2026-04-01
+### Added
+- **Dynamic Workspace Bootstrapping**: Added logic to automatically seed the `~/.assistclaw` state directory with standard OpenClaw markdown templates (`SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `USER.md`, `BOOTSTRAP.md`, `TOOLS.md`) via Go embedding if they do not exist.
+
 ## [v3.9.2] - 2026-04-01
 ### Fixed
 - **Bedrock New Models Registration**: Bypassed strict local catalog checking in `ValidateModel` to allow any valid AWS Bedrock model IDs prefix (e.g. `qwen.*`, `meta.*`, `amazon.*`) so that newly available AWS models (like Qwen 3 Coder 30B) don't trigger "model not found" errors before the CLI is updated.
