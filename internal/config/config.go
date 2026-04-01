@@ -346,6 +346,9 @@ type SecurityConfig struct {
 
 	// BlockPatterns are additional regex patterns to block in input.
 	BlockPatterns []string `yaml:"block_patterns"`
+
+	// Profile determines which tools are available. "full" or "coding"
+	Profile string `yaml:"profile"`
 }
 
 // ChannelsConfig configures messaging channels.

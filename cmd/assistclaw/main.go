@@ -111,6 +111,7 @@ func rootCmd() *cobra.Command {
 		serviceCmd(flags),
 		securityCmd(flags),
 		logicTestCmd(flags),
+		cronCmd(flags),
 		versionCmd(),
 	)
 	return root
@@ -879,6 +880,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		Model:               modelInfo.ID,
 		ActiveSkillsContext: skillsCtx,
 		ProviderName:        providerNameForCaps,
+		ToolsProfile:        cfg.Security.Profile,
 	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog).WithHardware(hw)
 
 	// ── Security: Guardrail + Audit Log ────────────────────────────────
@@ -926,6 +928,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 			Model:               modelInfo.ID,
 			ActiveSkillsContext: skillsCtx,
 			ProviderName:        providerNameForCaps,
+			ToolsProfile:        cfg.Security.Profile,
 		},
 		log,
 		cfg.StateDir,

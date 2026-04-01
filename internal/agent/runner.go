@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -89,6 +91,7 @@ type Config struct {
 	SessionID           string // The persistent session ID for this runner
 	ChannelID           string // The message channel ID (e.g. "whatsapp", "telegram")
 	ProviderName        string // Lowercase provider ID for capability detection
+	ToolsProfile        string // "full" or "coding"
 }
 
 // Runner is the main agent execution loop.
@@ -583,16 +586,39 @@ func (r *Runner) buildRequestV3(ctx context.Context, query string) *provider.Com
 	}
 }
 
-// selectTools returns the tool definitions for this request.
-// Uses the Catalog for graph-based filtering if configured; falls back to all tools.
 func (r *Runner) selectTools(query string) []provider.ToolDef {
+	var target []provider.ToolDef
 	if r.catalog != nil {
 		caps := provider.CapsFor(r.cfg.ProviderName)
 		// Decay inertia from last turn before computing new selection
 		r.catalog.DecayInertia()
-		return r.catalog.SelectForRequest(query, caps)
+		target = r.catalog.SelectForRequest(query, caps)
+	} else {
+		target = r.tools.Definitions() // backward-compat fallback
 	}
-	return r.tools.Definitions() // backward-compat fallback
+	return r.filterTools(target)
+}
+
+func (r *Runner) filterTools(defs []provider.ToolDef) []provider.ToolDef {
+	if r.cfg.ToolsProfile != "coding" {
+		return defs
+	}
+	unsafe := map[string]bool{
+		"browser_navigate":   true,
+		"browser_screenshot": true,
+		"web_search":         true,
+		"web_fetch":          true,
+		"message":            true,
+		"cron":               true,
+		"image_understand":   true,
+	}
+	var filtered []provider.ToolDef
+	for _, d := range defs {
+		if !unsafe[d.Name] {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
 }
 
 // buildRequest converts working memory messages to a provider request.
@@ -625,6 +651,17 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 		if len(hw.InputDevices) > 0 {
 			hwStr += fmt.Sprintf("- Input Devices: %s\n", strings.Join(hw.InputDevices, ", "))
 		}
+	}
+
+	// ── Workspace Context (OpenClaw Parity) ─────────────────────────────────
+	workspaceCtx := ""
+	for _, fn := range []string{"SOUL.md", "IDENTITY.md", "USER.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"} {
+		if data, err := os.ReadFile(filepath.Join(ws, fn)); err == nil && len(data) > 0 {
+			workspaceCtx += fmt.Sprintf("\n## %s\n%s\n", fn, string(data))
+		}
+	}
+	if workspaceCtx != "" {
+		hwStr += "\n" + workspaceCtx
 	}
 
 	// ── Dynamic tool table — built from the live ToolRegistry ────────────────
@@ -730,7 +767,7 @@ func (r *Runner) buildToolTable() string {
 		"message":            "Proactively send a message to connected channels (Telegram, WhatsApp, etc.)",
 	}
 
-	defs := r.tools.Definitions()
+	defs := r.filterTools(r.tools.Definitions())
 	if len(defs) == 0 {
 		return "_No tools registered._"
 	}
