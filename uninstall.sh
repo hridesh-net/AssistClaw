@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# AssistClaw uninstaller — v3.4+
+# AssistClaw uninstaller
 # Removes the binary, system service (launchd/systemd), Plano Docker container,
-# and optionally all user data (config, memory, skills, cron, web UI state).
+# and optionally all user data (config, memory, skills, cron, security logs).
 #
 # Usage:
 #   bash uninstall.sh              # removes binary & service, keeps ~/.assistclaw data
-#   bash uninstall.sh --purge      # removes everything including config, memory & all data
+#   bash uninstall.sh --purge      # removes everything including config and memory
 #   bash uninstall.sh --keep-data  # same as default (explicit alias)
+#   bash uninstall.sh -y --purge   # non-interactive purge
 
 set -eo pipefail
 
@@ -41,7 +42,7 @@ for arg in "$@"; do
       echo "Usage: bash uninstall.sh [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --purge      Also remove ~/.assistclaw (config, memory, skills, MCP servers list)"
+      echo "  --purge      Also remove ~/.assistclaw (config, memory, skills, cron_jobs.json, security logs)"
       echo "  --keep-data  Keep user data (default behaviour)"
       echo "  -y, --yes    Auto-confirm deletion without prompting"
       echo "  --help       Show this help"
@@ -57,15 +58,39 @@ done
 echo ""
 echo -e "${BOLD}${CYAN}"
 echo "  ╭─────────────────────────────────────╮"
-echo "  │   AssistClaw Uninstaller  v3.4+     │"
-echo "  │   The Autonomous Edge Intelligence  │"
-echo -e "  ╰─────────────────────────────────────╯${NC}"
+echo "  │   AssistClaw Uninstaller            │"
+echo "  ╰─────────────────────────────────────╯"
+echo -e "${NC}"
 echo ""
 
 if $PURGE; then
-  warn "PURGE mode — config, memory, skills, MCP config, cron state and logs will be deleted"
+  warn "PURGE mode — state under $STATE_DIR and caches will be deleted"
   echo ""
 fi
+
+# ─────────────────────────────────────────────
+# Stop process via PID file (preferred)
+# ─────────────────────────────────────────────
+stop_via_pidfile() {
+  local pf="$STATE_DIR/assistclaw.pid"
+  [[ -f "$pf" ]] || return 0
+  local pid
+  pid="$(tr -d ' \t\r\n' <"$pf" 2>/dev/null || true)"
+  if [[ -n "$pid" ]] && [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    log "Stopping process from PID file (PID $pid)..."
+    kill -TERM "$pid" 2>/dev/null || true
+    local n=0
+    while kill -0 "$pid" 2>/dev/null && [[ $n -lt 30 ]]; do
+      sleep 0.2
+      n=$((n + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+    ok "Stopped assistclaw (PID $pid)"
+  fi
+  rm -f "$pf"
+}
 
 # ─────────────────────────────────────────────
 # Step 1: Stop running daemon & remove service
@@ -73,9 +98,10 @@ fi
 stop_daemon() {
   step "1. Stopping AssistClaw daemon and removing system service..."
 
-  # Try the built-in service uninstall command first (v3.4+)
+  stop_via_pidfile
+
   if command -v assistclaw >/dev/null 2>&1; then
-    assistclaw service uninstall 2>/dev/null && ok "Service removed via 'assistclaw service uninstall'"
+    assistclaw service uninstall 2>/dev/null && ok "Service removed via 'assistclaw service uninstall'" || true
     assistclaw stop 2>/dev/null && ok "Daemon stopped via 'assistclaw stop'" || true
   fi
 
@@ -91,10 +117,14 @@ stop_daemon() {
   fi
 
   if [[ -f "$sys_plist" ]]; then
-    sudo launchctl bootout "system/com.assistclaw.agent" 2>/dev/null || \
-      sudo launchctl unload "$sys_plist" 2>/dev/null || true
-    sudo rm -f "$sys_plist"
-    ok "Removed macOS system launchd daemon: $sys_plist"
+    if command -v sudo >/dev/null 2>&1; then
+      sudo launchctl bootout "system/com.assistclaw.agent" 2>/dev/null || \
+        sudo launchctl unload "$sys_plist" 2>/dev/null || true
+      sudo rm -f "$sys_plist"
+      ok "Removed macOS system launchd daemon: $sys_plist"
+    else
+      warn "Need sudo to remove $sys_plist"
+    fi
   fi
 
   # ── Linux systemd (user) ─────────────────────────────────────────────────
@@ -113,26 +143,37 @@ stop_daemon() {
       ok "Removed systemd user service file: $user_service"
     fi
 
-    # ── Linux systemd (system-level fallback) ────────────────────────────
     if systemctl is-active --quiet assistclaw 2>/dev/null; then
-      sudo systemctl stop assistclaw 2>/dev/null
-      sudo systemctl disable assistclaw 2>/dev/null
-      ok "Stopped system-level systemd service"
+      if command -v sudo >/dev/null 2>&1; then
+        sudo systemctl stop assistclaw 2>/dev/null
+        sudo systemctl disable assistclaw 2>/dev/null
+        ok "Stopped system-level systemd service"
+      fi
     fi
     local sys_service="/etc/systemd/system/assistclaw.service"
     if [[ -f "$sys_service" ]]; then
-      sudo rm -f "$sys_service"
-      sudo systemctl daemon-reload 2>/dev/null || true
-      ok "Removed system-level systemd service file"
+      if command -v sudo >/dev/null 2>&1; then
+        sudo rm -f "$sys_service"
+        sudo systemctl daemon-reload 2>/dev/null || true
+        ok "Removed system-level systemd service file"
+      fi
     fi
   fi
 
-  # ── Kill any remaining processes ─────────────────────────────────────────
-  if pkill -f "assistclaw" 2>/dev/null; then
-    ok "Killed remaining assistclaw processes"
+  # Exact process name only (avoids killing unrelated processes matching "assistclaw" in argv)
+  if command -v pgrep >/dev/null 2>&1; then
+    local p
+    p="$(pgrep -nx assistclaw 2>/dev/null || true)"
+    if [[ -n "$p" ]]; then
+      kill -TERM $p 2>/dev/null || true
+      sleep 0.5
+      if kill -0 $p 2>/dev/null; then
+        kill -KILL $p 2>/dev/null || true
+      fi
+      ok "Stopped remaining assistclaw process(es): $p"
+    fi
   fi
 }
-
 
 # ─────────────────────────────────────────────
 # Step 2: Stop & remove Plano Docker container
@@ -145,7 +186,6 @@ remove_plano() {
     return
   fi
 
-  # Stop and remove the plano container (named "plano" by our onboarding)
   if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^plano$'; then
     docker stop plano 2>/dev/null && ok "Stopped Plano container"
     docker rm   plano 2>/dev/null && ok "Removed Plano container"
@@ -153,7 +193,6 @@ remove_plano() {
     warn "No Plano container found (may already be removed)"
   fi
 
-  # Optionally remove the image to free disk space (only with --purge)
   if $PURGE; then
     if docker images katanemo/plano --format '{{.ID}}' 2>/dev/null | grep -q .; then
       docker rmi katanemo/plano 2>/dev/null && ok "Removed Plano Docker image (katanemo/plano)"
@@ -185,7 +224,6 @@ remove_binary() {
       if [[ -w "$dir" && -w "$bin" ]]; then
         rm -f "$bin"
         ok "Removed binary: $bin"
-        # Remove bundled skills directory next to binary (if present)
         if [[ -d "$dir/skills" ]]; then
           rm -rf "$dir/skills"
           ok "Removed bundled skills: $dir/skills"
@@ -199,7 +237,7 @@ remove_binary() {
             ok "Removed bundled skills (via sudo): $dir/skills"
           fi
         else
-          warn "Cannot remove $bin - permission denied and sudo not available"
+          warn "Cannot remove $bin — permission denied and sudo not available"
         fi
       fi
       found=true
@@ -209,6 +247,8 @@ remove_binary() {
   if ! $found; then
     warn "Binary not found in standard locations (may already be removed)"
   fi
+
+  rm -f "$STATE_DIR/assistclaw.pid" 2>/dev/null || true
 }
 
 # ─────────────────────────────────────────────
@@ -227,7 +267,7 @@ remove_completion() {
   local removed=false
   for f in "${completions[@]}"; do
     if [[ -f "$f" ]]; then
-      rm -f "$f"
+      rm -f "$f" 2>/dev/null || sudo rm -f "$f" 2>/dev/null || true
       ok "Removed: $f"
       removed=true
     fi
@@ -250,14 +290,14 @@ remove_user_data() {
 
   echo ""
   echo -e "${RED}${BOLD}  ⚠ This will permanently delete:${NC}"
-  echo -e "  ${RED}• $STATE_DIR/assistclaw.yaml     (config — providers, gateway token, MCP, Plano)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/memory/             (working + episodic + vector memory)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/skills/             (installed skills)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/tools/              (auto-generated Python tools)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/sessions/           (conversation session data)${NC}"
-  echo -e "  ${RED}• $STATE_DIR/cron/               (scheduled cron job state)${NC}"
-  echo     "  • $STATE_DIR/logs/               (log files)"
-  echo     "  • $HOME/.cache/assistclaw/       (cache files)"
+  echo -e "  ${RED}• $STATE_DIR/assistclaw.yaml     (config)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/memory/             (memory)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/skills/             (skills)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/tools/              (generated tools)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/cron_jobs.json      (persistent cron jobs)${NC}"
+  echo -e "  ${RED}• $STATE_DIR/security/           (audit logs)${NC}"
+  echo     "  • $STATE_DIR/logs/"
+  echo     "  • $HOME/.cache/assistclaw/"
   echo ""
 
   if ! $AUTO_CONFIRM; then
@@ -270,7 +310,7 @@ remove_user_data() {
 
   rm -rf "$STATE_DIR"
   rm -rf "$HOME/.cache/assistclaw" 2>/dev/null || true
-  ok "Removed all user data: $STATE_DIR and caches"
+  ok "Removed user data: $STATE_DIR and caches"
 }
 
 # ─────────────────────────────────────────────
@@ -285,12 +325,11 @@ if $PURGE; then
   remove_user_data
 else
   echo ""
-  warn "Your config and data at ${BOLD}$STATE_DIR${NC} were kept."
-  warn "To also remove them:  ${BOLD}bash uninstall.sh --purge${NC}"
-  warn "To remove Plano image: ${BOLD}docker rmi katanemo/plano${NC}"
-  warn "Gateway token was stored in: ${BOLD}$STATE_DIR/assistclaw.yaml${NC}"
+  warn "Config and data at ${BOLD}$STATE_DIR${NC} were kept."
+  warn "Remove everything:  ${BOLD}bash uninstall.sh --purge${NC}"
+  warn "Remove Plano image: ${BOLD}docker rmi katanemo/plano${NC}"
 fi
 
 echo ""
-echo -e "${GREEN}${BOLD}  ✓ AssistClaw v3.4+ uninstalled successfully.${NC}"
+echo -e "${GREEN}${BOLD}  ✓ AssistClaw uninstalled.${NC}"
 echo ""

@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# AssistClaw installer — installs the Go binary, sets up Python venv,
-# and creates the ~/.assistclaw config directory.
-# No Docker required.
+# AssistClaw installer — installs the Go binary, optional Python venv,
+# and creates the ~/.assistclaw config directory. No Docker required.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/assistclaw/assistclaw/main/install.sh | bash
-#   OR: bash install.sh
+#   curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
+#   bash install.sh
+#   ASSISTCLAW_VERSION=v3.9.7 bash install.sh
+#
+# Environment:
+#   ASSISTCLAW_VERSION   Git tag or "latest" (default: latest)
+#   INSTALL_DIR          Binary destination (default: /usr/local/bin or ~/.local/bin if not writable)
+#   STATE_DIR            Config/state root (default: ~/.assistclaw)
+#   FORCE_BUILD=1        Build from source instead of downloading release
+#   SKIP_VENV=1          Skip Python venv creation
+#   SKIP_SENSING=1       Skip optional C++ sensing build
 
 set -eo pipefail
 
@@ -13,14 +21,29 @@ set -eo pipefail
 # Config
 # ─────────────────────────────────────────────
 ASSISTCLAW_VERSION="${ASSISTCLAW_VERSION:-latest}"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${INSTALL_DIR:-}"
 STATE_DIR="${STATE_DIR:-$HOME/.assistclaw}"
 VENV_DIR="$STATE_DIR/venv"
+REPO_OWNER_REPO="${ASSISTCLAW_REPO:-hridesh-net/AssistClaw}"
 if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
   REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 else
   REPO_ROOT="$PWD"
 fi
+
+# Prefer XDG-style user bin when /usr/local is not writable
+default_install_dir() {
+  if [[ -n "${INSTALL_DIR:-}" ]]; then
+    echo "$INSTALL_DIR"
+    return
+  fi
+  local d="/usr/local/bin"
+  if [[ -w "$d" ]] || [[ -w "$(dirname "$d")" ]]; then
+    echo "$d"
+  else
+    echo "${XDG_BIN_HOME:-$HOME/.local/bin}"
+  fi
+}
 
 # Colors
 RED='\033[0;31m'
@@ -45,7 +68,7 @@ detect_platform() {
   case "$arch" in
     x86_64)  arch="amd64" ;;
     aarch64|arm64) arch="arm64" ;;
-    armv7*)  arch="armv7" ;;
+    armv7*)  err "No pre-built ARMv7 release; install on arm64/amd64 or set FORCE_BUILD=1 with Go 1.24+." ;;
     *)       err "Unsupported architecture: $arch" ;;
   esac
   case "$os" in
@@ -62,20 +85,35 @@ log "Detected platform: $PLATFORM"
 # ─────────────────────────────────────────────
 # Dependency checks
 # ─────────────────────────────────────────────
+need_git() {
+  [[ "${FORCE_BUILD:-0}" == "1" ]] || [[ -f "$REPO_ROOT/cmd/assistclaw/main.go" ]]
+}
+
 check_deps() {
-  local missing=()
-  for cmd in curl git; do
-    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
-  done
-  if [[ ${#missing[@]} -gt 0 ]]; then
-    err "Missing required tools: ${missing[*]}"
+  command -v curl >/dev/null 2>&1 || err "curl is required. Install curl and retry."
+  if need_git; then
+    command -v git >/dev/null 2>&1 || err "git is required for this install mode (source/build). Install git or use default release download."
   fi
+}
+
+curl_get() {
+  local out="$1"
+  local url="$2"
+  curl -fsSL \
+    --connect-timeout 25 \
+    --retry 3 \
+    --retry-delay 2 \
+    --retry-all-errors \
+    -o "$out" "$url"
 }
 
 # ─────────────────────────────────────────────
 # Go binary: download pre-built or fallback to source
 # ─────────────────────────────────────────────
 install_binary() {
+  INSTALL_DIR="$(default_install_dir)"
+  export INSTALL_DIR
+
   if [[ "${FORCE_BUILD:-0}" == "1" ]]; then
     log "FORCE_BUILD=1: Building AssistClaw binary from source..."
     build_binary_from_source
@@ -91,76 +129,71 @@ install_binary() {
   if [[ "${ASSISTCLAW_VERSION}" == "latest" ]]; then
     release_path="latest/download"
   fi
-  local download_url="https://github.com/hridesh-net/AssistClaw/releases/${release_path}/${artifact}"
-  local tmp_bin="/tmp/assistclaw_bin_$$"
+  local download_url="https://github.com/${REPO_OWNER_REPO}/releases/${release_path}/${artifact}"
+  local tmp_bin
+  tmp_bin="$(mktemp "${TMPDIR:-/tmp}/assistclaw.XXXXXX")"
 
   log "Downloading pre-built binary for ${PLATFORM}..."
-  
-  # Ensure the directory exists and is writable
-  if [[ ! -w "$INSTALL_DIR" && ! -w "$(dirname "$INSTALL_DIR")" ]]; then
-    warn "Cannot write to $INSTALL_DIR. Changing INSTALL_DIR to $HOME/.local/bin"
-    INSTALL_DIR="$HOME/.local/bin"
-  fi
   mkdir -p "$INSTALL_DIR"
 
-  if curl -fsSL -f -o "$tmp_bin" "$download_url"; then
+  if curl_get "$tmp_bin" "$download_url"; then
     chmod +x "$tmp_bin"
-    mv "$tmp_bin" "$INSTALL_DIR/assistclaw"
+    mv -f "$tmp_bin" "$INSTALL_DIR/assistclaw"
     ok "Binary installed: $INSTALL_DIR/assistclaw"
     copy_skills_dir
   else
-    warn "Failed to download pre-built binary from $download_url (HTTP 404/Error)"
+    rm -f "$tmp_bin"
+    warn "Failed to download pre-built binary from $download_url"
     warn "Falling back to compiling from source..."
     build_binary_from_source
   fi
 }
 
 build_binary_from_source() {
-  if command -v go >/dev/null 2>&1; then
-    local go_version
-    go_version="$(go version | awk '{print $3}' | tr -d 'go')"
-    log "Building with go $go_version..."
-    (cd "$REPO_ROOT" && go build -mod=vendor -tags fts5 -ldflags "-s -w" -o /tmp/assistclaw-build ./cmd/assistclaw)
-    
-    if [[ ! -w "$INSTALL_DIR" ]]; then
-      warn "Cannot write to $INSTALL_DIR (permission denied). Changing INSTALL_DIR to $HOME/.local/bin"
-      INSTALL_DIR="$HOME/.local/bin"
-    fi
-    mkdir -p "$INSTALL_DIR"
-    
-    install -m 0755 /tmp/assistclaw-build "$INSTALL_DIR/assistclaw"
-    rm -f /tmp/assistclaw-build
-    ok "Binary compiled and installed: $INSTALL_DIR/assistclaw"
-    copy_skills_dir
-  else
-    err "Go compiler not found! Unable to build from source, and pre-built binaries failed to download. Please install Go 1.24+."
+  command -v go >/dev/null 2>&1 || err "Go 1.24+ not found. Install Go or use a release download (unset FORCE_BUILD)."
+  local go_version
+  go_version="$(go version | awk '{print $3}' | tr -d 'go')"
+  log "Building with go $go_version..."
+  INSTALL_DIR="$(default_install_dir)"
+  export INSTALL_DIR
+  mkdir -p "$INSTALL_DIR"
+
+  local ver_ldflags=""
+  if [[ "${ASSISTCLAW_VERSION}" != "latest" && -n "${ASSISTCLAW_VERSION}" ]]; then
+    ver_ldflags="-X main.version=${ASSISTCLAW_VERSION}"
   fi
+  local tmp_build
+  tmp_build="$(mktemp "${TMPDIR:-/tmp}/assistclaw-build.XXXXXX")"
+  (cd "$REPO_ROOT" && go build -mod=vendor -tags fts5 -ldflags "-s -w ${ver_ldflags}" -o "$tmp_build" ./cmd/assistclaw)
+  install -m 0755 "$tmp_build" "$INSTALL_DIR/assistclaw"
+  rm -f "$tmp_build"
+  ok "Binary compiled and installed: $INSTALL_DIR/assistclaw"
+  copy_skills_dir
 }
 
 # ─────────────────────────────────────────────
-# Copy bundled skills next to binary
+# Copy bundled skills next to binary (local repo only)
 # ─────────────────────────────────────────────
 copy_skills_dir() {
   local skills_src="$REPO_ROOT/skills"
   local skills_dest="$INSTALL_DIR/skills"
 
   if [[ ! -d "$skills_src" ]]; then
-    warn "No skills/ directory found in repo root — skipping bundled skills copy"
+    warn "No local skills/ directory (normal for curl|bash install). Install skills with: assistclaw skills marketplace"
     return
   fi
 
   log "Copying bundled skills to $skills_dest..."
   rm -rf "$skills_dest"
-  cp -r "$skills_src" "$skills_dest"
+  cp -R "$skills_src" "$skills_dest"
   ok "Bundled skills installed: $skills_dest"
 }
 
 # ─────────────────────────────────────────────
-# Node.js + pnpm check (for TS layer - optional if running from source)
+# Node.js + pnpm (optional TS layer)
 # ─────────────────────────────────────────────
 setup_node() {
   if [[ ! -f "$REPO_ROOT/package.json" ]]; then
-    # We are downloading pre-compiled binaries via curl | bash, skip TS layer build
     return
   fi
 
@@ -191,6 +224,14 @@ setup_node() {
 # Python venv for tool sandbox
 # ─────────────────────────────────────────────
 setup_venv() {
+  [[ "${SKIP_VENV:-0}" != "1" ]] || return 0
+
+  if [[ -x "$VENV_DIR/bin/python" ]]; then
+    ok "Python venv already exists: $VENV_DIR (skipping recreate)"
+    "$VENV_DIR/bin/pip" install --quiet --upgrade pip 2>/dev/null || true
+    return 0
+  fi
+
   local python_bin=""
   for candidate in python3.12 python3.11 python3.10 python3; do
     if command -v "$candidate" >/dev/null 2>&1; then
@@ -216,6 +257,7 @@ setup_venv() {
 # C++ sensing (optional)
 # ─────────────────────────────────────────────
 build_sensing() {
+  [[ "${SKIP_SENSING:-0}" != "1" ]] || return 0
   if [[ ! -d "$REPO_ROOT/sensing" ]]; then
     return
   fi
@@ -224,14 +266,13 @@ build_sensing() {
     return
   fi
 
-  log "Building C++ sensing layer..."
+  local jobs
+  jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+
+  log "Building C++ sensing layer (${jobs} parallel jobs)..."
   cmake -S "$REPO_ROOT/sensing" -B "$REPO_ROOT/sensing/build" \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-    2>&1 | tail -5
-
-  cmake --build "$REPO_ROOT/sensing/build" --parallel "$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)" \
-    2>&1 | tail -5
-
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON >/dev/null
+  cmake --build "$REPO_ROOT/sensing/build" --parallel "$jobs" >/dev/null
   ok "C++ sensing layer built"
 }
 
@@ -239,42 +280,76 @@ build_sensing() {
 # Config directory scaffold
 # ─────────────────────────────────────────────
 setup_config() {
-  log "Setting up ~/.assistclaw config directory..."
-  mkdir -p "$STATE_DIR"/{memory,tools,logs}
+  log "Setting up config directory: $STATE_DIR"
+  mkdir -p "$STATE_DIR"/{memory,tools,logs,security}
   mkdir -p "$STATE_DIR"/skills/{bundled,custom}
+}
+
+# ─────────────────────────────────────────────
+# PATH hint
+# ─────────────────────────────────────────────
+path_hint() {
+  case ":$PATH:" in
+    *":$INSTALL_DIR:"*) return 0 ;;
+  esac
+  echo ""
+  warn "$INSTALL_DIR is not on your PATH."
+  case "${SHELL:-}" in
+    */zsh)
+      echo -e "  Add to ${BOLD}~/.zshrc${NC}:"
+      echo -e "    ${BOLD}export PATH=\"$INSTALL_DIR:\$PATH\"${NC}"
+      ;;
+    */bash|*)
+      echo -e "  Add to ${BOLD}~/.bashrc${NC} or ${BOLD}~/.profile${NC}:"
+      echo -e "    ${BOLD}export PATH=\"$INSTALL_DIR:\$PATH\"${NC}"
+      ;;
+  esac
 }
 
 # ─────────────────────────────────────────────
 # Verify installation
 # ─────────────────────────────────────────────
 verify() {
-  if "$INSTALL_DIR/assistclaw" version >/dev/null 2>&1; then
-    ok "Installation verified at $INSTALL_DIR/assistclaw"
+  local bin="$INSTALL_DIR/assistclaw"
+  if [[ ! -x "$bin" ]]; then
+    warn "Expected binary missing or not executable: $bin"
+    return
+  fi
+  if ver_out="$("$bin" version 2>&1)"; then
+    ok "Installation verified: $ver_out"
   else
-    warn "Binary installed but '$INSTALL_DIR/assistclaw version' failed to execute"
+    warn "Binary present but 'assistclaw version' failed — try running: $bin version"
   fi
 
-  # Check if another assistclaw is shadowing it in PATH
   if command -v assistclaw >/dev/null 2>&1; then
     local resolved_bin
     resolved_bin="$(command -v assistclaw)"
-    if [[ "$resolved_bin" != "$INSTALL_DIR/assistclaw" ]]; then
+    if [[ "$resolved_bin" != "$bin" ]]; then
       echo ""
-      warn "WARNING: Another AssistClaw installation was found at $resolved_bin"
-      warn "This is taking precedence over the newly installed version."
-      warn "Please remove the old version to fix this:"
-      warn "    sudo rm -f $resolved_bin"
+      warn "Another assistclaw on PATH shadows this install: $resolved_bin"
+      warn "Remove the old binary or reorder PATH so $INSTALL_DIR comes first."
       echo ""
     fi
   else
-    warn "AssistClaw ($INSTALL_DIR) is not in your PATH. Please add it to your profile."
+    path_hint
   fi
 }
 
 # ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
+usage() {
+  sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  exit 0
+}
+
 main() {
+  for arg in "$@"; do
+    case "$arg" in
+      -h|--help) usage ;;
+    esac
+  done
+
   echo ""
   echo -e "${BOLD}  ╔═══════════════════════════════╗${NC}"
   echo -e "${BOLD}  ║     AssistClaw Installer       ║${NC}"
@@ -300,6 +375,7 @@ main() {
   echo -e "    ${BOLD}assistclaw agent${NC}                 (interactive REPL)"
   echo ""
   echo -e "  Config: ${BOLD}$STATE_DIR/assistclaw.yaml${NC}"
+  echo -e "  Binary: ${BOLD}$INSTALL_DIR/assistclaw${NC}"
   echo ""
 }
 

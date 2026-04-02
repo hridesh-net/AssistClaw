@@ -12,7 +12,7 @@
   <a href="https://github.com/hridesh-net/AssistClaw/actions"><img src="https://img.shields.io/github/actions/workflow/status/hridesh-net/AssistClaw/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI" alt="CI"></a>
   <a href="https://github.com/hridesh-net/AssistClaw/releases"><img src="https://img.shields.io/github/v/release/hridesh-net/AssistClaw?include_prereleases&style=for-the-badge&logo=github&color=6f42c1" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/Platforms-Linux%20•%20macOS%20•%20Windows%20•%20RPi-orange?style=for-the-badge" alt="Platforms">
 </p>
 
@@ -85,6 +85,7 @@ No vector databases, no cloud services. Everything local.
 |------|---------|----------|
 | **Working** | In-RAM | Active conversation context |
 | **Episodic** | SQLite FTS5 | Full-text search across all sessions |
+| **Semantic** | sqlite-vec | Embeddings + similarity search (optional embedder) |
 
 ### 🕸️ Skill Graph — 66% Fewer Tokens
 Skills aren't flat files — they're **lazy-loaded graphs**. The agent reads only the nodes it needs.
@@ -138,6 +139,14 @@ Works as **both** an MCP server (expose your agent to Claude Desktop / Cursor) a
 ### 🦾 Hardware Sensing
 C++ bridge for Camera (OpenCV) and Audio (PortAudio) — runs natively on Raspberry Pi 5.
 
+### 🪶 OpenClaw-Style Workspace & Autonomy *(v3.9+)*
+Markdown workspace under `~/.assistclaw` mirrors common OpenClaw patterns: **`SOUL.md`**, **`IDENTITY.md`**, **`USER.md`**, **`AGENTS.md`**, **`HEARTBEAT.md`**, daily **`memory/`** notes, and long-term **`MEMORY.md`**. Templates are seeded on first run.
+
+- **Heartbeat**: optional periodic synthetic turns on a **dedicated session** (`agent.heartbeat`) when you run `assistclaw start` or any messaging channel — good for proactive checks without spamming chat.
+- **Planning & reflection**: `agent.planning` defaults **on** (milestone-style plan at the start of a turn); `agent.reflection` is **opt-in** (self-critique + lesson hooks, extra LLM call).
+- **Autonomous mode**: `assistclaw auto "<goal>"` or `/auto` in chat runs until the model calls **`finish_task`**, with an upfront plan when planning is enabled and **checkpoints every 25 iterations** on long runs.
+- **Cron**: YAML `cron:` entries plus **`assistclaw cron add`** persist jobs in **`cron_jobs.json`**; scheduled runs use the **same runner** as the gateway (tool graph + guardrail + audit).
+
 ---
 
 ## 🚀 Quick Start
@@ -149,16 +158,43 @@ C++ bridge for Camera (OpenCV) and Audio (PortAudio) — runs natively on Raspbe
 curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
 ```
 
+Pin a release or build from source with environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `ASSISTCLAW_VERSION` | Git tag (e.g. `v3.9.7`) or `latest` (default) |
+| `INSTALL_DIR` | Binary location (default: `/usr/local/bin`, or `~/.local/bin` if not writable) |
+| `STATE_DIR` | Config root (default: `~/.assistclaw`) |
+| `FORCE_BUILD=1` | Compile with Go instead of downloading a release asset |
+| `SKIP_VENV=1` | Skip Python venv creation |
+| `SKIP_SENSING=1` | Skip optional C++ sensing build |
+| `ASSISTCLAW_REPO` | `owner/repo` override for forks |
+
+**Windows (PowerShell):**
+```powershell
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.ps1 -OutFile install.ps1
+.\install.ps1
+# Optional: .\install.ps1 -Version v3.9.7
+```
+Default install path is **`%USERPROFILE%\.local\bin`** (add that folder to your user `PATH` if `assistclaw` is not found).
+
 **Or build from source:**
 ```bash
 git clone https://github.com/hridesh-net/AssistClaw.git
 cd AssistClaw && make build
 ```
 
-**Uninstall anytime:**
+**Uninstall:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/uninstall.sh | bash
+# Remove binary + services but keep ~/.assistclaw:
+#   bash uninstall.sh
+# Remove everything including config and memory:
+#   bash uninstall.sh --purge
+# Non-interactive purge:
+#   bash uninstall.sh -y --purge
 ```
+The uninstaller stops **`assistclaw`** using **`~/.assistclaw/assistclaw.pid`** when present, removes launchd/systemd units, optional Plano Docker container, shell completions, and (with **`--purge`**) state, **`cron_jobs.json`**, security logs, and cache.
 
 ### 2. Onboard
 ```bash
@@ -176,6 +212,13 @@ assistclaw start --daemon
 
 # Single message
 assistclaw agent --message "Summarize this repo"
+
+# Continuous autonomous goal (until finish_task)
+assistclaw auto "Monitor disk space and summarize weekly"
+
+# Scheduled prompts (merged with static cron: in YAML)
+assistclaw cron list
+assistclaw cron add "@hourly" "Quick health check of this machine"
 ```
 
 ---
@@ -193,6 +236,23 @@ providers:
 
   # Or OpenAI, Ollama, Bedrock, Groq, Mistral, DeepSeek ...
 
+# ─── Agent behavior (optional) ───────────────────────────────
+agent:
+  # planning defaults ON when omitted (upfront milestones + autonomous plan)
+  planning: true
+  # reflection: false   # opt-in: self-critique after a completed turn
+  heartbeat:
+    enabled: true
+    interval: 30m
+    session_id: assistclaw:heartbeat   # dedicated session; do not use for normal chat
+    # prompt: "..."                    # optional; defaults to HEARTBEAT.md instructions
+
+# ─── Static cron jobs (optional; CLI also writes cron_jobs.json) ─
+cron:
+  - id: morning
+    schedule: "0 9 * * *"
+    prompt: "Summarize overnight logs and anything urgent"
+
 # ─── Smart Routing (optional) ────────────────────────────────
 plano:
   enabled: true
@@ -207,6 +267,7 @@ plano:
 security:
   mode: enforce          # monitor | enforce | strict
   pii_mask: true
+  profile: full          # full | coding — tool visibility (OpenClaw-style)
 
 # ─── MCP (optional) ──────────────────────────────────────────
 mcp:
@@ -241,6 +302,9 @@ channels:
 | `assistclaw stop` | Stop background service |
 | `assistclaw status` | Show PID, uptime, connected channels |
 | `assistclaw restart` | Restart service |
+| `assistclaw auto "<goal>"` | Autonomous loop until `finish_task` |
+| `assistclaw gateway` | Gateway / web UI commands (see `--help`) |
+| `assistclaw cron list` / `add` / `remove` | Persistent scheduled prompts |
 
 </details>
 
@@ -309,15 +373,15 @@ channels:
 
 | | OpenClaw | NanoClaw | ZeroClaw | **AssistClaw** |
 |:--|:--|:--|:--|:--|
-| **Language** | Python / TypeScript | TypeScript | Rust | **Go** |
-| **Footprint** | High (>1 GB) | Minimal | Ultra-light (<5 MB) | **Light (~40 MB)** |
-| **Providers** | Managed | Anthropic mostly | 22+ providers | **15+ providers** |
-| **Smart Routing** | ❌ | ❌ | ❌ | **✅ Plano proxy** |
-| **MCP** | ❌ | ❌ | ❌ | **✅ Server + Client** |
-| **Security** | Known vulnerabilities | ✅ Container isolation | ✅ Strict allowlists | **✅ Guardrail + Audit Log** |
+| **Language** | TypeScript (gateway) | TypeScript | Rust | **Go** |
+| **Footprint** | Large (Node + UI) | Minimal | Ultra-light (<5 MB) | **Light (~40 MB)** |
+| **Providers** | Many (plugins) | Anthropic mostly | 22+ providers | **15+ providers** |
+| **Smart Routing** | Varies | ❌ | ❌ | **✅ Plano proxy** |
+| **MCP** | Ecosystem | ❌ | ❌ | **✅ Server + Client** |
+| **Security** | Harden over time | ✅ Container isolation | ✅ Strict allowlists | **✅ Guardrail + Audit Log** |
 | **Hardware** | Basic | ❌ | ❌ | **✅ C++ Sensing Bridge** |
-| **Channels** | Limited | ❌ | ❌ | **✅ WA/TG/Discord/Slack** |
-| **Raspberry Pi** | ❌ (Too heavy) | ✅ | ✅ | **✅ (Native ARM64)** |
+| **Channels** | Many (Telegram, Slack, …) | ❌ | ❌ | **✅ WA/TG/Discord/Slack** |
+| **Raspberry Pi** | Often VPS / desktop | ✅ | ✅ | **✅ (Native ARM64)** |
 
 ---
 
