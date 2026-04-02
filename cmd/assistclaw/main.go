@@ -40,6 +40,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/provider/anthropic"
+	"github.com/assistclaw/assistclaw/internal/provider/catalogs"
 	"github.com/assistclaw/assistclaw/internal/provider/bedrock"
 	"github.com/assistclaw/assistclaw/internal/provider/ollama"
 	"github.com/assistclaw/assistclaw/internal/provider/openai"
@@ -54,7 +55,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.9.9" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.0" // Overridden by -ldflags "-X main.version=..." during build
 
 // defaultHeartbeatPrompt matches AGENTS.md guidance for OpenClaw-style periodic polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
@@ -1331,25 +1332,33 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 	if prov.Groq != nil {
 		register(openaicompat.New(openaicompat.Config{
 			Name: "groq", BaseURL: "https://api.groq.com", APIKey: prov.Groq.APIKey,
-			DefaultModel: prov.Groq.DefaultModel,
+			DefaultModel:   prov.Groq.DefaultModel,
+			StaticModels:   catalogs.GroqModels("groq"),
+			DiscoverModels: true,
 		}))
 	}
 	if prov.Mistral != nil {
 		register(openaicompat.New(openaicompat.Config{
 			Name: "mistral", BaseURL: "https://api.mistral.ai", APIKey: prov.Mistral.APIKey,
-			DefaultModel: prov.Mistral.DefaultModel,
+			DefaultModel:   prov.Mistral.DefaultModel,
+			StaticModels:   catalogs.MistralModels("mistral"),
+			DiscoverModels: true,
 		}))
 	}
 	if prov.Together != nil {
 		register(openaicompat.New(openaicompat.Config{
 			Name: "together", BaseURL: "https://api.together.xyz", APIKey: prov.Together.APIKey,
-			DefaultModel: prov.Together.DefaultModel, DiscoverModels: true,
+			DefaultModel:   prov.Together.DefaultModel,
+			StaticModels:   catalogs.TogetherModels("together"),
+			DiscoverModels: true,
 		}))
 	}
 	if prov.OpenRouter != nil {
 		register(openaicompat.New(openaicompat.Config{
 			Name: "openrouter", BaseURL: "https://openrouter.ai/api", APIKey: prov.OpenRouter.APIKey,
-			DefaultModel: prov.OpenRouter.DefaultModel, DiscoverModels: true,
+			DefaultModel:   prov.OpenRouter.DefaultModel,
+			StaticModels:   catalogs.OpenRouterModels("openrouter"),
+			DiscoverModels: true,
 			ExtraHeaders: map[string]string{
 				"HTTP-Referer": prov.OpenRouter.SiteURL,
 				"X-Title":      prov.OpenRouter.SiteName,
@@ -1359,13 +1368,17 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 	if prov.NVIDIA != nil {
 		register(openaicompat.New(openaicompat.Config{
 			Name: "nvidia", BaseURL: "https://integrate.api.nvidia.com", APIKey: prov.NVIDIA.APIKey,
-			DefaultModel: prov.NVIDIA.DefaultModel,
+			DefaultModel:   prov.NVIDIA.DefaultModel,
+			StaticModels:   catalogs.NVIDIAModels("nvidia"),
+			DiscoverModels: true,
 		}))
 	}
 	if prov.Cohere != nil {
 		register(openaicompat.New(openaicompat.Config{
 			Name: "cohere", BaseURL: "https://api.cohere.com", APIKey: prov.Cohere.APIKey,
-			DefaultModel: prov.Cohere.DefaultModel,
+			DefaultModel:   prov.Cohere.DefaultModel,
+			StaticModels:   catalogs.CohereModels("cohere"),
+			DiscoverModels: true,
 		}))
 	}
 	if prov.HuggingFace != nil {
@@ -1377,19 +1390,31 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 	if prov.DeepSeek != nil {
 		register(openaicompat.New(openaicompat.Config{
 			Name: "deepseek", BaseURL: "https://api.deepseek.com", APIKey: prov.DeepSeek.APIKey,
-			DefaultModel: prov.DeepSeek.DefaultModel, DiscoverModels: true,
+			DefaultModel:   prov.DeepSeek.DefaultModel,
+			StaticModels:   catalogs.DeepSeekModels("deepseek"),
+			DiscoverModels: true,
 		}))
 	}
 	if prov.Perplexity != nil {
 		register(openaicompat.New(openaicompat.Config{
 			Name: "perplexity", BaseURL: "https://api.perplexity.ai", APIKey: prov.Perplexity.APIKey,
-			DefaultModel: prov.Perplexity.DefaultModel,
+			DefaultModel:   prov.Perplexity.DefaultModel,
+			StaticModels:   catalogs.PerplexityModels("perplexity"),
+			DiscoverModels: true,
 		}))
 	}
 	if prov.XAI != nil {
+		xaiModel := prov.XAI.DefaultModel
+		if xaiModel == "" {
+			xaiModel = "grok-4"
+		}
 		register(openaicompat.New(openaicompat.Config{
-			Name: "xai", BaseURL: "https://api.x.ai/v1", APIKey: prov.XAI.APIKey,
-			DefaultModel: prov.XAI.DefaultModel,
+			Name:           "xai",
+			BaseURL:        "https://api.x.ai/v1",
+			APIKey:         prov.XAI.APIKey,
+			DefaultModel:   xaiModel,
+			StaticModels:   catalogs.XAIModels("xai"),
+			DiscoverModels: true,
 		}))
 	}
 	if prov.Vertex != nil {

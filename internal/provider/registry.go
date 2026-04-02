@@ -4,6 +4,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -78,6 +79,12 @@ func (r *Registry) ListModels() []ModelInfo {
 	for _, m := range r.catalog {
 		out = append(out, m)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Provider != out[j].Provider {
+			return out[i].Provider < out[j].Provider
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 
@@ -109,9 +116,15 @@ func (r *Registry) ResolveModel(ctx context.Context, modelStr string) (Provider,
 		return p, info, nil
 	}
 
-	// Search all providers for matching model by ID.
+	// Search all providers for matching model by ID (stable order so duplicates resolve predictably).
 	modelID := parts[0]
-	for _, p := range r.providers {
+	names := make([]string, 0, len(r.providers))
+	for n := range r.providers {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		p := r.providers[name]
 		key := r.catalogKey(p.Name(), modelID)
 		if info, ok := r.catalog[key]; ok {
 			return p, info, nil

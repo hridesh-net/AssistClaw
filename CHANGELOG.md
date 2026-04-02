@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.10.0] - 2026-04-04
+### Added
+- **Provider model catalogs** (`internal/provider/catalogs/`): OpenClaw-aligned static lists for **xAI (Grok)**, **Groq**, **Mistral**, **Together**, **OpenRouter**, **NVIDIA**, **Cohere**, **DeepSeek**, and **Perplexity**, merged with live `/v1/models` discovery when enabled.
+- **xAI default model**: `providers.xai.default_model` falls back to **`grok-4`** when unset.
+
+### Fixed
+- **OpenAI-compatible requests**: Avoid panics when a message has **empty** `content` parts; handle **tool results** before generic content shaping.
+- **Provider registry**: **Deterministic** resolution when the same model id exists on multiple providers (sorted provider names); **sorted** `ListModels()` output.
+
+### Changed
+- **OpenAI-compat validation**: With discovery enabled, unknown model IDs are **allowed** after catalog lookup (vendors add models faster than static lists).
+
 ## [v3.9.9] - 2026-04-03
 ### Fixed
 - **Bedrock parallel tool calls**: Converse/ConverseStream now merges consecutive tool-result turns into **one** user message containing all `tool_result` blocks. Previously one message per tool violated the Bedrock contract after a multi-`tool_use` assistant turn and triggered `ValidationException: Expected toolResult blocks at messages.*.content for the following Ids: ...`.

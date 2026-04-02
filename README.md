@@ -163,7 +163,7 @@ Pin a release or build from source with environment variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `ASSISTCLAW_VERSION` | Git tag (e.g. `v3.9.9`) or `latest` (default) |
+| `ASSISTCLAW_VERSION` | Git tag (e.g. `v3.10.0`) or `latest` (default) |
 | `INSTALL_DIR` | Binary location (default: `/usr/local/bin`, or `~/.local/bin` if not writable) |
 | `STATE_DIR` | Config root (default: `~/.assistclaw`) |
 | `FORCE_BUILD=1` | Compile with Go instead of downloading a release asset |
@@ -175,7 +175,7 @@ Pin a release or build from source with environment variables:
 ```powershell
 Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.ps1 -OutFile install.ps1
 .\install.ps1
-# Optional: .\install.ps1 -Version v3.9.9
+# Optional: .\install.ps1 -Version v3.10.0
 ```
 Default install path is **`%USERPROFILE%\.local\bin`** (add that folder to your user `PATH` if `assistclaw` is not found).
 

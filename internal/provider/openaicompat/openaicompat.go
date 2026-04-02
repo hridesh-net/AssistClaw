@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -65,8 +66,8 @@ func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
 		return nil
 	}
 
-	// For cloud providers (Groq, Mistral, xAI), if we didn't discover it, it's invalid
-	// unless DiscoverModels is disabled.
+	// When discovery is on, prefer a catalog hit but allow unknown IDs — vendors add models
+	// faster than static lists; blocking here breaks configs that already work at the HTTP API.
 	if p.cfg.DiscoverModels {
 		models, err := p.ListModels(ctx)
 		if err != nil {
@@ -77,36 +78,45 @@ func (p *Provider) ValidateModel(ctx context.Context, modelID string) error {
 				return nil
 			}
 		}
-		return &provider.ProviderError{
-			Provider:   p.Name(),
-			StatusCode: http.StatusNotFound,
-			Message:    fmt.Sprintf("model %q not found or not supported by this provider", modelID),
-		}
 	}
 
 	return nil
 }
 
-// ListModels returns available models. Uses static catalog if configured,
-// otherwise queries /v1/models.
+// ListModels returns available models. With only a static catalog, returns it sorted.
+// With DiscoverModels and a static catalog, merges /v1/models with static (API first, then missing static IDs).
 func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 	if len(p.cfg.StaticModels) > 0 && !p.cfg.DiscoverModels {
-		return p.cfg.StaticModels, nil
+		return cloneModelsSorted(p.cfg.StaticModels, p.Name()), nil
 	}
 
+	apiModels, apiErr := p.fetchModelsFromAPI(ctx)
+	if len(p.cfg.StaticModels) == 0 {
+		if apiErr != nil {
+			return nil, apiErr
+		}
+		return apiModels, nil
+	}
+	if apiErr != nil || len(apiModels) == 0 {
+		return cloneModelsSorted(p.cfg.StaticModels, p.Name()), nil
+	}
+	return mergeStaticAndAPIModels(p.cfg.StaticModels, apiModels, p.Name()), nil
+}
+
+func (p *Provider) fetchModelsFromAPI(ctx context.Context) ([]provider.ModelInfo, error) {
 	req, err := p.newRequest(ctx, http.MethodGet, "/models", nil)
 	if err != nil {
 		return nil, err
 	}
 	resp, err := p.client.Do(req)
 	if err != nil {
-		// Fall back to static catalog if dynamic discovery fails.
-		if len(p.cfg.StaticModels) > 0 {
-			return p.cfg.StaticModels, nil
-		}
 		return nil, &provider.ProviderError{Provider: p.Name(), Message: "list models", Err: err, Retryable: true}
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, parseError(p.Name(), resp)
+	}
 
 	var result struct {
 		Data []struct {
@@ -114,10 +124,12 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Data) == 0 {
-		return p.cfg.StaticModels, nil
+		// Treat empty/invalid like "no models" so registration still succeeds; static merge can fill in.
+		return []provider.ModelInfo{}, nil
 	}
 
 	models := make([]provider.ModelInfo, 0, len(result.Data))
+	local := isLocalURL(p.cfg.BaseURL)
 	for _, m := range result.Data {
 		models = append(models, provider.ModelInfo{
 			ID:              m.ID,
@@ -126,10 +138,45 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 			Capabilities:    []provider.Capability{provider.CapabilityStreaming, provider.CapabilityTools},
 			ContextWindow:   128000,
 			MaxOutputTokens: 8192,
-			Local:           isLocalURL(p.cfg.BaseURL),
+			Local:           local,
 		})
 	}
 	return models, nil
+}
+
+func cloneModelsSorted(models []provider.ModelInfo, prov string) []provider.ModelInfo {
+	out := make([]provider.ModelInfo, len(models))
+	copy(out, models)
+	for i := range out {
+		if out[i].Provider == "" {
+			out[i].Provider = prov
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func mergeStaticAndAPIModels(static, api []provider.ModelInfo, prov string) []provider.ModelInfo {
+	seen := make(map[string]struct{}, len(api)+len(static))
+	out := make([]provider.ModelInfo, 0, len(api)+len(static))
+	for _, m := range api {
+		m.Provider = prov
+		if _, ok := seen[m.ID]; ok {
+			continue
+		}
+		seen[m.ID] = struct{}{}
+		out = append(out, m)
+	}
+	for _, m := range static {
+		m.Provider = prov
+		if _, ok := seen[m.ID]; ok {
+			continue
+		}
+		seen[m.ID] = struct{}{}
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // Complete performs a blocking chat completion.
@@ -350,14 +397,22 @@ func (p *Provider) buildBody(req *provider.CompletionRequest, stream bool) ([]by
 	}
 	for _, m := range req.Messages {
 		cm := chatMessage{Role: string(m.Role)}
-		if len(m.Content) == 1 && m.Content[0].Type == provider.ContentTypeText {
-			cm.Content = m.Content[0].Text
+		if len(m.Content) == 0 {
+			cm.Content = ""
+			messages = append(messages, cm)
+			continue
+		}
+		first := m.Content[0]
+		if len(m.Content) == 1 && first.Type == provider.ContentTypeToolResult {
+			cm.ToolCallID = first.ToolResultID
+			cm.Content = first.ToolResultContent
+			messages = append(messages, cm)
+			continue
+		}
+		if len(m.Content) == 1 && first.Type == provider.ContentTypeText {
+			cm.Content = first.Text
 		} else {
 			cm.Content = m.Content
-		}
-		if m.Content[0].Type == provider.ContentTypeToolResult {
-			cm.ToolCallID = m.Content[0].ToolResultID
-			cm.Content = m.Content[0].ToolResultContent
 		}
 		messages = append(messages, cm)
 	}
