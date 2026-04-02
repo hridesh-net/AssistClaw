@@ -54,7 +54,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.9.8" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.9.9" // Overridden by -ldflags "-X main.version=..." during build
 
 // defaultHeartbeatPrompt matches AGENTS.md guidance for OpenClaw-style periodic polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`

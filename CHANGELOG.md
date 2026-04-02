@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.9] - 2026-04-03
+### Fixed
+- **Bedrock parallel tool calls**: Converse/ConverseStream now merges consecutive tool-result turns into **one** user message containing all `tool_result` blocks. Previously one message per tool violated the Bedrock contract after a multi-`tool_use` assistant turn and triggered `ValidationException: Expected toolResult blocks at messages.*.content for the following Ids: ...`.
+
 ## [v3.9.8] - 2026-04-02
 ### Added
 - **Sub-agents (OpenClaw-style delegation)**: New tools **`subagent_create`**, **`subagent_list`**, **`subagent_run`**, **`subagent_remove`**. Each specialist gets a workspace under `<stateDir>/subagents/<id>/` with **`SOUL.md`**, a JSON registry at **`subagents/registry.json`**, and a child runner that shares the parent tool stack but **cannot nest** further sub-agents. Wired after the security layer so children inherit guardrail and audit logging.

@@ -381,9 +381,75 @@ func buildConverseTools(reqTools []provider.ToolDef) (*types.ToolConfiguration, 
 	return &types.ToolConfiguration{Tools: bTools}, nil
 }
 
+// mergeToolResultTurnsForConverse collapses N consecutive tool-result messages (role "tool")
+// into a single user message containing all tool_result blocks.
+//
+// Bedrock Converse (Anthropic models) requires that after an assistant message with multiple
+// tool_use blocks, the very next message is one user turn whose content lists a tool_result
+// for every one of those IDs. Sending one user message per tool triggers ValidationException.
+func mergeToolResultTurnsForConverse(msgs []provider.Message) []provider.Message {
+	if len(msgs) == 0 {
+		return msgs
+	}
+	out := make([]provider.Message, 0, len(msgs))
+	for i := 0; i < len(msgs); {
+		m := msgs[i]
+		if m.Role == provider.RoleTool {
+			var batch []provider.ContentPart
+			for i < len(msgs) && msgs[i].Role == provider.RoleTool {
+				batch = append(batch, msgs[i].Content...)
+				i++
+			}
+			out = append(out, provider.Message{Role: provider.RoleUser, Content: batch})
+			continue
+		}
+		out = append(out, m)
+		if m.Role == provider.RoleAssistant && messageHasToolUse(m.Content) {
+			var merged []provider.ContentPart
+			j := i + 1
+			for j < len(msgs) && msgs[j].Role == provider.RoleTool && onlyToolResults(msgs[j].Content) {
+				merged = append(merged, msgs[j].Content...)
+				j++
+			}
+			if len(merged) > 0 {
+				out = append(out, provider.Message{
+					Role:    provider.RoleUser,
+					Content: merged,
+				})
+				i = j
+				continue
+			}
+		}
+		i++
+	}
+	return out
+}
+
+func messageHasToolUse(parts []provider.ContentPart) bool {
+	for _, p := range parts {
+		if p.Type == provider.ContentTypeToolUse {
+			return true
+		}
+	}
+	return false
+}
+
+func onlyToolResults(parts []provider.ContentPart) bool {
+	if len(parts) == 0 {
+		return false
+	}
+	for _, p := range parts {
+		if p.Type != provider.ContentTypeToolResult {
+			return false
+		}
+	}
+	return true
+}
+
 func buildConverseMessages(req *provider.CompletionRequest) ([]types.Message, []types.SystemContentBlock, error) {
+	merged := mergeToolResultTurnsForConverse(req.Messages)
 	var messages []types.Message
-	for _, m := range req.Messages {
+	for _, m := range merged {
 		role := types.ConversationRoleUser
 		if m.Role == provider.RoleAssistant {
 			role = types.ConversationRoleAssistant
