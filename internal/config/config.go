@@ -562,3 +562,20 @@ func DefaultConfigPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".assistclaw", "assistclaw.yaml")
 }
+
+// PublicGatewayBaseURL returns the origin (no trailing slash) for links the agent can give users
+// to open local HTML dashboards served by the gateway under /workspace/.
+func (c *Config) PublicGatewayBaseURL() string {
+	if c == nil {
+		return ""
+	}
+	h := c.Gateway.Host
+	if h == "" {
+		h = "127.0.0.1"
+	}
+	p := c.Gateway.Port
+	if p == 0 {
+		p = 18790
+	}
+	return fmt.Sprintf("http://%s:%d", h, p)
+}

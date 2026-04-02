@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.8] - 2026-04-02
+### Added
+- **Sub-agents (OpenClaw-style delegation)**: New tools **`subagent_create`**, **`subagent_list`**, **`subagent_run`**, **`subagent_remove`**. Each specialist gets a workspace under `<stateDir>/subagents/<id>/` with **`SOUL.md`**, a JSON registry at **`subagents/registry.json`**, and a child runner that shares the parent tool stack but **cannot nest** further sub-agents. Wired after the security layer so children inherit guardrail and audit logging.
+- **Tool graph**: Intent and edges for delegation keywords (`subagent`, `delegate`, `specialist`, etc.) so the catalog surfaces sub-agent tools when relevant.
+- **Channel command `/subagents`**: Lists registered sub-agents via the same path as `/skills` (executes `subagent_list`).
+- **Local static dashboards**: Gateway serves **`~/.assistclaw/workspace/public/`** at **`/workspace/`** (no Bearer token—do not store secrets there). **`Config.PublicGatewayBaseURL()`** supplies links for prompts; workspace init creates **`workspace/public`**; README and **`AGENTS.md`** template document usage.
+
+### Changed
+- **Template `IDENTITY.md`**: Avatar example path now references **`assistclaw.png`** instead of OpenClaw.
+
 ## [v3.9.7] - 2026-04-02
 ### Added
 - **Heartbeat scheduler**: Optional `agent.heartbeat` config (interval, dedicated session, prompt) for OpenClaw-style periodic proactive turns when running `assistclaw start` or any messaging channel.

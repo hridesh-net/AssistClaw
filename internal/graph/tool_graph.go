@@ -50,7 +50,7 @@ var intentKeywords = map[Intent][]string{
 	IntentMemory:      {"remember", "history", "session", "past", "previous", "recall", "earlier", "last time"},
 	IntentSchedule:    {"schedule", "recurring", "daily", "cron", "every", "repeat", "periodic", "automation", "job"},
 	IntentCommunicate: {"send", "message", "notify", "alert", "telegram", "whatsapp", "slack", "discord", "push"},
-	IntentSystem:      {"process", "background", "daemon", "env", "environment", "variable", "pid", "kill", ".env"},
+	IntentSystem:      {"process", "background", "daemon", "env", "environment", "variable", "pid", "kill", ".env", "subagent", "sub-agent", "delegate", "specialist", "spawn"},
 }
 
 // intentSeeds maps each intent to the tool names that seed BFS traversal.
@@ -62,7 +62,7 @@ var intentSeeds = map[Intent][]string{
 	IntentMemory:      {"memory_search", "sessions_list"},
 	IntentSchedule:    {"cron", "bash"},
 	IntentCommunicate: {"message"},
-	IntentSystem:      {"env", "process", "bash"},
+	IntentSystem:      {"env", "process", "bash", "subagent_run", "subagent_create", "subagent_list"},
 }
 
 // toolEdge is a directed weighted edge between two tools.
@@ -117,6 +117,12 @@ func NewToolGraph() *ToolGraph {
 		{from: "message", to: "cron", typ: EdgeDomain},
 		{from: "cron", to: "bash", typ: EdgeCompanion},
 		{from: "env", to: "bash", typ: EdgeDomain},
+
+		// Sub-agent delegation (orchestration)
+		{from: "subagent_create", to: "subagent_run", typ: EdgeCompanion},
+		{from: "subagent_run", to: "subagent_list", typ: EdgeDomain},
+		{from: "subagent_list", to: "subagent_remove", typ: EdgeDomain},
+		{from: "bash", to: "subagent_run", typ: EdgeDomain},
 	}
 
 	// Set base weights from edge type

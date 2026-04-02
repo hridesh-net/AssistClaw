@@ -7,7 +7,7 @@
     and verifies the install.
 
 .PARAMETER Version
-    Release tag (e.g. v3.9.7) or 'latest'.
+    Release tag (e.g. v3.9.8) or 'latest'.
 
 .PARAMETER InstallDir
     Directory for assistclaw.exe (must be on PATH or add manually).
@@ -16,7 +16,7 @@
     iwr -useb https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.ps1 | iex
 
 .EXAMPLE
-    .\install.ps1 -Version v3.9.7
+    .\install.ps1 -Version v3.9.8
 #>
 
 param(
@@ -100,7 +100,8 @@ $subDirs = @(
     (Join-Path $ConfigDir "logs"),
     (Join-Path $ConfigDir "security"),
     (Join-Path $ConfigDir "skills\bundled"),
-    (Join-Path $ConfigDir "skills\custom")
+    (Join-Path $ConfigDir "skills\custom"),
+    (Join-Path $ConfigDir "workspace\public")
 )
 foreach ($d in $subDirs) {
     if (-not (Test-Path $d)) {

@@ -67,6 +67,23 @@ func (r *ToolRegistry) Definitions() []provider.ToolDef {
 	return defs
 }
 
+// CloneWithout returns a new registry with the given tool names omitted (e.g. avoid sub-agent recursion).
+func (r *ToolRegistry) CloneWithout(omit ...string) *ToolRegistry {
+	skip := make(map[string]bool, len(omit))
+	for _, n := range omit {
+		skip[n] = true
+	}
+	out := NewToolRegistry()
+	for _, t := range r.tools {
+		n := t.Definition().Name
+		if skip[n] {
+			continue
+		}
+		out.Register(t)
+	}
+	return out
+}
+
 // ─────────────────────────────────────────────
 // Runner
 // ─────────────────────────────────────────────
@@ -92,6 +109,8 @@ type Config struct {
 	ChannelID           string // The message channel ID (e.g. "whatsapp", "telegram")
 	ProviderName        string // Lowercase provider ID for capability detection
 	ToolsProfile        string // "full" or "coding"
+	// GatewayPublicBaseURL is e.g. http://127.0.0.1:18790 — used to tell users where /workspace/ files are served.
+	GatewayPublicBaseURL string
 }
 
 // Runner is the main agent execution loop.
@@ -267,6 +286,21 @@ func (r *Runner) WithSession(sessionID string) *Runner {
 
 // SessionID returns the current session ID.
 func (r *Runner) SessionID() string { return r.sessionID }
+
+// streamInternalAgentUI is true when we should show planning / reflection / maintenance
+// tokens to the stream handler (CLI, web SSE). Messaging apps must not surface this.
+func (r *Runner) streamInternalAgentUI() bool {
+	return r.channelID == ""
+}
+
+func (r *Runner) streamThinking(handler StreamHandler, s string) {
+	if !r.streamInternalAgentUI() {
+		return
+	}
+	if s != "" {
+		handler.OnToken(s)
+	}
+}
 
 // RunResult holds the outcome of a Run call.
 type RunResult struct {
@@ -723,14 +757,37 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 Your persistent workspace is at: ` + ws + `
 - Global memory: ` + ws + `/MEMORY.md
 - Daily log: ` + ws + `/memory/` + today + `.md
+- **Public web root (dashboards):** ` + ws + `/workspace/public/ — static HTML/CSS/JS the user opens in a browser (OpenClaw-style).
 Use ` + "`write_file`" + ` to record important insights to these files.`
 
+	var dashboardHint string
+	if r.cfg.GatewayPublicBaseURL != "" {
+		dashboardHint = fmt.Sprintf(`
+
+## Local dashboards (monitoring, status pages)
+When the user asks for a **dashboard**, **status page**, or **live monitor**:
+1. Write files under **%[1]s/workspace/public/** (for example **%[1]s/workspace/public/monitor/index.html**).
+2. With **assistclaw start** (background daemon / gateway) running, the user opens them at **%[2]s/workspace/<path-inside-public>** (example: **%[2]s/workspace/monitor/index.html**).
+3. Use **meta refresh** or **JavaScript** polling to refresh; you can emit JSON via the **bash** tool for charts to poll.
+4. After creating files, **give the user the full URL** in your reply.
+5. **Never put API keys, tokens, or private data** in **workspace/public/** - that tree is served without the gateway API token so browsers can open links directly.`,
+			ws, r.cfg.GatewayPublicBaseURL)
+	}
+
+
 	var parts []string
-	parts = append(parts, base)
+	parts = append(parts, base+dashboardHint)
 
 	// Channel-specific tone adjustments
 	if r.channelID == "whatsapp" {
 		parts = append(parts, "CHANNEL: WhatsApp. Keep replies concise. Use bullet points. Show only the most important output snippets — not full file contents. If you created files, say where they are and show a 3-5 line preview.")
+	}
+
+	// Messaging surfaces: never leak chain-of-thought markup or wrong product name
+	if r.channelID != "" {
+		parts = append(parts, `## User-visible messages (this channel)
+- Reply in natural language only. Do **not** include raw XML-style blocks such as `+"`<planning>`"+`, `+"`</planning>`"+`, `+"`<details>`"+`, execution-plan scaffolding, or internal checklists in the text the user reads.
+- You are running under **AssistClaw**. Use **IDENTITY.md** / **SOUL.md** for your name and vibe. Do **not** call yourself "OpenClaw" unless those files explicitly give you that name.`)
 	}
 
 	if r.cfg.SystemPrompt != "" {
@@ -844,23 +901,22 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 	var fullResponse strings.Builder
 	iterations := 0
 
-	// V3: Planning Phase
+	// V3: Planning Phase (kept in working memory for the model; not streamed to WhatsApp/Telegram/etc.)
 	plan := ""
 	if r.cfg.EnablePlanning {
 		r.log.Info("entering planning phase (stream)")
-		handler.OnToken("🤔 **Planning...**\n")
+		r.streamThinking(handler, "🤔 **Planning...**\n")
 		var err error
 		plan, err = r.plan(ctx, userMessage)
 		if err != nil {
 			r.log.Warn("planning failed", zap.Error(err))
 		} else {
-			// Add plan to working memory
 			planMsg := memory.Message{
 				ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleSystem,
 				Content: "[PLAN]\n" + plan, CreatedAt: time.Now(),
 			}
 			r.working.Append(planMsg)
-			handler.OnToken("\n<details>\n<summary>Execution Plan</summary>\n\n" + plan + "\n\n</details>\n\n")
+			r.streamThinking(handler, "\n<details>\n<summary>Execution Plan</summary>\n\n"+plan+"\n\n</details>\n\n")
 		}
 	}
 
@@ -952,10 +1008,10 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 	// V3: Reflection Phase
 	if r.cfg.EnableReflection {
 		r.log.Info("entering reflection phase (stream)")
-		handler.OnToken("\n\n🧐 **Reflecting...**\n")
+		r.streamThinking(handler, "\n\n🧐 **Reflecting...**\n")
 		critique, success, err := r.reflect(ctx, userMessage, plan)
 		if err == nil {
-			handler.OnToken("\n<details>\n<summary>Self-Critique</summary>\n\n" + critique + "\n\n</details>\n")
+			r.streamThinking(handler, "\n<details>\n<summary>Self-Critique</summary>\n\n"+critique+"\n\n</details>\n")
 			if !success && iterations < r.cfg.MaxIterations {
 				r.log.Info("self-critique requested retry", zap.String("critique", critique))
 			}
@@ -1074,7 +1130,7 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		return true
 
 	case "/status":
-		status := fmt.Sprintf("🤖 *AssistClaw Status*\n")
+		status := "🤖 *AssistClaw Status*\n"
 		status += fmt.Sprintf("• *Model:* `%s`\n", r.cfg.Model)
 		status += fmt.Sprintf("• *Provider:* `%s`\n", r.cfg.ProviderName)
 		status += fmt.Sprintf("• *Session ID:* `%s`\n", r.sessionID)
@@ -1096,6 +1152,20 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 			_ = replyFn(fmt.Sprintf("❌ Failed to list skills: %v", err))
 		} else {
 			_ = replyFn("🧠 *Skills Report*\n" + res)
+		}
+		return true
+
+	case "/subagents":
+		tool, ok := r.tools.Get("subagent_list")
+		if !ok {
+			_ = replyFn("❌ Sub-agent tools are not available in this process.")
+			return true
+		}
+		res, err := tool.Execute(ctx, json.RawMessage("{}"))
+		if err != nil {
+			_ = replyFn(fmt.Sprintf("❌ Failed to list sub-agents: %v", err))
+		} else {
+			_ = replyFn("🧩 *Sub-agents*\n" + res)
 		}
 		return true
 
@@ -1152,6 +1222,7 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		help += "• `/reset` - Clear current working memory\n"
 		help += "• `/status` - Show model and provider info\n"
 		help += "• `/skills` - List active and broken skills\n"
+		help += "• `/subagents` - List registered specialist sub-agents\n"
 		help += "• `/sessions` - List all persistent sessions\n"
 		help += "• `/forget [id]` - Permanently delete a session\n"
 		help += "• `/auto [goal]` - Start a continuous background autonomous task\n"
@@ -1238,7 +1309,7 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 		Content: prompt, CreatedAt: time.Now(),
 	}
 	r.working.Append(flushMsg)
-	handler.OnToken("\n[Maintenance: Compacting session memory...]\n")
+	r.streamThinking(handler, "\n[Maintenance: Compacting session memory...]\n")
 
 	stream, err := r.provider.Stream(ctx, r.buildRequest())
 	if err != nil {

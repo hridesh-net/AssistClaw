@@ -5,7 +5,7 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
 #   bash install.sh
-#   ASSISTCLAW_VERSION=v3.9.7 bash install.sh
+#   ASSISTCLAW_VERSION=v3.9.8 bash install.sh
 #
 # Environment:
 #   ASSISTCLAW_VERSION   Git tag or "latest" (default: latest)
@@ -283,6 +283,7 @@ setup_config() {
   log "Setting up config directory: $STATE_DIR"
   mkdir -p "$STATE_DIR"/{memory,tools,logs,security}
   mkdir -p "$STATE_DIR"/skills/{bundled,custom}
+  mkdir -p "$STATE_DIR"/workspace/public
 }
 
 # ─────────────────────────────────────────────

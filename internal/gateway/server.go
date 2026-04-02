@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -74,6 +75,18 @@ func (s *Server) Start() error {
 	}
 
 	mux := http.NewServeMux()
+
+	// ── Agent-built static dashboards (OpenClaw-style) ────────────────────────
+	// Serves ~/.assistclaw/workspace/public at /workspace/ — no Bearer token so
+	// browsers can open links directly. Do not put secrets in this directory.
+	if s.Config != nil {
+		publicDir := filepath.Join(s.Config.StateDir, "workspace", "public")
+		if err := os.MkdirAll(publicDir, 0o755); err != nil {
+			log.Printf("gateway: workspace/public: %v", err)
+		} else {
+			mux.Handle("/workspace/", http.StripPrefix("/workspace/", http.FileServer(http.Dir(publicDir))))
+		}
+	}
 
 	// ── Auth middleware wrapper ───────────────────────────────────────────────
 	auth := func(h http.HandlerFunc) http.HandlerFunc {

@@ -48,12 +48,13 @@ import (
 	"github.com/assistclaw/assistclaw/internal/provider/vertex"
 	"github.com/assistclaw/assistclaw/internal/security"
 	"github.com/assistclaw/assistclaw/internal/skills"
+	"github.com/assistclaw/assistclaw/internal/subagents"
 	"github.com/assistclaw/assistclaw/internal/system"
 	"github.com/assistclaw/assistclaw/internal/tools"
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.9.7" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.9.8" // Overridden by -ldflags "-X main.version=..." during build
 
 // defaultHeartbeatPrompt matches AGENTS.md guidance for OpenClaw-style periodic polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
@@ -950,13 +951,14 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 
 	hw, _ := system.Detect(ctx)
 	runner := agent.NewRunner(agent.Config{
-		MaxIterations:       cfg.Agent.MaxIterations,
-		Model:               modelInfo.ID,
-		ActiveSkillsContext: skillsCtx,
-		ProviderName:        providerNameForCaps,
-		ToolsProfile:        cfg.Security.Profile,
-		EnablePlanning:      agentPlanningEnabled(cfg),
-		EnableReflection:    agentReflectionEnabled(cfg),
+		MaxIterations:        cfg.Agent.MaxIterations,
+		Model:                modelInfo.ID,
+		ActiveSkillsContext:  skillsCtx,
+		ProviderName:         providerNameForCaps,
+		ToolsProfile:         cfg.Security.Profile,
+		EnablePlanning:       agentPlanningEnabled(cfg),
+		EnableReflection:     agentReflectionEnabled(cfg),
+		GatewayPublicBaseURL: cfg.PublicGatewayBaseURL(),
 	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog).WithHardware(hw)
 
 	// ── Security: Guardrail + Audit Log ────────────────────────────────
@@ -983,6 +985,30 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		zap.String("mode", string(guardrailMode)),
 		zap.String("audit_log", secLogPath),
 	)
+
+	// Sub-agents (delegation): register after security so child runs inherit guardrail/audit.
+	subSvc := &tools.SubAgentSvc{
+		Store:                subagents.NewStore(cfg.StateDir),
+		Provider:             p,
+		ParentRegistry:       toolReg,
+		ToolGraph:            toolGraph,
+		Mem:                  memMgr,
+		Log:                  log,
+		Model:                modelInfo.ID,
+		ActiveSkillsContext:  skillsCtx,
+		ProviderName:         providerNameForCaps,
+		GatewayPublicBaseURL: cfg.PublicGatewayBaseURL(),
+		DefaultToolsProfile:  cfg.Security.Profile,
+		Guardrail:            guardrail,
+		AuditLog:             auditLog,
+		Hardware:             hw,
+	}
+	toolReg.Register(tools.SubAgentCreateTool{S: subSvc})
+	toolReg.Register(tools.SubAgentListTool{S: subSvc})
+	toolReg.Register(tools.SubAgentRunTool{S: subSvc})
+	toolReg.Register(tools.SubAgentRemoveTool{S: subSvc})
+	catalog = tools.NewCatalog(toolReg, toolGraph)
+	runner = runner.WithCatalog(catalog)
 
 	// ── Cron Daemon ───────────────────────────────────────────────────
 	var cronJobs []cron.Job

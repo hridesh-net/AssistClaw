@@ -146,6 +146,7 @@ Markdown workspace under `~/.assistclaw` mirrors common OpenClaw patterns: **`SO
 - **Planning & reflection**: `agent.planning` defaults **on** (milestone-style plan at the start of a turn); `agent.reflection` is **opt-in** (self-critique + lesson hooks, extra LLM call).
 - **Autonomous mode**: `assistclaw auto "<goal>"` or `/auto` in chat runs until the model calls **`finish_task`**, with an upfront plan when planning is enabled and **checkpoints every 25 iterations** on long runs.
 - **Cron**: YAML `cron:` entries plus **`assistclaw cron add`** persist jobs in **`cron_jobs.json`**; scheduled runs use the **same runner** as the gateway (tool graph + guardrail + audit).
+- **Local dashboards**: Put HTML/CSS/JS under **`~/.assistclaw/workspace/public/`**. With **`assistclaw start`**, the gateway serves them at **`http://<gateway.host>:<gateway.port>/workspace/...`** (default `http://127.0.0.1:18790/workspace/...`) so the agent can give you a browser link like OpenClaw. That tree is **not** protected by the gateway Bearer token—do not store secrets there.
 
 ---
 
@@ -162,7 +163,7 @@ Pin a release or build from source with environment variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `ASSISTCLAW_VERSION` | Git tag (e.g. `v3.9.7`) or `latest` (default) |
+| `ASSISTCLAW_VERSION` | Git tag (e.g. `v3.9.8`) or `latest` (default) |
 | `INSTALL_DIR` | Binary location (default: `/usr/local/bin`, or `~/.local/bin` if not writable) |
 | `STATE_DIR` | Config root (default: `~/.assistclaw`) |
 | `FORCE_BUILD=1` | Compile with Go instead of downloading a release asset |
@@ -174,7 +175,7 @@ Pin a release or build from source with environment variables:
 ```powershell
 Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.ps1 -OutFile install.ps1
 .\install.ps1
-# Optional: .\install.ps1 -Version v3.9.7
+# Optional: .\install.ps1 -Version v3.9.8
 ```
 Default install path is **`%USERPROFILE%\.local\bin`** (add that folder to your user `PATH` if `assistclaw` is not found).
 

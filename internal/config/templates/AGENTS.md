@@ -214,6 +214,10 @@ Think of it like a human reviewing their journal and updating their mental model
 
 The goal: Be helpful without being annoying. Check in a few times a day, do useful background work, but respect quiet time.
 
+## Local dashboards (AssistClaw)
+
+Static HTML/CSS/JS for monitoring or status pages lives in **`workspace/public/`** under your state directory. With the gateway running, the user opens **`http://<gateway-host>:<port>/workspace/<path>`** (see `assistclaw.yaml` `gateway.host` / `gateway.port`). Never put secrets in `workspace/public/` — it is served without the API token so browsers can open links directly.
+
 ## Make It Yours
 
 This is a starting point. Add your own conventions, style, and rules as you figure out what works.
