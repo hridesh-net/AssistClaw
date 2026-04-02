@@ -55,7 +55,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.0" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.1" // Overridden by -ldflags "-X main.version=..." during build
 
 // defaultHeartbeatPrompt matches AGENTS.md guidance for OpenClaw-style periodic polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
@@ -1009,7 +1009,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	toolReg.Register(tools.SubAgentRunTool{S: subSvc})
 	toolReg.Register(tools.SubAgentRemoveTool{S: subSvc})
 	catalog = tools.NewCatalog(toolReg, toolGraph)
-	runner = runner.WithCatalog(catalog)
+	runner = runner.WithCatalog(catalog).WithModelRegistry(reg)
 
 	// ── Cron Daemon ───────────────────────────────────────────────────
 	var cronJobs []cron.Job

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -134,6 +135,9 @@ type Runner struct {
 	channelID    string
 	workspaceDir string
 
+	// modelRegistry is optional; used for channel slash commands like /models.
+	modelRegistry *provider.Registry
+
 	commands map[string]func(ctx context.Context, replyFn channels.StreamingReplyFunc) error
 }
 
@@ -192,6 +196,12 @@ func (r *Runner) WithSecurity(g *security.Guardrail, a *security.AuditLog) *Runn
 	if a != nil {
 		a.WriteSessionStart(r.sessionID, r.channelID)
 	}
+	return r
+}
+
+// WithModelRegistry attaches the LLM registry for slash commands (/models) on messaging channels.
+func (r *Runner) WithModelRegistry(reg *provider.Registry) *Runner {
+	r.modelRegistry = reg
 	return r
 }
 
@@ -278,9 +288,10 @@ func (r *Runner) WithSession(sessionID string) *Runner {
 		commands:      r.commands,
 		sessionRunner: true,
 		log:           r.log,
-		sessionID:     sessionID,
-		channelID:     r.channelID,
-		workspaceDir:  r.workspaceDir,
+		sessionID:       sessionID,
+		channelID:       r.channelID,
+		workspaceDir:    r.workspaceDir,
+		modelRegistry:   r.modelRegistry,
 	}
 }
 
@@ -737,6 +748,11 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 **IMPORTANT: When a user asks you to DO something, DO IT using your tools.**
 **CRITICAL: Do NOT output markdown code blocks expecting the user to run them. You MUST use the ` + "`write_file`" + ` or ` + "`edit`" + ` tools to save files and the ` + "`bash`" + ` tool to execute commands.**
 
+### Persist identity and user profile (OpenClaw-style)
+- **IDENTITY.md** and **USER.md** live in the state directory root (same folder as **SOUL.md**), not under **workspace/public/**.
+- When you choose a **name**, **emoji**, **vibe**, or the user states **their** name/preferences, **update the file in the same turn** with ` + "`edit`" + ` or ` + "`write_file`" + `. Chat text alone does **not** persist across restarts — only files do.
+- **Avatars** for browser links: put images in **workspace/public/** (e.g. **workspace/public/avatar.png**); the user can open them at the gateway **/workspace/...** URL if the gateway is running.
+
 ### When to use web_search vs web_fetch
 - **` + "`web_search`" + `** — use when you need to FIND information: latest docs, current prices, news, "what is X", "how to do Y". This searches DuckDuckGo and returns a list of results with snippets. **No API key required.**
 - **` + "`web_fetch`" + `** — use when you already HAVE a URL and want to read that specific page.
@@ -753,12 +769,13 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 - "Look at a screenshot" → ` + "`image_understand`" + `
 - "Schedule a task" → ` + "`cron`" + `
 
-## Workspace
-Your persistent workspace is at: ` + ws + `
+## Workspace layout (state directory)
+Root path: ` + ws + `
+- **Persona & rules:** ` + ws + `/SOUL.md, ` + ws + `/IDENTITY.md, ` + ws + `/USER.md, ` + ws + `/AGENTS.md (at this root — not inside workspace/public)
 - Global memory: ` + ws + `/MEMORY.md
 - Daily log: ` + ws + `/memory/` + today + `.md
-- **Public web root (dashboards):** ` + ws + `/workspace/public/ — static HTML/CSS/JS the user opens in a browser (OpenClaw-style).
-Use ` + "`write_file`" + ` to record important insights to these files.`
+- **Public HTTP files (dashboards, avatars for shareable URLs):** ` + ws + `/workspace/public/
+Use ` + "`write_file`" + ` / ` + "`edit`" + ` to record important insights and profile updates.`
 
 	var dashboardHint string
 	if r.cfg.GatewayPublicBaseURL != "" {
@@ -1114,6 +1131,72 @@ func (h *channelStreamHandler) OnError(err error) {
 	_ = h.replyFn(fmt.Sprintf("\n[Error: %v]", err))
 }
 
+// normalizeSlashCommand maps OpenClaw-style aliases to canonical /commands.
+func normalizeSlashCommand(cmd string) string {
+	switch strings.ToLower(cmd) {
+	case "/id":
+		return "/whoami"
+	case "/thinking", "/t":
+		return "/think"
+	case "/v":
+		return "/verbose"
+	case "/reason":
+		return "/reasoning"
+	case "/elev":
+		return "/elevated"
+	case "/tell":
+		return "/steer"
+	case "/export":
+		return "/export-session"
+	case "/plugin":
+		return "/plugins"
+	default:
+		return cmd
+	}
+}
+
+// openClawChannelStub explains OpenClaw-only or not-yet-implemented chat commands.
+func openClawChannelStub(cmd string) string {
+	stubs := map[string]string{
+		"/stop":           "Stopping mid-stream isn’t supported on this channel. After the reply finishes, use `/reset` or `/new` to clear context.",
+		"/usage":          "Usage/cost toggles: use `/status` for session size. Detailed token accounting is in host logs, not chat yet.",
+		"/think":          "Thinking levels: AssistClaw uses `agent.planning` / `agent.reflection` in assistclaw.yaml (not a per-chat `/think` toggle).",
+		"/verbose":        "Verbose mode: planning/reflection UI is for CLI/web; messaging channels keep replies compact.",
+		"/fast":           "Fast mode: not a separate chat toggle — tune model and `agent.planning` in config.",
+		"/reasoning":      "Reasoning visibility: not configurable per chat here; use the gateway/CLI for internal UI if enabled.",
+		"/elevated":       "Elevated mode: use `security.mode` and tool profiles in assistclaw.yaml.",
+		"/exec":           "Exec defaults: configure tools and security in assistclaw.yaml / AGENTS.md.",
+		"/queue":          "Message queue modes: not exposed in AssistClaw chat yet.",
+		"/config":         "Config: edit `assistclaw.yaml` on the host and restart the process.",
+		"/mcp":            "MCP: configure under `mcp:` in assistclaw.yaml.",
+		"/plugins":        "Plugins: AssistClaw uses `skills/`; see `/skills`.",
+		"/debug":          "Debug overrides: use logging on the host (not chat).",
+		"/approve":        "Exec approvals: use security / channel settings in yaml, not `/approve` in chat.",
+		"/allowlist":      "Allowlists: configure in assistclaw.yaml / security settings.",
+		"/tasks":          "Background tasks: use `cron:` and `assistclaw cron` on the host; no per-session task list in chat.",
+		"/export-session": "Session export: not implemented over chat — use episodic DB / logs on the host.",
+		"/bash":           "Shell: ask the agent in natural language; it will use the `bash` tool. Raw `/bash` isn’t wired in chat.",
+		"/btw":            "Side questions: send a normal message; use `/new` first if you want minimal prior context.",
+		"/session":        "Session idle/max-age: configure channels and sessions in assistclaw.yaml.",
+		"/focus":          "Thread/topic binding: not implemented for this connector; session id is fixed per channel binding.",
+		"/unfocus":        "Unfocus: not implemented for this connector.",
+		"/agents":         "Thread-bound agents: use `/subagents` for registered specialists + `subagent_*` tools from the agent.",
+		"/activation":     "Group activation: configure the WhatsApp/Telegram/etc. channel in assistclaw.yaml.",
+		"/send":           "Send policy: configure the channel in assistclaw.yaml.",
+		"/restart":        "Restart: restart the assistclaw process on the host (systemd, docker, or terminal).",
+		"/tts":            "TTS: configure `voice:` in assistclaw.yaml and channel voice settings.",
+		"/acp":            "ACP: not available in AssistClaw.",
+		"/skill":          "Skills: use `/skills` to list; invoke by asking the agent or via skill tools in a normal message.",
+		"/steer":          "Steering sub-agents: AssistClaw sub-agents are one-shot (`subagent_run`). Send a new task in chat or create another run.",
+		"/kill":           "Kill sub-agent: runs finish on their own; there is no long-lived kill target in chat.",
+	}
+	msg, ok := stubs[cmd]
+	if !ok {
+		return fmt.Sprintf("ℹ️ `%s` is an OpenClaw-style command not implemented for AssistClaw chat. See `/commands` for what works here.", cmd)
+	}
+	return "ℹ️ " + msg
+}
+
 // HandleChatCommand processes slash commands like /reset, /status.
 // Returns true if the message was a command and was handled.
 func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn channels.StreamingReplyFunc) bool {
@@ -1121,12 +1204,158 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 	if len(parts) == 0 {
 		return false
 	}
-	cmd := strings.ToLower(parts[0])
+	cmd := normalizeSlashCommand(strings.ToLower(parts[0]))
 
 	switch cmd {
 	case "/reset":
 		r.working.Clear()
 		_ = replyFn("✨ Session memory cleared. Starting fresh!")
+		return true
+
+	case "/new":
+		// OpenClaw-style: fresh turn context (same mechanism as /reset here).
+		r.working.Clear()
+		_ = replyFn("✨ New session — working memory cleared.")
+		return true
+
+	case "/whoami":
+		ch := r.channelID
+		if ch == "" {
+			ch = "(cli/web)"
+		}
+		_ = replyFn(fmt.Sprintf("🪪 *Whoami*\n• *Session:* `%s`\n• *Channel:* `%s`\n• *Model:* `%s`\n• *State/workspace root:* `%s`\n",
+			r.sessionID, ch, r.cfg.Model, r.workspaceDir))
+		return true
+
+	case "/context":
+		_ = replyFn("🧩 *How context works (AssistClaw)*\n" +
+			"• *System prompt:* `SOUL.md`, `IDENTITY.md`, `USER.md`, `AGENTS.md` from the state dir + tool table + rules.\n" +
+			"• *Working memory:* recent turns in this session — `/reset` or `/new` clears it.\n" +
+			"• *Episodic:* SQLite history — `/sessions`, `/forget`.\n" +
+			"• *Tools:* per-request subset from the tool graph (+ skills).\n" +
+			"Planning/reflection streams are not copied into WhatsApp-style channels.\n")
+		return true
+
+	case "/compact":
+		budget := r.working.MaxTokens()
+		if budget <= 0 {
+			budget = 48000
+		}
+		target := int(float64(budget) * 0.45)
+		dropped := r.working.Compact(target)
+		_ = replyFn(fmt.Sprintf("🗜️ Compacted working memory toward ~%d tokens. Dropped %d message(s).", target, len(dropped)))
+		return true
+
+	case "/model":
+		if len(parts) >= 2 {
+			want := strings.Join(parts[1:], " ")
+			_ = replyFn(fmt.Sprintf("🔧 *Current model:* `%s`\nTo use `%s`, set `routing.default` or `--model` and *restart* assistclaw. Chat cannot switch models live yet.", r.cfg.Model, want))
+			return true
+		}
+		_ = replyFn(fmt.Sprintf("🧠 *Current model:* `%s` (provider: `%s`)\n`/models` — full catalog. Change in assistclaw.yaml + restart.", r.cfg.Model, r.cfg.ProviderName))
+		return true
+
+	case "/models":
+		if r.modelRegistry == nil {
+			_ = replyFn("❌ Model registry not wired in this process. Use: `assistclaw providers list` on the host.")
+			return true
+		}
+		models := r.modelRegistry.ListModels()
+		if len(models) == 0 {
+			_ = replyFn("No models registered.")
+			return true
+		}
+		filter := ""
+		if len(parts) >= 2 {
+			filter = strings.ToLower(strings.Join(parts[1:], " "))
+		}
+		var b strings.Builder
+		if filter != "" {
+			b.WriteString(fmt.Sprintf("🧠 *Models* (filter: `%s`)\n", filter))
+		} else {
+			b.WriteString("🧠 *Models* (`provider/model_id`)\n")
+		}
+		const maxLines = 120
+		shown := 0
+		for _, m := range models {
+			if filter != "" {
+				prov := strings.ToLower(m.Provider)
+				id := strings.ToLower(m.ID)
+				name := strings.ToLower(m.Name)
+				if !strings.Contains(prov, filter) && !strings.Contains(id, filter) && !strings.Contains(name, filter) {
+					continue
+				}
+			}
+			if shown >= maxLines {
+				b.WriteString(fmt.Sprintf("… _truncated_\n"))
+				break
+			}
+			line := fmt.Sprintf("• `%s/%s`", m.Provider, m.ID)
+			if m.Name != "" && m.Name != m.ID {
+				line += fmt.Sprintf(" — %s", m.Name)
+			}
+			b.WriteString(line + "\n")
+			shown++
+		}
+		if shown == 0 {
+			_ = replyFn("No models matched that filter.")
+			return true
+		}
+		_ = replyFn(b.String())
+		return true
+
+	case "/tools":
+		defs := r.tools.Definitions()
+		byName := make(map[string]provider.ToolDef, len(defs))
+		names := make([]string, 0, len(defs))
+		for _, d := range defs {
+			byName[d.Name] = d
+			names = append(names, d.Name)
+		}
+		sort.Strings(names)
+		verbose := len(parts) >= 2 && strings.ToLower(parts[1]) == "verbose"
+		var tb strings.Builder
+		if verbose {
+			tb.WriteString("🛠️ *Tools (verbose)*\n")
+		} else {
+			tb.WriteString("🛠️ *Tools* — `/tools verbose` for one-line descriptions\n")
+		}
+		const maxTools = 80
+		for i, n := range names {
+			if i >= maxTools {
+				tb.WriteString(fmt.Sprintf("… _and %d more_\n", len(names)-maxTools))
+				break
+			}
+			if verbose {
+				desc := strings.TrimSpace(byName[n].Description)
+				if len(desc) > 160 {
+					desc = desc[:157] + "…"
+				}
+				if desc == "" {
+					desc = "—"
+				}
+				tb.WriteString(fmt.Sprintf("• `%s` — %s\n", n, desc))
+			} else {
+				tb.WriteString(fmt.Sprintf("• `%s`\n", n))
+			}
+		}
+		_ = replyFn(tb.String())
+		return true
+
+	case "/commands":
+		cmds := "📚 *AssistClaw chat commands*\n\n*Fully supported*\n"
+		cmds += "• `/help` `/commands`\n"
+		cmds += "• `/status` — model, provider, session, working-memory size\n"
+		cmds += "• `/whoami` (alias `/id`) — session, channel, model, state dir\n"
+		cmds += "• `/context` — how prompts + memory + tools are built\n"
+		cmds += "• `/compact` — drop oldest working-memory turns (token trim)\n"
+		cmds += "• `/model` `[provider/id]` — show current; changing needs yaml + restart\n"
+		cmds += "• `/models` `[filter]` — catalog; optional substring filter\n"
+		cmds += "• `/tools` `[verbose]` — tool names (+ optional one-line descriptions)\n"
+		cmds += "• `/skills` `/subagents` `/sessions` `/forget` `/reset` `/new` `/auto`\n\n"
+		cmds += "*OpenClaw-compatible names* (reply explains AssistClaw equivalent)\n"
+		cmds += "`/stop` `/usage` `/think` `/t` `/verbose` `/v` `/fast` `/reasoning` `/reason` `/elevated` `/elev` `/exec` `/queue` `/config` `/mcp` `/plugins` `/plugin` `/debug` `/approve` `/allowlist` `/tasks` `/export` `/export-session` `/bash` `/btw` `/session` `/focus` `/unfocus` `/agents` `/activation` `/send` `/restart` `/tts` `/acp` `/skill` `/steer` `/tell` `/kill`\n"
+		_ = replyFn(cmds)
 		return true
 
 	case "/status":
@@ -1218,16 +1447,17 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		return true
 
 	case "/help":
-		help := "📋 *Available Commands*\n"
-		help += "• `/reset` - Clear current working memory\n"
-		help += "• `/status` - Show model and provider info\n"
-		help += "• `/skills` - List active and broken skills\n"
-		help += "• `/subagents` - List registered specialist sub-agents\n"
-		help += "• `/sessions` - List all persistent sessions\n"
-		help += "• `/forget [id]` - Permanently delete a session\n"
-		help += "• `/auto [goal]` - Start a continuous background autonomous task\n"
-		help += "• `/help` - Show this message\n"
+		help := "📋 *Commands* — `/commands` for full list\n"
+		help += "• *Core:* `/status` `/whoami` `/context` `/compact`\n"
+		help += "• *Models/tools:* `/model` `/models` `/tools` `/tools verbose` `/skills` `/subagents`\n"
+		help += "• *Session:* `/reset` `/new` `/sessions` `/forget` `/auto`\n"
+		help += "• *OpenClaw names:* `/stop` `/usage` `/think` … → stub with pointers\n"
+		help += "• `/help` `/commands`\n"
 		_ = replyFn(help)
+		return true
+
+	case "/stop", "/usage", "/think", "/verbose", "/fast", "/reasoning", "/elevated", "/exec", "/queue", "/config", "/mcp", "/plugins", "/debug", "/approve", "/allowlist", "/tasks", "/export-session", "/bash", "/btw", "/session", "/focus", "/unfocus", "/agents", "/activation", "/send", "/restart", "/tts", "/acp", "/skill", "/steer", "/kill":
+		_ = replyFn(openClawChannelStub(cmd))
 		return true
 	}
 

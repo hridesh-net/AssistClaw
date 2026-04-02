@@ -9,6 +9,8 @@ read_when:
 
 _Learn about the person you're helping. Update this as you go._
 
+This file sits next to **IDENTITY.md** in the **state directory** (e.g. `~/.assistclaw/`). When the user shares their name, timezone, or preferences, **edit this file** — don’t rely on chat memory alone.
+
 - **Name:**
 - **What to call them:**
 - **Pronouns:** _(optional)_

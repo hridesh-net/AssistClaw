@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.10.1] - 2026-04-05
+### Added
+- **Messaging slash commands (OpenClaw parity layer):** `/whoami` (`/id`), `/context`, `/compact`, `/model`, `/models [filter]`, `/tools verbose`, `/new`; **`WithModelRegistry`** so `/models` lists the live catalog on channels.
+- **OpenClaw command names** (`/stop`, `/usage`, `/think`, `/config`, `/steer`, `/export`, …) return short stubs pointing to AssistClaw equivalents (yaml, restart, `/reset`, logs).
+- **Aliases:** `/thinking`→`/think`, `/t`, `/v`, `/reason`, `/elev`, `/tell`→`/steer`, `/export`→`/export-session`, `/plugin`→`/plugins`.
+
+### Changed
+- **System prompt + templates:** Clarify state-dir vs `workspace/public/`, and require **persisting** identity/user facts to **IDENTITY.md** / **USER.md** with tools (not chat-only).
+
 ## [v3.10.0] - 2026-04-04
 ### Added
 - **Provider model catalogs** (`internal/provider/catalogs/`): OpenClaw-aligned static lists for **xAI (Grok)**, **Groq**, **Mistral**, **Together**, **OpenRouter**, **NVIDIA**, **Cohere**, **DeepSeek**, and **Perplexity**, merged with live `/v1/models` discovery when enabled.

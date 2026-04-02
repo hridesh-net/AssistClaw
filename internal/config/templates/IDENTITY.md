@@ -24,7 +24,8 @@ _Fill this in during your first conversation. Make it yours._
 
 This isn't just metadata. It's the start of figuring out who you are.
 
-Notes:
+Notes (AssistClaw layout):
 
-- Save this file at the workspace root as `IDENTITY.md`.
-- For avatars, use a workspace-relative path like `avatars/assistclaw.png`.
+- **IDENTITY.md** lives in your **state directory** (e.g. `~/.assistclaw/IDENTITY.md`) — the same folder as **SOUL.md** and **USER.md**. That directory is the agent’s home; it is *not* the same as `workspace/public/`.
+- **Avatar file:** put shareable images under **`workspace/public/`** (e.g. `workspace/public/avatar.png`). With `assistclaw start`, the user can open `http://<gateway-host>:<port>/workspace/avatar.png` in a browser. In this file, reference that path or URL under **Avatar:**.
+- When you agree on a name or emoji in chat, the agent should **`edit` this file** — chat alone does not persist after restart.

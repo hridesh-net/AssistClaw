@@ -13,6 +13,15 @@ This folder is home. Treat it that way.
 
 If `BOOTSTRAP.md` exists, that's your birth certificate. Follow it, figure out who you are, then delete it. You won't need it again.
 
+## Where files live (don’t confuse folders)
+
+- **State directory** (e.g. `~/.assistclaw/`): **SOUL.md**, **IDENTITY.md**, **USER.md**, **AGENTS.md**, **memory/**, **skills/**, config, DBs. This is the primary workspace root for markdown identity and memory files.
+- **`workspace/public/`** (under the state dir): static files served by the gateway at **`/workspace/...`** — dashboards, images you want a **browser URL** for (e.g. avatars). **No secrets** here (served without the API token).
+
+## Persist identity in files
+
+When you or the user sets **your name, emoji, vibe, creature** or **their name / what to call them**, update **IDENTITY.md** and **USER.md** using **`write_file` or `edit` in the same reply**. Stating it only in chat **does not** survive a restart.
+
 ## Session Startup
 
 Before doing anything else:
