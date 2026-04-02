@@ -7,7 +7,7 @@
     and verifies the install.
 
 .PARAMETER Version
-    Release tag (e.g. v3.10.1) or 'latest'.
+    Release tag (e.g. v3.10.2) or 'latest'.
 
 .PARAMETER InstallDir
     Directory for assistclaw.exe (must be on PATH or add manually).
@@ -16,7 +16,7 @@
     iwr -useb https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.ps1 | iex
 
 .EXAMPLE
-    .\install.ps1 -Version v3.10.1
+    .\install.ps1 -Version v3.10.2
 #>
 
 param(

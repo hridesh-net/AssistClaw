@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.10.2] - 2026-04-02
+### Fixed
+- **Messaging slash commands:** Detect the first line that starts with `/` (after optional BOM/bidi marks), including when bridges prepend metadata (e.g. `[CHAT INFO]…`) or WhatsApp puts quoted reply text above `/new`. Previously routing required the entire `msg.Text` to start with `/`, so commands were ignored and handled by the LLM instead.
+- **Fallback text:** If `Message.Text` is empty, derive slash detection from the first text **Part**.
+
+### Changed
+- **System prompt:** Reinforce **AssistClaw** product identity in Critical Rules (do not call the product **OpenClaw** unless workspace identity files say so).
+
 ## [v3.10.1] - 2026-04-05
 ### Added
 - **Messaging slash commands (OpenClaw parity layer):** `/whoami` (`/id`), `/context`, `/compact`, `/model`, `/models [filter]`, `/tools verbose`, `/new`; **`WithModelRegistry`** so `/models` lists the live catalog on channels.

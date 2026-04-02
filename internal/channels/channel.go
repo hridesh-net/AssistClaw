@@ -2,9 +2,46 @@ package channels
 
 import (
 	"context"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/assistclaw/assistclaw/internal/provider"
 )
+
+// SlashCommandLine extracts the first line that looks like a slash command (/word …).
+// Use this for chat command routing: bridges may prepend "[CHAT INFO]…" or WhatsApp may
+// include quoted reply text above the user's "/new" line — msg.Text alone may not start with "/".
+func SlashCommandLine(msg Message) string {
+	raw := strings.TrimSpace(msg.Text)
+	raw = strings.TrimPrefix(raw, "\ufeff")
+	if raw == "" {
+		for _, p := range msg.Parts {
+			if p.Type == provider.ContentTypeText {
+				t := strings.TrimSpace(p.Text)
+				if t != "" {
+					raw = t
+					break
+				}
+			}
+		}
+	}
+	raw = strings.TrimSpace(strings.TrimPrefix(raw, "\ufeff"))
+	for len(raw) > 0 {
+		r, w := utf8.DecodeRuneInString(raw)
+		if r == '\ufeff' || r == '\u200f' || r == '\u200e' { // BOM, RLM, LRM
+			raw = strings.TrimSpace(raw[w:])
+			continue
+		}
+		break
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(line, "\ufeff"))
+		if strings.HasPrefix(line, "/") {
+			return line
+		}
+	}
+	return ""
+}
 
 // Message represents an inbound communication from a channel.
 type Message struct {

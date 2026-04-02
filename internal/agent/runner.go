@@ -745,6 +745,8 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 
 ## Critical Rules
 
+**Product identity:** This runtime is **AssistClaw**. Do **not** call yourself or the product **OpenClaw** unless **IDENTITY.md** or **SOUL.md** explicitly gives you that name.
+
 **IMPORTANT: When a user asks you to DO something, DO IT using your tools.**
 **CRITICAL: Do NOT output markdown code blocks expecting the user to run them. You MUST use the ` + "`write_file`" + ` or ` + "`edit`" + ` tools to save files and the ` + "`bash`" + ` tool to execute commands.**
 
@@ -1069,9 +1071,9 @@ func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message,
 	sessionRunner.channelID = msg.ChannelID
 	sessionRunner.mediaFn = mediaFn
 
-	// Intercept Chat Commands
-	if strings.HasPrefix(strings.TrimSpace(msg.Text), "/") {
-		if handled := sessionRunner.HandleChatCommand(ctx, msg.Text, replyFn); handled {
+	// Intercept chat commands (first line starting with /); see channels.SlashCommandLine.
+	if line := channels.SlashCommandLine(msg); line != "" {
+		if handled := sessionRunner.HandleChatCommand(ctx, line, replyFn); handled {
 			return
 		}
 	}
