@@ -329,6 +329,20 @@ type AgentConfig struct {
 	ToolsDir        string   `yaml:"tools_dir"`
 	SkillsDir       string   `yaml:"skills_dir"`
 	EnabledSkills   []string `yaml:"enabled_skills"`
+	// Heartbeat schedules periodic synthetic prompts (OpenClaw-style proactive ticks).
+	Heartbeat HeartbeatConfig `yaml:"heartbeat"`
+	// Planning adds an upfront milestone breakdown (extra LLM call). Nil = enabled (OpenClaw-style default).
+	Planning *bool `yaml:"planning"`
+	// Reflection adds a self-critique pass when a turn completes without tools. Nil = disabled (saves tokens).
+	Reflection *bool `yaml:"reflection"`
+}
+
+// HeartbeatConfig drives autonomous periodic agent turns on a dedicated session.
+type HeartbeatConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Interval  string `yaml:"interval"`   // e.g. 30m, 1h (default 30m when enabled)
+	SessionID string `yaml:"session_id"` // dedicated session; default assistclaw:heartbeat
+	Prompt    string `yaml:"prompt"`     // defaults to standard HEARTBEAT.md instruction
 }
 
 // SecurityConfig configures the runtime safety guardrail and tamper-evident audit log.

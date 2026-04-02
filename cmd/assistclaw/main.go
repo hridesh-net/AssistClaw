@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -52,7 +53,72 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.9.6" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.9.7" // Overridden by -ldflags "-X main.version=..." during build
+
+// defaultHeartbeatPrompt matches AGENTS.md guidance for OpenClaw-style periodic polls.
+const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
+
+// runHeartbeatLoop issues periodic synthetic user turns on a dedicated session (logs only;
+// use cron + channels if you need scheduled output delivered to Telegram/Slack).
+func runHeartbeatLoop(ctx context.Context, base *agent.Runner, interval time.Duration, sessionID, prompt string, log *zap.Logger) {
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	if sessionID == "" {
+		sessionID = "assistclaw:heartbeat"
+	}
+	if strings.TrimSpace(prompt) == "" {
+		prompt = defaultHeartbeatPrompt
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	var mu sync.Mutex
+	log.Info("heartbeat scheduler started",
+		zap.String("session_id", sessionID),
+		zap.Duration("interval", interval),
+	)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("heartbeat scheduler stopped")
+			return
+		case <-t.C:
+			mu.Lock()
+			hbCtx, cancel := context.WithTimeout(ctx, 8*time.Minute)
+			hr := base.WithSession(sessionID)
+			_, err := hr.Run(hbCtx, memory.Message{
+				ID:        uuid.New().String(),
+				SessionID: sessionID,
+				Role:      memory.RoleUser,
+				Content:   prompt,
+				CreatedAt: time.Now(),
+			})
+			cancel()
+			if err != nil {
+				log.Warn("heartbeat tick failed", zap.Error(err))
+			} else {
+				log.Debug("heartbeat tick completed")
+			}
+			mu.Unlock()
+		}
+	}
+}
+
+// agentPlanningEnabled defaults to true when unset (OpenClaw-style thoroughness).
+func agentPlanningEnabled(c *config.Config) bool {
+	if c.Agent.Planning == nil {
+		return true
+	}
+	return *c.Agent.Planning
+}
+
+// agentReflectionEnabled defaults to false when unset (extra LLM call; opt-in).
+func agentReflectionEnabled(c *config.Config) bool {
+	if c.Agent.Reflection == nil {
+		return false
+	}
+	return *c.Agent.Reflection
+}
 
 func main() {
 	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
@@ -889,6 +955,8 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		ActiveSkillsContext: skillsCtx,
 		ProviderName:        providerNameForCaps,
 		ToolsProfile:        cfg.Security.Profile,
+		EnablePlanning:      agentPlanningEnabled(cfg),
+		EnableReflection:    agentReflectionEnabled(cfg),
 	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog).WithHardware(hw)
 
 	// ── Security: Guardrail + Audit Log ────────────────────────────────
@@ -928,18 +996,8 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 
 	cronDaemon := cron.NewDaemon(
 		cronJobs,
-		p,
-		toolReg,
-		memMgr,
-		agent.Config{
-			MaxIterations:       cfg.Agent.MaxIterations,
-			Model:               modelInfo.ID,
-			ActiveSkillsContext: skillsCtx,
-			ProviderName:        providerNameForCaps,
-			ToolsProfile:        cfg.Security.Profile,
-		},
+		runner,
 		log,
-		cfg.StateDir,
 		filepath.Join(cfg.StateDir, "cron_jobs.json"),
 	)
 	if err := cronDaemon.Start(); err != nil {
@@ -1041,6 +1099,26 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 			log.Info("WhatsApp channel active")
 			activeChannels++
 		}
+	}
+
+	// OpenClaw-style heartbeats: periodic proactive turns on a dedicated session (no chat spam).
+	hb := cfg.Agent.Heartbeat
+	if hb.Enabled && (serve || activeChannels > 0) {
+		iv := hb.Interval
+		if iv == "" {
+			iv = "30m"
+		}
+		dur, err := time.ParseDuration(iv)
+		if err != nil {
+			log.Warn("heartbeat: invalid interval, using 30m", zap.String("interval", iv), zap.Error(err))
+			dur = 30 * time.Minute
+		}
+		sid := hb.SessionID
+		if sid == "" {
+			sid = "assistclaw:heartbeat"
+		}
+		prompt := strings.TrimSpace(hb.Prompt)
+		go runHeartbeatLoop(ctx, runner, dur, sid, prompt, log)
 	}
 
 	// If --serve is active, start the Gateway (+ embedded web UI) and wait

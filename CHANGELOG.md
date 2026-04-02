@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.9.7] - 2026-04-02
+### Added
+- **Heartbeat scheduler**: Optional `agent.heartbeat` config (interval, dedicated session, prompt) for OpenClaw-style periodic proactive turns when running `assistclaw start` or any messaging channel.
+- **`HEARTBEAT.md` workspace template** for first-time workspace seeding.
+- **Smarter autonomous mode**: Upfront planning phase in `RunAutonomous` when planning is enabled; checkpoint system messages every 25 iterations on long runs.
+- **Agent planning / reflection YAML**: `agent.planning` (default on when unset) and `agent.reflection` (default off when unset) wired into the runner for interactive and background sessions.
+
+### Fixed
+- **Channel sessions missing security**: `WithSession` now copies guardrail, audit log, and command map so Telegram/Discord/Slack/WhatsApp use the same enforcement as the main runner.
+- **Cron jobs missing catalog and security**: Scheduled jobs now clone the fully configured gateway runner (tool graph, guardrail, audit) instead of a minimal runner.
+
 ## [v3.9.6] - 2026-04-01
 ### Fixed
 - **Workspace Templates Actually Written Now**: The root cause of templates never appearing on disk was `InitializeWorkspace` being called with the raw `--config` flag value which is an empty string when the flag isn't passed. `filepath.Dir("")` resolves to `"."` (current directory), not `~/.assistclaw`. Now uses `cfg.StateDir` (the already-resolved state directory) to guarantee templates land in the correct location.

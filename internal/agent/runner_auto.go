@@ -39,8 +39,38 @@ func (r *Runner) RunAutonomous(ctx context.Context, goal string) (*RunResult, er
 	// Wait before loops to avoid API rate limits running unchecked
 	loopDelay := 2 * time.Second
 
+	// OpenClaw-style upfront plan for long-horizon work (same as interactive Run).
+	if r.cfg.EnablePlanning && goal != "" {
+		r.log.Info("autonomous: planning phase")
+		plan, err := r.plan(ctx, goal)
+		if err != nil {
+			r.log.Warn("autonomous: planning failed", zap.Error(err))
+		} else if strings.TrimSpace(plan) != "" {
+			planMsg := memory.Message{
+				ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleSystem,
+				Content:   "[PLAN]\n" + plan,
+				CreatedAt: time.Now(),
+			}
+			r.working.Append(planMsg)
+			_ = r.memory.Episodic.Save(ctx, planMsg)
+		}
+	}
+
 	for iterations < maxAutoIterations {
 		iterations++
+
+		// Periodic checkpoint so the model re-orients on very long autonomous runs.
+		if iterations > 1 && iterations%25 == 0 {
+			checkMsg := memory.Message{
+				ID:        uuid.New().String(),
+				SessionID: r.sessionID,
+				Role:      memory.RoleSystem,
+				Content:   "[AUTONOMOUS CHECKPOINT] Assess progress toward the AUTONOMOUS GOAL. If stuck, change approach. Continue with tools, or call finish_task when fully done.",
+				CreatedAt: time.Now(),
+			}
+			r.working.Append(checkMsg)
+			_ = r.memory.Episodic.Save(ctx, checkMsg)
+		}
 
 		req := r.buildRequestV3(ctx, goal)
 

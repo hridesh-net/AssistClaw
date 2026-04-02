@@ -14,7 +14,6 @@ import (
 
 	"github.com/assistclaw/assistclaw/internal/agent"
 	"github.com/assistclaw/assistclaw/internal/memory"
-	"github.com/assistclaw/assistclaw/internal/provider"
 )
 
 // Job defines a cron task.
@@ -29,37 +28,27 @@ type Daemon struct {
 	cron *cron.Cron
 	jobs []Job
 
-	// Dependencies for spinning up agents
-	provider        provider.Provider
-	toolReg         *agent.ToolRegistry
-	memMgr          *memory.Manager
-	agentCfg        agent.Config
+	// template is the fully configured gateway runner (catalog, security, skills).
+	template        *agent.Runner
 	log             *zap.Logger
-	workspaceDir    string
 	persistencePath string
 
 	mu sync.Mutex
 }
 
+// NewDaemon schedules jobs using runners cloned from template so cron jobs get the
+// same tool catalog, guardrail, and audit behavior as interactive sessions.
 func NewDaemon(
 	jobs []Job,
-	p provider.Provider,
-	tools *agent.ToolRegistry,
-	mem *memory.Manager,
-	cfg agent.Config,
+	template *agent.Runner,
 	logger *zap.Logger,
-	workspaceDir string,
 	persistencePath string,
 ) *Daemon {
 	return &Daemon{
-		cron:            cron.New(cron.WithSeconds()), // Standard cron with seconds precision optional
+		cron:            cron.New(cron.WithSeconds()),
 		jobs:            jobs,
-		provider:        p,
-		toolReg:         tools,
-		memMgr:          mem,
-		agentCfg:        cfg,
+		template:        template,
 		log:             logger,
-		workspaceDir:    workspaceDir,
 		persistencePath: persistencePath,
 	}
 }
@@ -87,12 +76,17 @@ func (d *Daemon) Start() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
 
-			runner := agent.NewRunner(d.agentCfg, d.provider, d.toolReg, d.memMgr, d.log, d.workspaceDir)
+			if d.template == nil {
+				d.log.Error("cron: no runner template", zap.String("id", job.ID))
+				return
+			}
+			sid := "cron:" + job.ID
+			runner := d.template.WithSession(sid)
 
 			// Run in background without streaming to UI
 			res, err := runner.Run(ctx, memory.Message{
 				ID:        uuid.New().String(),
-				SessionID: "cron:" + job.ID,
+				SessionID: sid,
 				Role:      memory.RoleUser,
 				Content:   job.Prompt,
 				CreatedAt: time.Now(),
