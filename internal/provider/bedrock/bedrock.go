@@ -60,7 +60,7 @@ type Provider struct {
 // New creates a new Bedrock provider. Loads credentials from the standard
 // AWS credential chain: env vars → ~/.aws/credentials → IAM role.
 func New(cfg Config) (*Provider, error) {
-	awsCfg, err := loadAWSConfig(context.Background(), cfg)
+	awsCfg, err := LoadAWSConfig(context.Background(), cfg)
 	if err != nil {
 		return nil, err
 	}

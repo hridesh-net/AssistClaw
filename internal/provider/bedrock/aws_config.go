@@ -10,8 +10,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 )
 
-// loadAWSConfig mirrors New()'s credential and region rules for reuse (e.g. ListFoundationModels).
-func loadAWSConfig(ctx context.Context, cfg Config) (aws.Config, error) {
+// LoadAWSConfig builds aws.Config for Bedrock Runtime and control-plane clients using the same
+// rules as the LLM provider (API key bearer, static keys, named profile, then default chain).
+func LoadAWSConfig(ctx context.Context, cfg Config) (aws.Config, error) {
 	var opts []func(*awsconfig.LoadOptions) error
 	if cfg.Region != "" {
 		opts = append(opts, awsconfig.WithRegion(cfg.Region))

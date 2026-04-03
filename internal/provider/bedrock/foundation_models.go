@@ -35,7 +35,7 @@ func ListOnboardingTextModels(ctx context.Context, cfg Config) []ModelPick {
 		byID[id] = ModelPick{ID: id, Label: label}
 	}
 
-	awsCfg, err := loadAWSConfig(ctx, cfg)
+	awsCfg, err := LoadAWSConfig(ctx, cfg)
 	if err == nil {
 		c := bedrock.NewFromConfig(awsCfg)
 		out, err := c.ListFoundationModels(ctx, &bedrock.ListFoundationModelsInput{
@@ -99,7 +99,7 @@ func ListOnboardingEmbeddingModels(ctx context.Context, cfg Config) []ModelPick 
 		{ID: "cohere.embed-multilingual-v3", Label: "Cohere Embed Multilingual v3"},
 	}
 
-	awsCfg, err := loadAWSConfig(ctx, cfg)
+	awsCfg, err := LoadAWSConfig(ctx, cfg)
 	if err == nil {
 		c := bedrock.NewFromConfig(awsCfg)
 		out, err := c.ListFoundationModels(ctx, &bedrock.ListFoundationModelsInput{

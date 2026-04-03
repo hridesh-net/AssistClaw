@@ -7,9 +7,8 @@ import (
 	"time"
 
 	"github.com/assistclaw/assistclaw/internal/embeddings"
+	"github.com/assistclaw/assistclaw/internal/provider/bedrock"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 )
 
@@ -22,23 +21,18 @@ func NewBedrock(region, profile, accessKey, secretKey, apiKey string) (embedding
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var opts []func(*config.LoadOptions) error
-	if region != "" {
-		opts = append(opts, config.WithRegion(region))
-	}
-	if profile != "" {
-		opts = append(opts, config.WithSharedConfigProfile(profile))
-	}
-	if accessKey != "" && secretKey != "" {
-		opts = append(opts, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")))
-	}
-
-	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	awsCfg, err := bedrock.LoadAWSConfig(ctx, bedrock.Config{
+		Region:          region,
+		Profile:         profile,
+		AccessKeyID:     accessKey,
+		SecretAccessKey: secretKey,
+		APIKey:          apiKey,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	client := bedrockruntime.NewFromConfig(cfg)
+	client := bedrockruntime.NewFromConfig(awsCfg)
 	return &bedrockEmbedder{client: client, region: region}, nil
 }
 

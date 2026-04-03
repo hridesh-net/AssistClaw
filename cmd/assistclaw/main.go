@@ -55,7 +55,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.3" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.4" // Overridden by -ldflags "-X main.version=..." during build
 
 // defaultHeartbeatPrompt matches AGENTS.md guidance for OpenClaw-style periodic polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
@@ -1470,6 +1470,43 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 	return nil
 }
 
+// mergeBedrockForEmbeds fills in embeddings.bedrock from providers.bedrock when the embeddings
+// block only sets default_model (or is partial). Otherwise LoadDefaultConfig falls through to
+// EC2 IMDS and hangs or errors on laptops.
+func mergeBedrockForEmbeds(ec *config.BedrockCreds, prov *config.BedrockCreds) *config.BedrockCreds {
+	if ec == nil && prov == nil {
+		return nil
+	}
+	var out config.BedrockCreds
+	if ec != nil {
+		out = *ec
+	}
+	if prov != nil {
+		if out.Region == "" {
+			out.Region = prov.Region
+		}
+		if out.Profile == "" {
+			out.Profile = prov.Profile
+		}
+		if out.AccessKeyID == "" {
+			out.AccessKeyID = prov.AccessKeyID
+		}
+		if out.SecretAccessKey == "" {
+			out.SecretAccessKey = prov.SecretAccessKey
+		}
+		if out.APIKey == "" {
+			out.APIKey = prov.APIKey
+		}
+		if out.DefaultModel == "" {
+			out.DefaultModel = prov.DefaultModel
+		}
+	}
+	if out.Region == "" {
+		out.Region = "us-east-1"
+	}
+	return &out
+}
+
 func registerEmbedders(ctx context.Context, cfg *config.Config, reg *embeddings.Registry, log *zap.Logger) {
 	ec := cfg.Embeddings
 	register := func(e embeddings.Embedder) {
@@ -1502,13 +1539,13 @@ func registerEmbedders(ctx context.Context, cfg *config.Config, reg *embeddings.
 				register(embedproviders.NewOllama(""))
 			}
 		case "bedrock":
-			b := ec.Bedrock
-			if b == nil && cfg.Providers.Bedrock != nil {
-				b = cfg.Providers.Bedrock
-			}
+			b := mergeBedrockForEmbeds(ec.Bedrock, cfg.Providers.Bedrock)
 			if b != nil {
 				e, err := embedproviders.NewBedrock(b.Region, b.Profile, b.AccessKeyID, b.SecretAccessKey, b.APIKey)
-				if err == nil {
+				if err != nil {
+					log.Warn("bedrock embedder failed to initialize; semantic memory may be unavailable",
+						zap.Error(err))
+				} else {
 					register(e)
 				}
 			}

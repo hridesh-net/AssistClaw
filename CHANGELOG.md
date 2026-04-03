@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.10.4] - 2026-04-03
+### Fixed
+- **Bedrock semantic memory / embeddings:** Merge **`embeddings.bedrock`** with **`providers.bedrock`** when the embeddings block only sets `default_model`, so credentials are not dropped and the SDK does not fall through to **EC2 IMDS** (timeouts / “no EC2 IMDS role” on laptops).
+- **Bedrock embedder:** Use shared **`LoadAWSConfig`** (including **Bearer `api_key`**) for `InvokeModel` embedding calls.
+
 ## [v3.10.3] - 2026-04-03
 ### Added
 - **Onboarding — Bedrock models:** `ListFoundationModels` (AWS SDK `service/bedrock`) for **on-demand text** models in the chosen region, merged with the built-in catalog; embedding models listed the same way when the primary LLM is Bedrock.
@@ -12,7 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - **Config preload:** Together, NVIDIA, Cohere, Hugging Face, and Voyage primary/secondary fields load from existing `assistclaw.yaml`.
-- **Bedrock provider:** Shared **`loadAWSConfig`** in `aws_config.go` used by `New()` and foundation-model listing.
+- **Bedrock provider:** Shared **`LoadAWSConfig`** in `aws_config.go` used by `New()` and foundation-model listing.
 
 ## [v3.10.2] - 2026-04-02
 ### Fixed
