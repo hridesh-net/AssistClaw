@@ -56,7 +56,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.5" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.6-beta.1" // Overridden by -ldflags "-X main.version=..." during build
 
 // defaultHeartbeatPrompt matches AGENTS.md guidance for periodic heartbeat polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
@@ -1050,6 +1050,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		EnableReflection:      agentReflectionEnabled(cfg),
 		GatewayPublicBaseURL:  cfg.PublicGatewayBaseURL(),
 		ExtensionPromptAppend: extPrompt,
+		StateDir:              cfg.StateDir,
 	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog).WithHardware(hw)
 
 	// ── Security: Guardrail + Audit Log ────────────────────────────────
@@ -1057,7 +1058,11 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	if guardrailMode == "" {
 		guardrailMode = security.ModeMonitor
 	}
-	guardrail, guardErr := security.NewGuardrail(guardrailMode, cfg.Security.BlockPatterns)
+	var ownerOnly []string
+	if cfg.Security.OwnerOnlyPaths != nil {
+		ownerOnly = *cfg.Security.OwnerOnlyPaths
+	}
+	guardrail, guardErr := security.NewGuardrail(guardrailMode, cfg.Security.BlockPatterns, ownerOnly)
 	if guardErr != nil {
 		log.Warn("security guardrail init failed", zap.Error(guardErr))
 	}

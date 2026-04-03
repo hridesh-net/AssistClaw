@@ -21,6 +21,7 @@ func InitializeWorkspace(configPath string) error {
 		filepath.Join(dir, "memory"),
 		filepath.Join(dir, "skills"),
 		filepath.Join(dir, "tools"),
+		filepath.Join(dir, "policies"),
 		filepath.Join(dir, "workspace", "public"),
 	}
 

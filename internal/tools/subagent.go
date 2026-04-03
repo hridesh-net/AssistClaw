@@ -62,6 +62,7 @@ func (s *SubAgentSvc) buildChildRunner(maxIterations int, toolsProfile, workspac
 		ExtensionPromptAppend: s.ExtensionPromptAppend,
 		EnablePlanning:        false,
 		EnableReflection:      false,
+		StateDir:              s.Store.StateDir(),
 	}, s.Provider, childReg, s.Mem, s.Log, workspace)
 	return run.WithCatalog(catalog).WithHardware(s.Hardware).WithSecurity(s.Guardrail, s.AuditLog)
 }

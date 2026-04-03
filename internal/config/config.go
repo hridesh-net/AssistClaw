@@ -375,6 +375,12 @@ type SecurityConfig struct {
 
 	// Profile determines which tools are available. "full" or "coding"
 	Profile string `yaml:"profile"`
+
+	// OwnerOnlyPaths lists paths relative to state_dir that the agent must never modify
+	// (write_file, edit, apply_patch, env write_file, or bash referencing those paths).
+	// YAML key omitted → defaults to POLICIES.md, RULES.md, and the policies/ directory.
+	// Set explicitly to an empty list (owner_only_paths: []) to disable.
+	OwnerOnlyPaths *[]string `yaml:"owner_only_paths"`
 }
 
 // ChannelsConfig configures messaging channels.
@@ -547,6 +553,11 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Voice.VenvPath == "" {
 		cfg.Voice.VenvPath = filepath.Join(cfg.StateDir, "voice_env")
+	}
+
+	if cfg.Security.OwnerOnlyPaths == nil {
+		p := []string{"POLICIES.md", "RULES.md", "policies"}
+		cfg.Security.OwnerOnlyPaths = &p
 	}
 }
 

@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*.*.*'
+      # Pre-release tags (e.g. v3.10.6-beta.1, v4.0.0-rc.1)
+      - 'v*.*.*-*'
 
 permissions:
   contents: write
@@ -116,7 +118,13 @@ jobs:
           mkdir -p dist
           cp bin-archives/* dist/ || true
           echo "## AssistClaw ${GITHUB_REF_NAME}" > release_notes.md
-          echo "Automated release build." >> release_notes.md
+          if echo "${GITHUB_REF_NAME}" | grep -q '-'; then
+            echo "**Pre-release (beta / RC).** Not marked stable; expect changes before the final release." >> release_notes.md
+          else
+            echo "Stable release build." >> release_notes.md
+          fi
+          echo "" >> release_notes.md
+          echo "Automated binaries below." >> release_notes.md
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -124,6 +132,7 @@ jobs:
           files: dist/*
           body_path: release_notes.md
           draft: false
-          prerelease: false
+          # Tags like v1.2.3 are stable; v1.2.3-beta.1 / v1.2.3-rc.1 are pre-releases
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

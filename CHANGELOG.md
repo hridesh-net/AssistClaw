@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.10.6-beta.1] - 2026-04-02
+### Added
+- **Owner-only policy paths (`security.owner_only_paths`):** The agent cannot modify **`POLICIES.md`**, **`RULES.md`**, or the **`policies/`** tree under the state directory via **`write_file`**, **`edit`**, **`apply_patch`**, **`env`** write_file, or **`bash`** when those absolute paths appear in the command. Enforcement is always on (independent of guardrail **monitor** mode). **`read_file`** remains allowed. Defaults apply when the YAML key is omitted; set **`owner_only_paths: []`** to disable. New workspace templates seed **`POLICIES.md`** and **`RULES.md`**; **`AGENTS.md`** and the system prompt document the rule.
+
+### Changed
+- **GitHub Release workflow:** Pre-release tags matching **`v*.*.*-*`** (e.g. **`v3.10.6-beta.1`**) build and publish with **`prerelease: true`**. Stable tags **`v*.*.*`** without a suffix remain full releases.
+
 ## [v3.10.5] - 2026-04-02
 ### Added
 - **`assistclaw extensions` / `assistclaw extensions list`:** Summarizes built-in extension-equivalent features (channels, MCP, webhooks, cron, skills, voice, browser, memory) and **`extensions.prompt_files`** from **`assistclaw.yaml`**.

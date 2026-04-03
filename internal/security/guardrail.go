@@ -4,6 +4,7 @@
 package security
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -69,10 +70,15 @@ func (r CheckResult) Blocked() bool { return r.Action == ActionBlock }
 type Guardrail struct {
 	mode                GuardrailMode
 	customBlockPatterns []*regexp.Regexp
+	// ownerOnlyRel are paths relative to the AssistClaw state directory that the agent
+	// must never modify via tools (human operator edits on disk only). Empty = disabled.
+	ownerOnlyRel []string
 }
 
 // NewGuardrail creates a Guardrail with the given mode and optional extra patterns.
-func NewGuardrail(mode GuardrailMode, customPatterns []string) (*Guardrail, error) {
+// ownerOnlyRel lists state-dir-relative paths (files or directories) the agent cannot
+// write, edit, patch, or target via env/bash tools. Nil or empty disables this check.
+func NewGuardrail(mode GuardrailMode, customPatterns []string, ownerOnlyRel []string) (*Guardrail, error) {
 	if mode == "" {
 		mode = ModeMonitor
 	}
@@ -84,7 +90,7 @@ func NewGuardrail(mode GuardrailMode, customPatterns []string) (*Guardrail, erro
 		}
 		extra = append(extra, re)
 	}
-	return &Guardrail{mode: mode, customBlockPatterns: extra}, nil
+	return &Guardrail{mode: mode, customBlockPatterns: extra, ownerOnlyRel: ownerOnlyRel}, nil
 }
 
 // CheckInput runs the pre-LLM check on user-supplied text.
@@ -112,12 +118,52 @@ func (g *Guardrail) CheckOutput(text string) CheckResult {
 }
 
 // CheckToolCall runs a pre-execution check on a tool's name and raw JSON input.
-func (g *Guardrail) CheckToolCall(toolName, inputJSON string) CheckResult {
+// stateDir is the AssistClaw state root (~/.assistclaw); workspaceDir is the runner's
+// working directory (often the same as stateDir, or a sub-agent workspace).
+func (g *Guardrail) CheckToolCall(toolName, inputJSON, stateDir, workspaceDir string) CheckResult {
+	// Owner-only policy files: always block writes regardless of guardrail mode.
+	if len(g.ownerOnlyRel) > 0 && stateDir != "" {
+		var touched []string
+		touched = append(touched, PathsTouchedByTool(toolName, inputJSON, stateDir, workspaceDir)...)
+		if toolName == "bash" {
+			var m struct {
+				Command string `json:"command"`
+			}
+			if json.Unmarshal([]byte(inputJSON), &m) == nil {
+				touched = append(touched, bashTouchesOwnerAbsPaths(m.Command, stateDir, g.ownerOnlyRel)...)
+			}
+		}
+		var blocked []string
+		seen := map[string]bool{}
+		for _, p := range touched {
+			if p == "" || seen[p] {
+				continue
+			}
+			if AbsMatchesOwnerOnly(stateDir, p, g.ownerOnlyRel) {
+				seen[p] = true
+				blocked = append(blocked, p)
+			}
+		}
+		if len(blocked) > 0 {
+			return CheckResult{
+				Findings: []Finding{{
+					Rule:     "owner_only_path",
+					Severity: SeverityHigh,
+					Detail:   "Attempt to modify owner-only policy or rules path",
+				}},
+				Action:  ActionBlock,
+				Message: OwnerOnlyBlockMessage(toolName, blocked),
+			}
+		}
+	}
+
 	var findings []Finding
 	switch toolName {
 	case "bash":
 		findings = append(findings, checkDangerousBash(inputJSON)...)
 	case "write_file", "edit", "apply_patch":
+		findings = append(findings, checkDangerousFilePath(inputJSON)...)
+	case "env":
 		findings = append(findings, checkDangerousFilePath(inputJSON)...)
 	}
 	// Also check for injected instructions in any tool input

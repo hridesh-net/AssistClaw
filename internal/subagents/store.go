@@ -37,6 +37,11 @@ func NewStore(stateDir string) *Store {
 	return &Store{root: stateDir}
 }
 
+// StateDir returns the AssistClaw state root (e.g. ~/.assistclaw).
+func (s *Store) StateDir() string {
+	return s.root
+}
+
 func (s *Store) registryPath() string {
 	return filepath.Join(s.root, "subagents", "registry.json")
 }

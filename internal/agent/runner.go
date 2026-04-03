@@ -114,6 +114,8 @@ type Config struct {
 	GatewayPublicBaseURL string
 	// ExtensionPromptAppend is optional text from assistclaw.yaml extensions.prompt_files (markdown fragments).
 	ExtensionPromptAppend string
+	// StateDir is the AssistClaw state root (for owner-only policy path checks in the guardrail).
+	StateDir string
 }
 
 // Runner is the main agent execution loop.
@@ -539,7 +541,11 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 
 	// ── Guardrail: pre-execution tool check ──────────────────────────────
 	if r.guardrail != nil {
-		check := r.guardrail.CheckToolCall(tc.ToolName, string(inputJSON))
+		stateDir := r.cfg.StateDir
+		if stateDir == "" {
+			stateDir = r.workspaceDir
+		}
+		check := r.guardrail.CheckToolCall(tc.ToolName, string(inputJSON), stateDir, r.workspaceDir)
 		if r.auditLog != nil && len(check.Findings) > 0 {
 			r.auditLog.WriteGuardrailEvent(r.sessionID, r.channelID, check)
 		}
@@ -748,6 +754,8 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 ## Critical Rules
 
 **Product identity:** This runtime is **AssistClaw**. Use **IDENTITY.md** / **SOUL.md** for persona name and tone; do not claim a different product or runtime name unless those files explicitly define one.
+
+**Owner-only policies (hard rule):** ` + "`POLICIES.md`" + `, ` + "`RULES.md`" + `, and everything under ` + "`policies/`" + ` in the state directory are written only by the human operator on disk. You may ` + "`read_file`" + ` them to follow rules; you must not use ` + "`write_file`" + `, ` + "`edit`" + `, ` + "`apply_patch`" + `, ` + "`env`" + ` write_file, or ` + "`bash`" + ` to create, overwrite, or shell-edit those paths (attempts are blocked).
 
 **IMPORTANT: When a user asks you to DO something, DO IT using your tools.**
 **CRITICAL: Do NOT output markdown code blocks expecting the user to run them. You MUST use the ` + "`write_file`" + ` or ` + "`edit`" + ` tools to save files and the ` + "`bash`" + ` tool to execute commands.**
