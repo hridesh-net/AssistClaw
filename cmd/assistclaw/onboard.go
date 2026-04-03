@@ -15,6 +15,7 @@ import (
 	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 	"github.com/assistclaw/assistclaw/internal/config"
+	"github.com/assistclaw/assistclaw/internal/provider/bedrock"
 	"github.com/assistclaw/assistclaw/internal/skills"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -41,6 +42,50 @@ type embedEntry struct {
 	apiKey   string
 	baseURL  string
 	model    string
+}
+
+func inferBedrockAuthMode(e provEntry) string {
+	if strings.TrimSpace(e.apiKey) != "" {
+		return "api_key"
+	}
+	if strings.TrimSpace(e.awsProfile) != "" {
+		return "profile"
+	}
+	if strings.TrimSpace(e.awsAccessKey) != "" {
+		return "iam"
+	}
+	return "profile"
+}
+
+// ensureSelectValue prepends a select option when the saved value is not in the list (e.g. custom model IDs).
+func ensureSelectValue(opts []huh.Option[string], current, prefix string) []huh.Option[string] {
+	current = strings.TrimSpace(current)
+	if current == "" || current == "custom" {
+		return opts
+	}
+	for _, o := range opts {
+		if o.Value == current {
+			return opts
+		}
+	}
+	label := current
+	if len(label) > 72 {
+		label = label[:69] + "…"
+	}
+	return append([]huh.Option[string]{huh.NewOption(prefix + label, current)}, opts...)
+}
+
+func normalizeGatewayBind(bind string) string {
+	switch strings.TrimSpace(bind) {
+	case "loopback", "127.0.0.1", "":
+		return "loopback"
+	case "lan", "0.0.0.0":
+		return "lan"
+	case "tailscale", "tailnet":
+		return "tailscale"
+	default:
+		return bind
+	}
 }
 
 func onboardCmd(gf *globalFlags) *cobra.Command {
@@ -208,6 +253,9 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 	}
 
 	if defaultURL, ok := needsBaseURL[entry.provider]; ok {
+		if strings.TrimSpace(entry.baseURL) == "" {
+			entry.baseURL = defaultURL
+		}
 		fields = append(fields, huh.NewInput().
 			Title(fmt.Sprintf("Enter Base URL (Default: %s)", defaultURL)).
 			Value(&entry.baseURL))
@@ -220,8 +268,10 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 	}
 
 	if entry.provider == "bedrock" {
-		var bedrockAuthMode string
-		entry.awsRegion = "us-east-1"
+		bedrockAuthMode := inferBedrockAuthMode(entry)
+		if strings.TrimSpace(entry.awsRegion) == "" {
+			entry.awsRegion = "us-east-1"
+		}
 		formBedrockAuth := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
@@ -289,12 +339,6 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 			huh.NewOption("DeepSeek-R1 (70B Distill)", "deepseek-r1"),
 			huh.NewOption("Other / Custom...", "custom"),
 		},
-		"bedrock": {
-			huh.NewOption("Claude 3.5 Sonnet v2", "anthropic.claude-3-5-sonnet-20241022-v2:0"),
-			huh.NewOption("Claude 3.5 Haiku", "anthropic.claude-3-5-haiku-20241022-v1:0"),
-			huh.NewOption("Llama 3.3 70B", "meta.llama3-3-70b-instruct-v1:0"),
-			huh.NewOption("Other / Custom...", "custom"),
-		},
 		"groq": {
 			huh.NewOption("Llama 3.3 70B Versatile", "llama-3.3-70b-versatile"),
 			huh.NewOption("Mixtral 8x7B", "mixtral-8x7b-32768"),
@@ -327,12 +371,38 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 		},
 	}
 
-	if opts, ok := modelChoices[entry.provider]; ok {
+	var modelOpts []huh.Option[string]
+	if entry.provider == "bedrock" {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		picks := bedrock.ListOnboardingTextModels(ctx, bedrock.Config{
+			Region:          strings.TrimSpace(entry.awsRegion),
+			Profile:         strings.TrimSpace(entry.awsProfile),
+			AccessKeyID:     strings.TrimSpace(entry.awsAccessKey),
+			SecretAccessKey: strings.TrimSpace(entry.awsSecretKey),
+			APIKey:          strings.TrimSpace(entry.apiKey),
+		})
+		for _, p := range picks {
+			modelOpts = append(modelOpts, huh.NewOption(p.Label, p.ID))
+		}
+		modelOpts = append(modelOpts, huh.NewOption("Other / Custom...", "custom"))
+		modelOpts = ensureSelectValue(modelOpts, entry.model, "Current — ")
+	} else if opts, ok := modelChoices[entry.provider]; ok {
+		modelOpts = append([]huh.Option[string](nil), opts...)
+		modelOpts = ensureSelectValue(modelOpts, entry.model, "Current — ")
+	}
+
+	if len(modelOpts) > 0 {
+		desc := ""
+		if entry.provider == "bedrock" {
+			desc = "Lists ON_DEMAND text models in your region (AWS API) plus AssistClaw defaults."
+		}
 		formModel := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
 					Title("Select Model").
-					Options(opts...).
+					Description(desc).
+					Options(modelOpts...).
 					Value(&entry.model),
 			),
 		).WithTheme(theme)
@@ -395,9 +465,13 @@ func runOnboarding(configPath string) (bool, error) {
 		waDMMode         string = "pairing"
 		waAllowFromRaw   string
 		selectedSkills   []string
-		codingModel      string
-		visionModel      string
-		tpl              string
+		codingModel        string
+		visionModel        string
+		tpl                string
+		usePlano           bool
+		planoEndpoint      string
+		planoFastModel     string
+		planoPowerfulModel string
 	)
 
 	theme := huh.ThemeBase()
@@ -508,6 +582,39 @@ func runOnboarding(configPath string) (bool, error) {
 					primary.apiKey = existing.Providers.XAI.APIKey
 					primary.model = existing.Providers.XAI.DefaultModel
 				}
+			case "together":
+				if existing.Providers.Together != nil {
+					primary.apiKey = existing.Providers.Together.APIKey
+					primary.baseURL = existing.Providers.Together.BaseURL
+					primary.model = existing.Providers.Together.DefaultModel
+				}
+			case "nvidia":
+				if existing.Providers.NVIDIA != nil {
+					primary.apiKey = existing.Providers.NVIDIA.APIKey
+					primary.baseURL = existing.Providers.NVIDIA.BaseURL
+					primary.model = existing.Providers.NVIDIA.DefaultModel
+				}
+			case "cohere":
+				if existing.Providers.Cohere != nil {
+					primary.apiKey = existing.Providers.Cohere.APIKey
+					primary.baseURL = existing.Providers.Cohere.BaseURL
+					primary.model = existing.Providers.Cohere.DefaultModel
+				}
+			case "huggingface":
+				if existing.Providers.HuggingFace != nil {
+					primary.apiKey = existing.Providers.HuggingFace.APIKey
+					primary.baseURL = existing.Providers.HuggingFace.BaseURL
+					primary.model = existing.Providers.HuggingFace.DefaultModel
+					if primary.model == "" && existing.Providers.HuggingFace.Model != "" {
+						primary.model = existing.Providers.HuggingFace.Model
+					}
+				}
+			case "voyage":
+				if existing.Providers.Voyage != nil {
+					primary.apiKey = existing.Providers.Voyage.APIKey
+					primary.baseURL = existing.Providers.Voyage.BaseURL
+					primary.model = existing.Providers.Voyage.DefaultModel
+				}
 			case "vertex":
 				if existing.Providers.Vertex != nil {
 					primary.vertexProj = existing.Providers.Vertex.ProjectID
@@ -602,6 +709,39 @@ func runOnboarding(configPath string) (bool, error) {
 						secondary.apiKey = existing.Providers.XAI.APIKey
 						secondary.model = existing.Providers.XAI.DefaultModel
 					}
+				case "together":
+					if existing.Providers.Together != nil {
+						secondary.apiKey = existing.Providers.Together.APIKey
+						secondary.baseURL = existing.Providers.Together.BaseURL
+						secondary.model = existing.Providers.Together.DefaultModel
+					}
+				case "nvidia":
+					if existing.Providers.NVIDIA != nil {
+						secondary.apiKey = existing.Providers.NVIDIA.APIKey
+						secondary.baseURL = existing.Providers.NVIDIA.BaseURL
+						secondary.model = existing.Providers.NVIDIA.DefaultModel
+					}
+				case "cohere":
+					if existing.Providers.Cohere != nil {
+						secondary.apiKey = existing.Providers.Cohere.APIKey
+						secondary.baseURL = existing.Providers.Cohere.BaseURL
+						secondary.model = existing.Providers.Cohere.DefaultModel
+					}
+				case "huggingface":
+					if existing.Providers.HuggingFace != nil {
+						secondary.apiKey = existing.Providers.HuggingFace.APIKey
+						secondary.baseURL = existing.Providers.HuggingFace.BaseURL
+						secondary.model = existing.Providers.HuggingFace.DefaultModel
+						if secondary.model == "" && existing.Providers.HuggingFace.Model != "" {
+							secondary.model = existing.Providers.HuggingFace.Model
+						}
+					}
+				case "voyage":
+					if existing.Providers.Voyage != nil {
+						secondary.apiKey = existing.Providers.Voyage.APIKey
+						secondary.baseURL = existing.Providers.Voyage.BaseURL
+						secondary.model = existing.Providers.Voyage.DefaultModel
+					}
 				case "vertex":
 					if existing.Providers.Vertex != nil {
 						secondary.vertexProj = existing.Providers.Vertex.ProjectID
@@ -671,7 +811,7 @@ func runOnboarding(configPath string) (bool, error) {
 		}
 
 		// Pre-populate Gateway & Routing
-		gwMode = existing.Gateway.Bind
+		gwMode = normalizeGatewayBind(existing.Gateway.Bind)
 		if existing.Gateway.Host != "" {
 			gwHost = existing.Gateway.Host
 		}
@@ -686,6 +826,22 @@ func runOnboarding(configPath string) (bool, error) {
 			}
 			if r.Task == "vision" {
 				visionModel = r.Model
+			}
+		}
+
+		if existing.Plano.Enabled {
+			usePlano = true
+			if strings.TrimSpace(existing.Plano.Endpoint) != "" {
+				planoEndpoint = existing.Plano.Endpoint
+			} else {
+				planoEndpoint = "http://localhost:12000/v1"
+			}
+			prefs := existing.Plano.Preferences
+			if len(prefs) >= 2 {
+				planoFastModel = prefs[0].PreferModel
+				planoPowerfulModel = prefs[1].PreferModel
+			} else if len(prefs) == 1 {
+				planoFastModel = prefs[0].PreferModel
 			}
 		}
 
@@ -775,7 +931,6 @@ func runOnboarding(configPath string) (bool, error) {
 	// ─── Step 3: Plano Smart Routing ────────────────────────────────────────
 	// Only offered when a secondary provider is configured.
 	// Plano needs at least 2 OpenAI-compatible endpoints to route between.
-	var usePlano bool
 	if secChoice == "configure" && secondary.provider != "" && secondary.provider != "none" {
 		planoHint := ""
 		if !openAICompatProviders[primary.provider] {
@@ -794,9 +949,27 @@ func runOnboarding(configPath string) (bool, error) {
 		)).WithTheme(theme).Run()
 	} // end if secChoice == "configure" && secondary
 
-	var planoEndpoint, planoFastModel, planoPowerfulModel string
 	if secChoice == "configure" && usePlano {
-		planoEndpoint = "http://localhost:12000/v1"
+		if strings.TrimSpace(planoEndpoint) == "" {
+			planoEndpoint = "http://localhost:12000/v1"
+		}
+		fastOpts := []huh.Option[string]{
+			huh.NewOption("GPT-4o mini", "openai/gpt-4o-mini"),
+			huh.NewOption("Groq Llama3 8B", "groq/llama3-8b-8192"),
+			huh.NewOption("Mistral 7B", "mistral/mistral-7b-instruct"),
+			huh.NewOption("Ollama Llama3.2", "ollama/llama3.2"),
+			huh.NewOption("DeepSeek V2 (Lite)", "deepseek/deepseek-chat"),
+		}
+		fastOpts = ensureSelectValue(fastOpts, planoFastModel, "Current — ")
+		powerOpts := []huh.Option[string]{
+			huh.NewOption("GPT-4o", "openai/gpt-4o"),
+			huh.NewOption("GPT-4.1", "openai/gpt-4.1"),
+			huh.NewOption("Groq Llama3 70B", "groq/llama3-70b-8192"),
+			huh.NewOption("Mistral Large", "mistral/mistral-large-latest"),
+			huh.NewOption("Ollama Llama3.1 70B", "ollama/llama3.1:70b"),
+			huh.NewOption("DeepSeek R1", "deepseek/deepseek-r1"),
+		}
+		powerOpts = ensureSelectValue(powerOpts, planoPowerfulModel, "Current — ")
 		_ = huh.NewForm(huh.NewGroup(
 			huh.NewInput().
 				Title("Plano endpoint").
@@ -805,25 +978,12 @@ func runOnboarding(configPath string) (bool, error) {
 			huh.NewSelect[string]().
 				Title("Fast (cheap) model — for simple queries").
 				Description("Used for greetings, short Q&A, and conversational turns.").
-				Options(
-					huh.NewOption("GPT-4o mini", "openai/gpt-4o-mini"),
-					huh.NewOption("Groq Llama3 8B", "groq/llama3-8b-8192"),
-					huh.NewOption("Mistral 7B", "mistral/mistral-7b-instruct"),
-					huh.NewOption("Ollama Llama3.2", "ollama/llama3.2"),
-					huh.NewOption("DeepSeek V2 (Lite)", "deepseek/deepseek-chat"),
-				).
+				Options(fastOpts...).
 				Value(&planoFastModel),
 			huh.NewSelect[string]().
 				Title("Powerful model — for complex tasks").
 				Description("Used for coding, multi-step reasoning, and analysis.").
-				Options(
-					huh.NewOption("GPT-4o", "openai/gpt-4o"),
-					huh.NewOption("GPT-4.1", "openai/gpt-4.1"),
-					huh.NewOption("Groq Llama3 70B", "groq/llama3-70b-8192"),
-					huh.NewOption("Mistral Large", "mistral/mistral-large-latest"),
-					huh.NewOption("Ollama Llama3.1 70B", "ollama/llama3.1:70b"),
-					huh.NewOption("DeepSeek R1", "deepseek/deepseek-r1"),
-				).
+				Options(powerOpts...).
 				Value(&planoPowerfulModel),
 		)).WithTheme(theme).Run()
 
@@ -840,24 +1000,34 @@ func runOnboarding(configPath string) (bool, error) {
 	}
 	// ─────────────────────────────────────────────────────────────────────────
 
+	codingOpts := []huh.Option[string]{
+		huh.NewOption("Use Default", "default"),
+		huh.NewOption("Claude 3.5 Sonnet", "anthropic/claude-3-5-sonnet-20241022"),
+		huh.NewOption("GPT-4o", "openai/gpt-4o"),
+		huh.NewOption("DeepSeek-R1 (Local)", "ollama/deepseek-r1"),
+	}
+	if codingModel == "" {
+		codingModel = "default"
+	}
+	if visionModel == "" {
+		visionModel = "default"
+	}
+	codingOpts = ensureSelectValue(codingOpts, codingModel, "Current — ")
+	visionOpts := []huh.Option[string]{
+		huh.NewOption("Use Default", "default"),
+		huh.NewOption("Claude 3.5 Sonnet", "anthropic/claude-3-5-sonnet-20241022"),
+		huh.NewOption("GPT-4o", "openai/gpt-4o"),
+	}
+	visionOpts = ensureSelectValue(visionOpts, visionModel, "Current — ")
 	formRouting := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Advanced Routing: Coding").
-				Options(
-					huh.NewOption("Use Default", "default"),
-					huh.NewOption("Claude 3.5 Sonnet", "anthropic/claude-3-5-sonnet-20241022"),
-					huh.NewOption("GPT-4o", "openai/gpt-4o"),
-					huh.NewOption("DeepSeek-R1 (Local)", "ollama/deepseek-r1"),
-				).
+				Options(codingOpts...).
 				Value(&codingModel),
 			huh.NewSelect[string]().
 				Title("Advanced Routing: Vision").
-				Options(
-					huh.NewOption("Use Default", "default"),
-					huh.NewOption("Claude 3.5 Sonnet", "anthropic/claude-3-5-sonnet-20241022"),
-					huh.NewOption("GPT-4o", "openai/gpt-4o"),
-				).
+				Options(visionOpts...).
 				Value(&visionModel),
 		),
 	).WithTheme(theme)
@@ -891,7 +1061,9 @@ func runOnboarding(configPath string) (bool, error) {
 
 	var embedFields []huh.Field
 	if embed.provider == "ollama" {
-		embed.baseURL = "http://localhost:11434"
+		if strings.TrimSpace(embed.baseURL) == "" {
+			embed.baseURL = "http://localhost:11434"
+		}
 		embedFields = append(embedFields, huh.NewInput().Title("Ollama Base URL").Value(&embed.baseURL))
 	} else if embed.provider == "azure" {
 		embedFields = append(embedFields,
@@ -909,18 +1081,43 @@ func runOnboarding(configPath string) (bool, error) {
 		"openai": {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
 		"azure":  {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
 		"ollama": {huh.NewOption("nomic-embed-text", "nomic-embed-text"), huh.NewOption("mxbai-embed-large", "mxbai-embed-large")},
-		"bedrock": {
-			huh.NewOption("Titan Text Embed v2", "amazon.titan-embed-text-v2:0"),
-			huh.NewOption("Titan Text Embed v1", "amazon.titan-embed-text-v1"),
-			huh.NewOption("Cohere English v3", "cohere.embed-english-v3"),
-		},
 		"cohere":  {huh.NewOption("embed-v4.0", "embed-v4.0")},
 		"google":  {huh.NewOption("text-embedding-004", "text-embedding-004")},
 		"voyage":  {huh.NewOption("voyage-3", "voyage-3"), huh.NewOption("voyage-3-lite", "voyage-3-lite")},
 		"mistral": {huh.NewOption("mistral-embed", "mistral-embed")},
 		"vertex":  {huh.NewOption("text-embedding-004", "text-embedding-004"), huh.NewOption("text-multilingual-embedding-002", "text-multilingual-embedding-002")},
 	}
-	embedFields = append(embedFields, huh.NewSelect[string]().Title("Embedding Model").Options(embedModels[embed.provider]...).Value(&embed.model))
+	var embedModelOpts []huh.Option[string]
+	if embed.provider == "bedrock" {
+		if primary.provider == "bedrock" {
+			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer cancel()
+			for _, p := range bedrock.ListOnboardingEmbeddingModels(ctx, bedrock.Config{
+				Region:          strings.TrimSpace(primary.awsRegion),
+				Profile:         strings.TrimSpace(primary.awsProfile),
+				AccessKeyID:     strings.TrimSpace(primary.awsAccessKey),
+				SecretAccessKey: strings.TrimSpace(primary.awsSecretKey),
+				APIKey:          strings.TrimSpace(primary.apiKey),
+			}) {
+				embedModelOpts = append(embedModelOpts, huh.NewOption(p.Label, p.ID))
+			}
+		}
+		if len(embedModelOpts) == 0 {
+			embedModelOpts = []huh.Option[string]{
+				huh.NewOption("Titan Text Embed v2", "amazon.titan-embed-text-v2:0"),
+				huh.NewOption("Titan Text Embed v1", "amazon.titan-embed-text-v1"),
+				huh.NewOption("Cohere English v3", "cohere.embed-english-v3"),
+			}
+		}
+	} else if opts, ok := embedModels[embed.provider]; ok {
+		embedModelOpts = append([]huh.Option[string](nil), opts...)
+	}
+	embedModelOpts = ensureSelectValue(embedModelOpts, embed.model, "Current — ")
+	embedDesc := ""
+	if embed.provider == "bedrock" {
+		embedDesc = "Bedrock: when your primary LLM is also Bedrock, models are listed from AWS for your region."
+	}
+	embedFields = append(embedFields, huh.NewSelect[string]().Title("Embedding Model").Description(embedDesc).Options(embedModelOpts...).Value(&embed.model))
 
 	if len(embedFields) > 0 {
 		formEmbedDetail := huh.NewForm(huh.NewGroup(embedFields...)).WithTheme(theme)
@@ -1081,7 +1278,9 @@ func runOnboarding(configPath string) (bool, error) {
 					Value(&slAllowFromRaw),
 			)).WithTheme(theme).Run()
 		case "whatsapp":
-			waSessionID = "personal"
+			if strings.TrimSpace(waSessionID) == "" {
+				waSessionID = "personal"
+			}
 			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("\n--- WhatsApp Integration ---"))
 			fmt.Println("AssistClaw acts as a standalone WhatsApp account.")
 			fmt.Println("You will need to scan a QR code using 'Linked Devices' on your phone.")
@@ -1165,7 +1364,9 @@ func runOnboarding(configPath string) (bool, error) {
 
 			const customSentinel = "__custom__"
 			var opts []huh.Option[string]
+			inIndex := make(map[string]bool)
 			for _, e := range idx.Skills {
+				inIndex[e.Name] = true
 				label := e.Name
 				if e.Emoji != "" {
 					label = e.Emoji + "  " + e.Name
@@ -1179,6 +1380,11 @@ func runOnboarding(configPath string) (bool, error) {
 				}
 				opts = append(opts, huh.NewOption(label, e.Name))
 			}
+			for _, name := range selectedSkills {
+				if name != "" && !inIndex[name] {
+					opts = append(opts, huh.NewOption(name+" (from config)", name))
+				}
+			}
 			opts = append(opts, huh.NewOption("＋  Add custom skill  (local path or URL)", customSentinel))
 
 			fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).
@@ -1186,17 +1392,18 @@ func runOnboarding(configPath string) (bool, error) {
 			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).
 				Render("  Space to toggle · Enter to confirm · ↑↓ to move\n"))
 
-			var raw []string
+			skillPick := append([]string(nil), selectedSkills...)
 			_ = huh.NewForm(huh.NewGroup(
 				huh.NewMultiSelect[string]().
 					Title("Enable Skills").
 					Description("Bundled skills are fetched automatically if not present locally.").
 					Options(opts...).
-					Value(&raw),
+					Value(&skillPick),
 			)).WithTheme(theme).Run()
 
+			selectedSkills = nil
 			var customPath string
-			for _, n := range raw {
+			for _, n := range skillPick {
 				if n == customSentinel {
 					_ = huh.NewForm(huh.NewGroup(
 						huh.NewInput().
@@ -1313,7 +1520,7 @@ func runOnboarding(configPath string) (bool, error) {
 		if e.baseURL != "" {
 			sb.WriteString(fmt.Sprintf("    base_url: \"%s\"\n", e.baseURL))
 		}
-		sb.WriteString(fmt.Sprintf("    model: \"%s\"\n", e.model))
+		sb.WriteString(fmt.Sprintf("    default_model: \"%s\"\n", e.model))
 	}
 	writeEmbed(embed)
 	sb.WriteString("\n")

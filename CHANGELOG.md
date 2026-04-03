@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.10.3] - 2026-04-03
+### Added
+- **Onboarding — Bedrock models:** `ListFoundationModels` (AWS SDK `service/bedrock`) for **on-demand text** models in the chosen region, merged with the built-in catalog; embedding models listed the same way when the primary LLM is Bedrock.
+
+### Fixed
+- **`assistclaw onboard` re-runs:** Pre-fill Plano (no variable shadowing), gateway `bind` normalization (`tailnet` → wizard values), WhatsApp session id (stop overwriting saved), embeddings YAML **`default_model`** (was `model`), Ollama embedding base URL reset, skills multi-select from **`enabled_skills`**, and **“Current — …”** select rows for saved model IDs not in short lists.
+- **Bedrock wizard:** Restore region and infer auth mode (API key / profile / IAM) from existing config instead of forcing `us-east-1` and blank auth.
+
+### Changed
+- **Config preload:** Together, NVIDIA, Cohere, Hugging Face, and Voyage primary/secondary fields load from existing `assistclaw.yaml`.
+- **Bedrock provider:** Shared **`loadAWSConfig`** in `aws_config.go` used by `New()` and foundation-model listing.
+
 ## [v3.10.2] - 2026-04-02
 ### Fixed
 - **Messaging slash commands:** Detect the first line that starts with `/` (after optional BOM/bidi marks), including when bridges prepend metadata (e.g. `[CHAT INFO]…`) or WhatsApp puts quoted reply text above `/new`. Previously routing required the entire `msg.Text` to start with `/`, so commands were ignored and handled by the LLM instead.

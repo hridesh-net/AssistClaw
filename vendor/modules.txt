@@ -71,6 +71,13 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
 # github.com/aws/aws-sdk-go-v2/internal/ini v1.8.2
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/internal/ini
+# github.com/aws/aws-sdk-go-v2/service/bedrock v1.29.0
+## explicit; go 1.22
+github.com/aws/aws-sdk-go-v2/service/bedrock
+github.com/aws/aws-sdk-go-v2/service/bedrock/document
+github.com/aws/aws-sdk-go-v2/service/bedrock/internal/document
+github.com/aws/aws-sdk-go-v2/service/bedrock/internal/endpoints
+github.com/aws/aws-sdk-go-v2/service/bedrock/types
 # github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.19.0
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/service/bedrockruntime

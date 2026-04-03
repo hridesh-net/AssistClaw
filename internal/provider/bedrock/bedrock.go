@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
@@ -62,57 +60,10 @@ type Provider struct {
 // New creates a new Bedrock provider. Loads credentials from the standard
 // AWS credential chain: env vars → ~/.aws/credentials → IAM role.
 func New(cfg Config) (*Provider, error) {
-	var opts []func(*awsconfig.LoadOptions) error
-	if cfg.Region != "" {
-		opts = append(opts, awsconfig.WithRegion(cfg.Region))
-	}
-	if cfg.APIKey != "" {
-		// Disable AWS SigV4 by using anonymous credentials
-		opts = append(opts, awsconfig.WithCredentialsProvider(aws.AnonymousCredentials{}))
-		// Inject the API key header via a custom transport
-		transport := http.DefaultTransport
-		opts = append(opts, awsconfig.WithHTTPClient(&http.Client{
-			Transport: &apiKeyTransport{
-				token: cfg.APIKey,
-				base:  transport,
-			},
-		}))
-	} else if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
-		// Use direct IAM access keys
-		opts = append(opts, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")))
-	} else if cfg.Profile != "" {
-		// Use specific AWS profile
-		opts = append(opts, awsconfig.WithSharedConfigProfile(cfg.Profile))
-	}
-
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), opts...)
+	awsCfg, err := loadAWSConfig(context.Background(), cfg)
 	if err != nil {
-		if cfg.APIKey != "" {
-			awsCfg = aws.Config{
-				Region:      cfg.Region,
-				Credentials: aws.AnonymousCredentials{},
-				HTTPClient: &http.Client{
-					Transport: &apiKeyTransport{
-						token: cfg.APIKey,
-						base:  http.DefaultTransport,
-					},
-				},
-			}
-		} else if cfg.AccessKeyID != "" {
-			awsCfg = aws.Config{
-				Region: cfg.Region,
-				Credentials: aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
-					return aws.Credentials{
-						AccessKeyID:     cfg.AccessKeyID,
-						SecretAccessKey: cfg.SecretAccessKey,
-					}, nil
-				}),
-			}
-		} else {
-			return nil, fmt.Errorf("bedrock: load aws config: %w", err)
-		}
+		return nil, err
 	}
-
 	return &Provider{
 		cfg:    cfg,
 		client: bedrockruntime.NewFromConfig(awsCfg),

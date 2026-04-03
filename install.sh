@@ -5,7 +5,7 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hridesh-net/AssistClaw/main/install.sh | bash
 #   bash install.sh
-#   ASSISTCLAW_VERSION=v3.10.2 bash install.sh
+#   ASSISTCLAW_VERSION=v3.10.3 bash install.sh
 #
 # Environment:
 #   ASSISTCLAW_VERSION   Git tag or "latest" (default: latest)
