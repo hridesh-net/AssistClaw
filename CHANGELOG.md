@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.10.5] - 2026-04-02
+### Added
+- **`assistclaw extensions` / `assistclaw extensions list`:** Summarizes built-in extension-equivalent features (channels, MCP, webhooks, cron, skills, voice, browser, memory) and **`extensions.prompt_files`** from **`assistclaw.yaml`**.
+- **`internal/extensions`:** Loads optional **`extensions.prompt_files`** markdown from the state directory and appends them to the agent system prompt when **`extensions.enabled`** is true.
+
+### Changed
+- **Branding cleanup:** Remove legacy third-party product naming from code, documentation, and bundled skills. Skill metadata YAML/JSON key is **`assistclaw`** (update external **`SKILL.md`** files that still used the old key). Examples and env vars use AssistClaw paths and **`ASSISTCLAW_*`** prefixes.
+- **Documentation:** Fix comparison tables and deep-dive wording after the terminology pass; canvas skill URLs use the **`/__assistclaw__/`** path prefix in examples.
+
+### Removed
+- **`.gitignore`:** Drop the ignore rule for a local reference clone directory under the repository root.
+
 ## [v3.10.4] - 2026-04-03
 ### Fixed
 - **Bedrock semantic memory / embeddings:** Merge **`embeddings.bedrock`** with **`providers.bedrock`** when the embeddings block only sets `default_model`, so credentials are not dropped and the SDK does not fall through to **EC2 IMDS** (timeouts / “no EC2 IMDS role” on laptops).
@@ -25,12 +37,12 @@ All notable changes to this project will be documented in this file.
 - **Fallback text:** If `Message.Text` is empty, derive slash detection from the first text **Part**.
 
 ### Changed
-- **System prompt:** Reinforce **AssistClaw** product identity in Critical Rules (do not call the product **OpenClaw** unless workspace identity files say so).
+- **System prompt:** Reinforce **AssistClaw** product identity in Critical Rules; persona naming comes from **IDENTITY.md** / **SOUL.md** when those files define it.
 
 ## [v3.10.1] - 2026-04-05
 ### Added
-- **Messaging slash commands (OpenClaw parity layer):** `/whoami` (`/id`), `/context`, `/compact`, `/model`, `/models [filter]`, `/tools verbose`, `/new`; **`WithModelRegistry`** so `/models` lists the live catalog on channels.
-- **OpenClaw command names** (`/stop`, `/usage`, `/think`, `/config`, `/steer`, `/export`, …) return short stubs pointing to AssistClaw equivalents (yaml, restart, `/reset`, logs).
+- **Messaging slash commands (compatibility layer):** `/whoami` (`/id`), `/context`, `/compact`, `/model`, `/models [filter]`, `/tools verbose`, `/new`; **`WithModelRegistry`** so `/models` lists the live catalog on channels.
+- **Legacy command names** (`/stop`, `/usage`, `/think`, `/config`, `/steer`, `/export`, …) return short stubs pointing to AssistClaw equivalents (yaml, restart, `/reset`, logs).
 - **Aliases:** `/thinking`→`/think`, `/t`, `/v`, `/reason`, `/elev`, `/tell`→`/steer`, `/export`→`/export-session`, `/plugin`→`/plugins`.
 
 ### Changed
@@ -38,7 +50,7 @@ All notable changes to this project will be documented in this file.
 
 ## [v3.10.0] - 2026-04-04
 ### Added
-- **Provider model catalogs** (`internal/provider/catalogs/`): OpenClaw-aligned static lists for **xAI (Grok)**, **Groq**, **Mistral**, **Together**, **OpenRouter**, **NVIDIA**, **Cohere**, **DeepSeek**, and **Perplexity**, merged with live `/v1/models` discovery when enabled.
+- **Provider model catalogs** (`internal/provider/catalogs/`): Curated static lists for **xAI (Grok)**, **Groq**, **Mistral**, **Together**, **OpenRouter**, **NVIDIA**, **Cohere**, **DeepSeek**, and **Perplexity**, merged with live `/v1/models` discovery when enabled.
 - **xAI default model**: `providers.xai.default_model` falls back to **`grok-4`** when unset.
 
 ### Fixed
@@ -54,17 +66,17 @@ All notable changes to this project will be documented in this file.
 
 ## [v3.9.8] - 2026-04-02
 ### Added
-- **Sub-agents (OpenClaw-style delegation)**: New tools **`subagent_create`**, **`subagent_list`**, **`subagent_run`**, **`subagent_remove`**. Each specialist gets a workspace under `<stateDir>/subagents/<id>/` with **`SOUL.md`**, a JSON registry at **`subagents/registry.json`**, and a child runner that shares the parent tool stack but **cannot nest** further sub-agents. Wired after the security layer so children inherit guardrail and audit logging.
+- **Sub-agents (delegation)**: New tools **`subagent_create`**, **`subagent_list`**, **`subagent_run`**, **`subagent_remove`**. Each specialist gets a workspace under `<stateDir>/subagents/<id>/` with **`SOUL.md`**, a JSON registry at **`subagents/registry.json`**, and a child runner that shares the parent tool stack but **cannot nest** further sub-agents. Wired after the security layer so children inherit guardrail and audit logging.
 - **Tool graph**: Intent and edges for delegation keywords (`subagent`, `delegate`, `specialist`, etc.) so the catalog surfaces sub-agent tools when relevant.
 - **Channel command `/subagents`**: Lists registered sub-agents via the same path as `/skills` (executes `subagent_list`).
 - **Local static dashboards**: Gateway serves **`~/.assistclaw/workspace/public/`** at **`/workspace/`** (no Bearer token—do not store secrets there). **`Config.PublicGatewayBaseURL()`** supplies links for prompts; workspace init creates **`workspace/public`**; README and **`AGENTS.md`** template document usage.
 
 ### Changed
-- **Template `IDENTITY.md`**: Avatar example path now references **`assistclaw.png`** instead of OpenClaw.
+- **Template `IDENTITY.md`**: Avatar example path now references **`assistclaw.png`** instead of a generic placeholder asset.
 
 ## [v3.9.7] - 2026-04-02
 ### Added
-- **Heartbeat scheduler**: Optional `agent.heartbeat` config (interval, dedicated session, prompt) for OpenClaw-style periodic proactive turns when running `assistclaw start` or any messaging channel.
+- **Heartbeat scheduler**: Optional `agent.heartbeat` config (interval, dedicated session, prompt) for periodic proactive turns when running `assistclaw start` or any messaging channel.
 - **`HEARTBEAT.md` workspace template** for first-time workspace seeding.
 - **Smarter autonomous mode**: Upfront planning phase in `RunAutonomous` when planning is enabled; checkpoint system messages every 25 iterations on long runs.
 - **Agent planning / reflection YAML**: `agent.planning` (default on when unset) and `agent.reflection` (default off when unset) wired into the runner for interactive and background sessions.
@@ -82,7 +94,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **Workspace Identity Now Active**: Fixed two critical bugs that prevented `SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `USER.md` etc. from having any effect:
   1. `InitializeWorkspace` was defined but never called — templates were never seeded to disk on first run. Now called at startup.
-  2. Workspace identity files were appended *after* the hardcoded `"You are AssistClaw"` block, effectively ignoring them. Now when workspace files exist they *replace* the hardcoded identity (exact OpenClaw parity). The hardcoded block is only a fallback for bare installs.
+  2. Workspace identity files were appended *after* the hardcoded `"You are AssistClaw"` block, effectively ignoring them. Now when workspace files exist they *replace* the hardcoded identity (workspace-first identity). The hardcoded block is only a fallback for bare installs.
 
 ## [v3.9.4] - 2026-04-01
 ### Fixed
@@ -90,7 +102,7 @@ All notable changes to this project will be documented in this file.
 
 ## [v3.9.3] - 2026-04-01
 ### Added
-- **Dynamic Workspace Bootstrapping**: Added logic to automatically seed the `~/.assistclaw` state directory with standard OpenClaw markdown templates (`SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `USER.md`, `BOOTSTRAP.md`, `TOOLS.md`) via Go embedding if they do not exist.
+- **Dynamic Workspace Bootstrapping**: Added logic to automatically seed the `~/.assistclaw` state directory with standard workspace markdown templates (`SOUL.md`, `IDENTITY.md`, `AGENTS.md`, `USER.md`, `BOOTSTRAP.md`, `TOOLS.md`) via Go embedding if they do not exist.
 
 ## [v3.9.2] - 2026-04-01
 ### Fixed
@@ -99,9 +111,9 @@ All notable changes to this project will be documented in this file.
 
 ## [v3.9.1] - 2026-04-01
 ### Added
-- **OpenClaw Parity**: Full integration of the workspace memory system mapping `SOUL.md`, `IDENTITY.md`, `USER.md`, and `AGENTS.md` exactly as OpenClaw handles injection.
+- **Workspace memory integration**: Full integration of the workspace memory system mapping `SOUL.md`, `IDENTITY.md`, `USER.md`, and `AGENTS.md` into the system prompt the same way the workspace files are designed to be used.
 - **Security Profile Controls**: Implementation of the `tools.profile` setting mapping string options like `coding` to strictly filter agent tool registries (e.g. blocking web browsing or proactive messaging for clean sandbox execution).
-- **Persistent Cron CLI**: Complete the `cron` command package mapping OpenClaw's exact command capability (`list`, `add`, `remove`) and background heartbeat/headless execution system natively over Go logic.
+- **Persistent Cron CLI**: Complete the `cron` command package with `list`, `add`, and `remove` commands plus background heartbeat/headless execution natively in Go.
 
 ## [v3.9.0] - 2026-03-25
 ### Added
@@ -158,7 +170,7 @@ All notable changes to this project will be documented in this file.
 
 ## [v3.6.16] - 2026-03-07
 ### Added
-- **WhatsApp Parity (OpenClaw)**: Support for WhatsApp emoji reactions (⏳, ✅, ❌) for status updates and shared group context via JID-to-SessionID mapping.
+- **WhatsApp**: Support for WhatsApp emoji reactions (⏳, ✅, ❌) for status updates and shared group context via JID-to-SessionID mapping.
 - **Multimodal Vision Integration**: Support for `image_understand` tool (OCR, screenshot analysis) across all vision-capable providers.
 - **Session Intelligence**: Added `/sessions` and `/forget` commands for granular chat history management.
 - **Proactive Media Support**: Added `SendMediaTool` for autonomous file and image dispatch.
@@ -252,7 +264,7 @@ security:
 
 ## [v3.5.1] - 2026-03-03
 ### Fixed — Web Search & Fetch
-- **`web_search`**: Root cause confirmed — DDG HTML returns a CAPTCHA challenge for server-side Go HTTP requests, and the Instant Answer API only works for Wikipedia-level entities (not niche queries like "openclaw"). Rewrote to use **SearXNG public JSON API** as primary backend (12 instances tried in order, 5s timeout each, 20s overall). Falls back to DDG Instant Answer, then returns a direct search URL for `web_fetch` as a last resort.
+- **`web_search`**: Root cause confirmed — DDG HTML returns a CAPTCHA challenge for server-side Go HTTP requests, and the Instant Answer API only works for Wikipedia-level entities (not niche queries like "assistclaw"). Rewrote to use **SearXNG public JSON API** as primary backend (12 instances tried in order, 5s timeout each, 20s overall). Falls back to DDG Instant Answer, then returns a direct search URL for `web_fetch` as a last resort.
 - **`web_fetch`**: Upgraded from bare `curl` wrapper to a proper tool — adds `max_chars` (default 8000, max 32000), `raw` param, and automatic HTML tag stripping. Better description tells the agent to use it after `web_search`. Pairs cleanly as "search → fetch" workflow.
 
 ## [v3.5.0] - 2026-03-03
@@ -278,7 +290,7 @@ security:
 
 ## [v3.4.2] - 2026-03-03
 ### Added
-- **21 built-in tools** (up from 10) — full OpenClaw tool parity:
+- **21 built-in tools** (up from 10) — broad tool coverage:
   - **Tier 1**: `edit` (str-replace in-place edits), `web_search` (DuckDuckGo, no API key), `process` (start/stop/logs background processes), `apply_patch` (unified diff), `env` (read/write .env + OS env)
   - **Tier 2**: `image_understand` (vision model for screenshots/OCR), `sessions_list` + `sessions_history` (episodic memory browsing), `cron` (schedule recurring tasks), `message` (proactive channel sends)
 - `tools.Default()` now accepts episodic memory, vision provider, and channel senders for full wiring
@@ -303,7 +315,7 @@ security:
   - macOS: `~/Library/LaunchAgents/com.assistclaw.agent.plist` via `launchctl` (`KeepAlive: true`)
   - Linux: `~/.config/systemd/user/assistclaw.service` via `systemctl --user`
   - `service install` / `service uninstall` / `service logs`
-- **Onboarding parity with OpenClaw**: Added NVIDIA NIM, Together AI, HuggingFace, OpenRouter (now primary), and Cohere to the provider list (17 providers total).
+- **Onboarding — expanded providers**: Added NVIDIA NIM, Together AI, HuggingFace, OpenRouter (now primary), and Cohere to the provider list (17 providers total).
 - **Auto-start on login prompt**: `assistclaw onboard` now asks "Start automatically on login?" and runs `service install` if confirmed.
 - **LAN mode**: Gateway bind `lan` exposes the web UI on `0.0.0.0` for device-local network access.
 
@@ -316,7 +328,7 @@ security:
 ## [v3.1.5] - 2026-02-25
 ### Added
 - "Verified & Working" section in README (AWS Bedrock, WhatsApp).
-- Detailed technical comparison with the "Claw" ecosystem (OpenClaw, NanoClaw, ZeroClaw).
+- Detailed technical comparison with the broader "Claw" ecosystem (NanoClaw, ZeroClaw, and related stacks).
 - Highlighted unique Go-native features (Concurrency, Tool Factory, C++ Bridge).
 
 ## [v3.1.4] - 2026-02-25

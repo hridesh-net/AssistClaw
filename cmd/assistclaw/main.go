@@ -26,7 +26,6 @@ import (
 	"github.com/assistclaw/assistclaw/internal/agent"
 	"github.com/assistclaw/assistclaw/internal/automation"
 	"github.com/assistclaw/assistclaw/internal/autotool"
-	"github.com/assistclaw/assistclaw/internal/voice"
 	"github.com/assistclaw/assistclaw/internal/channels/discord"
 	"github.com/assistclaw/assistclaw/internal/channels/slack"
 	"github.com/assistclaw/assistclaw/internal/channels/telegram"
@@ -35,13 +34,14 @@ import (
 	"github.com/assistclaw/assistclaw/internal/cron"
 	"github.com/assistclaw/assistclaw/internal/embeddings"
 	embedproviders "github.com/assistclaw/assistclaw/internal/embeddings/providers"
+	"github.com/assistclaw/assistclaw/internal/extensions"
 	"github.com/assistclaw/assistclaw/internal/gateway"
 	"github.com/assistclaw/assistclaw/internal/graph"
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/provider/anthropic"
-	"github.com/assistclaw/assistclaw/internal/provider/catalogs"
 	"github.com/assistclaw/assistclaw/internal/provider/bedrock"
+	"github.com/assistclaw/assistclaw/internal/provider/catalogs"
 	"github.com/assistclaw/assistclaw/internal/provider/ollama"
 	"github.com/assistclaw/assistclaw/internal/provider/openai"
 	"github.com/assistclaw/assistclaw/internal/provider/openaicompat"
@@ -52,12 +52,13 @@ import (
 	"github.com/assistclaw/assistclaw/internal/subagents"
 	"github.com/assistclaw/assistclaw/internal/system"
 	"github.com/assistclaw/assistclaw/internal/tools"
+	"github.com/assistclaw/assistclaw/internal/voice"
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.4" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.5" // Overridden by -ldflags "-X main.version=..." during build
 
-// defaultHeartbeatPrompt matches AGENTS.md guidance for OpenClaw-style periodic polls.
+// defaultHeartbeatPrompt matches AGENTS.md guidance for periodic heartbeat polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
 
 // runHeartbeatLoop issues periodic synthetic user turns on a dedicated session (logs only;
@@ -106,7 +107,7 @@ func runHeartbeatLoop(ctx context.Context, base *agent.Runner, interval time.Dur
 	}
 }
 
-// agentPlanningEnabled defaults to true when unset (OpenClaw-style thoroughness).
+// agentPlanningEnabled defaults to true when unset (upfront planning on).
 func agentPlanningEnabled(c *config.Config) bool {
 	if c.Agent.Planning == nil {
 		return true
@@ -172,6 +173,7 @@ func rootCmd() *cobra.Command {
 		embeddingsCmd(flags),
 		memoryCmd(flags),
 		toolsCmd(flags),
+		extensionsCmd(flags),
 		gatewayCmd(flags),
 		onboardCmd(flags),
 		skillsCmd(flags),
@@ -601,6 +603,89 @@ func toolsCmd(gf *globalFlags) *cobra.Command {
 	return cmd
 }
 
+func extensionsCmd(gf *globalFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "extensions",
+		Short: "Extension hooks and built-in equivalents (AssistClaw)",
+		Long: `AssistClaw does not load third-party Node extension bundles. Built-in coverage:
+
+  • Channels, skills, MCP clients, webhooks, cron, browser tools, voice — see list.
+  • Optional prompt_files in assistclaw.yaml merge markdown into the system prompt
+    (workspace prompt fragments as plain markdown, not executable plugins).
+
+Extend behavior via skills, MCP, channels, or prompt_files as needed.`,
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "Summarize extension-equivalent features and extensions.* config",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log := buildLogger(gf.logLevel)
+			cfg, err := loadConfig(gf.configPath, log)
+			if err != nil {
+				return err
+			}
+			prim := lipgloss.NewStyle().Foreground(tui.ColorPrimary).Bold(true)
+			dim := lipgloss.NewStyle().Foreground(tui.ColorMuted)
+
+			fmt.Println(prim.Render("Channels (in-process, not npm plugins)"))
+			var ch []string
+			if cfg.Channels.WhatsApp != nil {
+				ch = append(ch, "whatsapp")
+			}
+			if cfg.Channels.Telegram != nil {
+				ch = append(ch, "telegram")
+			}
+			if cfg.Channels.Discord != nil {
+				ch = append(ch, "discord")
+			}
+			if cfg.Channels.Slack != nil {
+				ch = append(ch, "slack")
+			}
+			if len(ch) == 0 {
+				fmt.Println(dim.Render("  (none configured)"))
+			} else {
+				fmt.Println(dim.Render("  " + strings.Join(ch, ", ")))
+			}
+
+			fmt.Println(prim.Render("\nMCP"))
+			fmt.Printf("  server enabled: %v  transport: %s\n", cfg.MCP.Server.Enabled, cfg.MCP.Server.Transport)
+			fmt.Printf("  external clients: %d\n", len(cfg.MCP.Clients))
+
+			fmt.Println(prim.Render("\nWebhooks"))
+			if cfg.Webhooks.Enabled {
+				fmt.Printf("  enabled, mappings: %d\n", len(cfg.Webhooks.Mappings))
+			} else {
+				fmt.Println(dim.Render("  disabled"))
+			}
+
+			fmt.Println(prim.Render("\nCron"))
+			fmt.Printf("  jobs: %d\n", len(cfg.Cron))
+
+			fmt.Println(prim.Render("\nSkills"))
+			fmt.Printf("  enabled in config: %d\n", len(cfg.Agent.EnabledSkills))
+
+			fmt.Println(prim.Render("\nVoice / browser / memory"))
+			fmt.Println(dim.Render("  voice: STT/TTS via internal/voice (yaml voice:)"))
+			fmt.Println(dim.Render("  browser: browser_navigate, browser_screenshot (chromedp)"))
+			fmt.Println(dim.Render("  memory: working + episodic.db + semantic (embeddings)"))
+
+			fmt.Println(prim.Render("\nextensions.prompt_files (extra markdown prompt fragments)"))
+			if !cfg.Extensions.Enabled {
+				fmt.Println(dim.Render("  disabled (set extensions.enabled: true)"))
+			} else if len(cfg.Extensions.PromptFiles) == 0 {
+				fmt.Println(dim.Render("  enabled, no files listed"))
+			} else {
+				for _, p := range cfg.Extensions.PromptFiles {
+					fmt.Printf("  • %s\n", p)
+				}
+			}
+			fmt.Println()
+			return nil
+		},
+	})
+	return cmd
+}
+
 // ─────────────────────────────────────────────
 // gateway command
 // ─────────────────────────────────────────────
@@ -951,15 +1036,20 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	}
 
 	hw, _ := system.Detect(ctx)
+	extPrompt := ""
+	if cfg.Extensions.Enabled && len(cfg.Extensions.PromptFiles) > 0 {
+		extPrompt = extensions.PromptAppendix(cfg.StateDir, cfg.Extensions.PromptFiles)
+	}
 	runner := agent.NewRunner(agent.Config{
-		MaxIterations:        cfg.Agent.MaxIterations,
-		Model:                modelInfo.ID,
-		ActiveSkillsContext:  skillsCtx,
-		ProviderName:         providerNameForCaps,
-		ToolsProfile:         cfg.Security.Profile,
-		EnablePlanning:       agentPlanningEnabled(cfg),
-		EnableReflection:     agentReflectionEnabled(cfg),
-		GatewayPublicBaseURL: cfg.PublicGatewayBaseURL(),
+		MaxIterations:         cfg.Agent.MaxIterations,
+		Model:                 modelInfo.ID,
+		ActiveSkillsContext:   skillsCtx,
+		ProviderName:          providerNameForCaps,
+		ToolsProfile:          cfg.Security.Profile,
+		EnablePlanning:        agentPlanningEnabled(cfg),
+		EnableReflection:      agentReflectionEnabled(cfg),
+		GatewayPublicBaseURL:  cfg.PublicGatewayBaseURL(),
+		ExtensionPromptAppend: extPrompt,
 	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog).WithHardware(hw)
 
 	// ── Security: Guardrail + Audit Log ────────────────────────────────
@@ -989,20 +1079,21 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 
 	// Sub-agents (delegation): register after security so child runs inherit guardrail/audit.
 	subSvc := &tools.SubAgentSvc{
-		Store:                subagents.NewStore(cfg.StateDir),
-		Provider:             p,
-		ParentRegistry:       toolReg,
-		ToolGraph:            toolGraph,
-		Mem:                  memMgr,
-		Log:                  log,
-		Model:                modelInfo.ID,
-		ActiveSkillsContext:  skillsCtx,
-		ProviderName:         providerNameForCaps,
-		GatewayPublicBaseURL: cfg.PublicGatewayBaseURL(),
-		DefaultToolsProfile:  cfg.Security.Profile,
-		Guardrail:            guardrail,
-		AuditLog:             auditLog,
-		Hardware:             hw,
+		Store:                 subagents.NewStore(cfg.StateDir),
+		Provider:              p,
+		ParentRegistry:        toolReg,
+		ToolGraph:             toolGraph,
+		Mem:                   memMgr,
+		Log:                   log,
+		Model:                 modelInfo.ID,
+		ActiveSkillsContext:   skillsCtx,
+		ProviderName:          providerNameForCaps,
+		GatewayPublicBaseURL:  cfg.PublicGatewayBaseURL(),
+		ExtensionPromptAppend: extPrompt,
+		DefaultToolsProfile:   cfg.Security.Profile,
+		Guardrail:             guardrail,
+		AuditLog:              auditLog,
+		Hardware:              hw,
 	}
 	toolReg.Register(tools.SubAgentCreateTool{S: subSvc})
 	toolReg.Register(tools.SubAgentListTool{S: subSvc})
@@ -1086,7 +1177,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}, &cliStreamHandler{done: done})
 		return <-done
 	}
-	
+
 	// Initialize Voice Client
 	var voiceClient *voice.Client
 	if cfg.Voice.Enabled {
@@ -1128,7 +1219,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 
-	// OpenClaw-style heartbeats: periodic proactive turns on a dedicated session (no chat spam).
+	// Heartbeats: periodic synthetic turns on a dedicated session (no chat spam).
 	hb := cfg.Agent.Heartbeat
 	if hb.Enabled && (serve || activeChannels > 0) {
 		iv := hb.Interval

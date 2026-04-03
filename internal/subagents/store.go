@@ -1,4 +1,4 @@
-// Package subagents persists named specialist agents (OpenClaw-style sub-agents).
+// Package subagents persists named specialist agents (delegated sub-agents).
 package subagents
 
 import (

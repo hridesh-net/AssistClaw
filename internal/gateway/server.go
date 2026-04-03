@@ -76,7 +76,7 @@ func (s *Server) Start() error {
 
 	mux := http.NewServeMux()
 
-	// ── Agent-built static dashboards (OpenClaw-style) ────────────────────────
+	// ── Agent-built static dashboards (served under /workspace/) ───────────
 	// Serves ~/.assistclaw/workspace/public at /workspace/ — no Bearer token so
 	// browsers can open links directly. Do not put secrets in this directory.
 	if s.Config != nil {

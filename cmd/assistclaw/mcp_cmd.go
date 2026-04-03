@@ -209,7 +209,7 @@ func mcpListToolsCmd(gf *globalFlags) *cobra.Command {
 				dim.Render("Navigate skill graph nodes on demand"),
 			)
 			for _, sk := range skillReg.List() {
-				emoji := sk.Metadata.OpenClaw.Emoji
+				emoji := sk.Metadata.AssistClaw.Emoji
 				if emoji == "" {
 					emoji = "🔧"
 				}

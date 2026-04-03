@@ -70,11 +70,11 @@ A dedicated layer (often written in C++ for performance) that pipes sensor data 
 
 ---
 
-## 🆚 OpenClaw vs. AssistClaw: The Evolution
+## 🆚 AssistClaw vs. typical Node agent stacks
 
-AssistClaw began as a Go-based evolution of the original **OpenClaw** (Node.js). While it maintains compatibility, it introduces several key upgrades:
+AssistClaw is a Go-native agent runtime aimed at a small footprint and strong ops ergonomics. Compared with common Node-based gateways and plugin ecosystems, it emphasizes:
 
-| Feature | OpenClaw (Original) | AssistClaw (Go) |
+| Feature | Typical Node stacks | AssistClaw (Go) |
 | :--- | :--- | :--- |
 | **Language** | Node.js (TypeScript) | Go (Golang) |
 | **Memory** | Basic File History | Three-Tier (Vector + FTS5) |

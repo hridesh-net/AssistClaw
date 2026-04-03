@@ -112,6 +112,8 @@ type Config struct {
 	ToolsProfile        string // "full" or "coding"
 	// GatewayPublicBaseURL is e.g. http://127.0.0.1:18790 — used to tell users where /workspace/ files are served.
 	GatewayPublicBaseURL string
+	// ExtensionPromptAppend is optional text from assistclaw.yaml extensions.prompt_files (markdown fragments).
+	ExtensionPromptAppend string
 }
 
 // Runner is the main agent execution loop.
@@ -288,10 +290,10 @@ func (r *Runner) WithSession(sessionID string) *Runner {
 		commands:      r.commands,
 		sessionRunner: true,
 		log:           r.log,
-		sessionID:       sessionID,
-		channelID:       r.channelID,
-		workspaceDir:    r.workspaceDir,
-		modelRegistry:   r.modelRegistry,
+		sessionID:     sessionID,
+		channelID:     r.channelID,
+		workspaceDir:  r.workspaceDir,
+		modelRegistry: r.modelRegistry,
 	}
 }
 
@@ -701,7 +703,7 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 		}
 	}
 
-	// ── Workspace Identity (OpenClaw Parity) ────────────────────────────────
+	// ── Workspace Identity (markdown persona files) ─────────────────────────
 	// Read each identity file and build a persona block. When SOUL.md is
 	// present it becomes the PRIMARY identity, replacing the hardcoded default.
 	type wsFile struct{ name, header string }
@@ -726,7 +728,7 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 	toolTable := r.buildToolTable()
 
 	// ── Core identity ────────────────────────────────────────────────────────
-	// If workspace identity files exist (OpenClaw parity), they ARE the identity.
+	// If workspace identity files exist, they ARE the identity.
 	// The hardcoded block is the fallback for bare installs with no workspace files.
 	var identityBlock string
 	if personaFromWorkspace != "" {
@@ -745,12 +747,12 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 
 ## Critical Rules
 
-**Product identity:** This runtime is **AssistClaw**. Do **not** call yourself or the product **OpenClaw** unless **IDENTITY.md** or **SOUL.md** explicitly gives you that name.
+**Product identity:** This runtime is **AssistClaw**. Use **IDENTITY.md** / **SOUL.md** for persona name and tone; do not claim a different product or runtime name unless those files explicitly define one.
 
 **IMPORTANT: When a user asks you to DO something, DO IT using your tools.**
 **CRITICAL: Do NOT output markdown code blocks expecting the user to run them. You MUST use the ` + "`write_file`" + ` or ` + "`edit`" + ` tools to save files and the ` + "`bash`" + ` tool to execute commands.**
 
-### Persist identity and user profile (OpenClaw-style)
+### Persist identity and user profile
 - **IDENTITY.md** and **USER.md** live in the state directory root (same folder as **SOUL.md**), not under **workspace/public/**.
 - When you choose a **name**, **emoji**, **vibe**, or the user states **their** name/preferences, **update the file in the same turn** with ` + "`edit`" + ` or ` + "`write_file`" + `. Chat text alone does **not** persist across restarts — only files do.
 - **Avatars** for browser links: put images in **workspace/public/** (e.g. **workspace/public/avatar.png**); the user can open them at the gateway **/workspace/...** URL if the gateway is running.
@@ -793,7 +795,6 @@ When the user asks for a **dashboard**, **status page**, or **live monitor**:
 			ws, r.cfg.GatewayPublicBaseURL)
 	}
 
-
 	var parts []string
 	parts = append(parts, base+dashboardHint)
 
@@ -806,7 +807,7 @@ When the user asks for a **dashboard**, **status page**, or **live monitor**:
 	if r.channelID != "" {
 		parts = append(parts, `## User-visible messages (this channel)
 - Reply in natural language only. Do **not** include raw XML-style blocks such as `+"`<planning>`"+`, `+"`</planning>`"+`, `+"`<details>`"+`, execution-plan scaffolding, or internal checklists in the text the user reads.
-- You are running under **AssistClaw**. Use **IDENTITY.md** / **SOUL.md** for your name and vibe. Do **not** call yourself "OpenClaw" unless those files explicitly give you that name.`)
+- You are running under **AssistClaw**. Use **IDENTITY.md** / **SOUL.md** for your name and vibe; stay consistent with the product identity above.`)
 	}
 
 	if r.cfg.SystemPrompt != "" {
@@ -831,6 +832,10 @@ When the user asks for a **dashboard**, **status page**, or **live monitor**:
 
 	if r.cfg.ActiveSkillsContext != "" {
 		parts = append(parts, r.cfg.ActiveSkillsContext)
+	}
+
+	if strings.TrimSpace(r.cfg.ExtensionPromptAppend) != "" {
+		parts = append(parts, strings.TrimSpace(r.cfg.ExtensionPromptAppend))
 	}
 
 	return strings.Join(parts, "\n\n")
@@ -1133,7 +1138,7 @@ func (h *channelStreamHandler) OnError(err error) {
 	_ = h.replyFn(fmt.Sprintf("\n[Error: %v]", err))
 }
 
-// normalizeSlashCommand maps OpenClaw-style aliases to canonical /commands.
+// normalizeSlashCommand maps legacy slash aliases to canonical /commands.
 func normalizeSlashCommand(cmd string) string {
 	switch strings.ToLower(cmd) {
 	case "/id":
@@ -1157,8 +1162,8 @@ func normalizeSlashCommand(cmd string) string {
 	}
 }
 
-// openClawChannelStub explains OpenClaw-only or not-yet-implemented chat commands.
-func openClawChannelStub(cmd string) string {
+// legacySlashCommandStub explains slash commands not implemented on this chat channel.
+func legacySlashCommandStub(cmd string) string {
 	stubs := map[string]string{
 		"/stop":           "Stopping mid-stream isn’t supported on this channel. After the reply finishes, use `/reset` or `/new` to clear context.",
 		"/usage":          "Usage/cost toggles: use `/status` for session size. Detailed token accounting is in host logs, not chat yet.",
@@ -1194,7 +1199,7 @@ func openClawChannelStub(cmd string) string {
 	}
 	msg, ok := stubs[cmd]
 	if !ok {
-		return fmt.Sprintf("ℹ️ `%s` is an OpenClaw-style command not implemented for AssistClaw chat. See `/commands` for what works here.", cmd)
+		return fmt.Sprintf("ℹ️ `%s` is not implemented in AssistClaw chat. See `/commands` for what works here.", cmd)
 	}
 	return "ℹ️ " + msg
 }
@@ -1215,7 +1220,7 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		return true
 
 	case "/new":
-		// OpenClaw-style: fresh turn context (same mechanism as /reset here).
+		// Alias for /reset: fresh turn context.
 		r.working.Clear()
 		_ = replyFn("✨ New session — working memory cleared.")
 		return true
@@ -1355,7 +1360,7 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		cmds += "• `/models` `[filter]` — catalog; optional substring filter\n"
 		cmds += "• `/tools` `[verbose]` — tool names (+ optional one-line descriptions)\n"
 		cmds += "• `/skills` `/subagents` `/sessions` `/forget` `/reset` `/new` `/auto`\n\n"
-		cmds += "*OpenClaw-compatible names* (reply explains AssistClaw equivalent)\n"
+		cmds += "*Legacy / alternate names* (reply explains AssistClaw equivalent)\n"
 		cmds += "`/stop` `/usage` `/think` `/t` `/verbose` `/v` `/fast` `/reasoning` `/reason` `/elevated` `/elev` `/exec` `/queue` `/config` `/mcp` `/plugins` `/plugin` `/debug` `/approve` `/allowlist` `/tasks` `/export` `/export-session` `/bash` `/btw` `/session` `/focus` `/unfocus` `/agents` `/activation` `/send` `/restart` `/tts` `/acp` `/skill` `/steer` `/tell` `/kill`\n"
 		_ = replyFn(cmds)
 		return true
@@ -1453,13 +1458,13 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		help += "• *Core:* `/status` `/whoami` `/context` `/compact`\n"
 		help += "• *Models/tools:* `/model` `/models` `/tools` `/tools verbose` `/skills` `/subagents`\n"
 		help += "• *Session:* `/reset` `/new` `/sessions` `/forget` `/auto`\n"
-		help += "• *OpenClaw names:* `/stop` `/usage` `/think` … → stub with pointers\n"
+		help += "• *Legacy names:* `/stop` `/usage` `/think` … → stub with pointers\n"
 		help += "• `/help` `/commands`\n"
 		_ = replyFn(help)
 		return true
 
 	case "/stop", "/usage", "/think", "/verbose", "/fast", "/reasoning", "/elevated", "/exec", "/queue", "/config", "/mcp", "/plugins", "/debug", "/approve", "/allowlist", "/tasks", "/export-session", "/bash", "/btw", "/session", "/focus", "/unfocus", "/agents", "/activation", "/send", "/restart", "/tts", "/acp", "/skill", "/steer", "/kill":
-		_ = replyFn(openClawChannelStub(cmd))
+		_ = replyFn(legacySlashCommandStub(cmd))
 		return true
 	}
 

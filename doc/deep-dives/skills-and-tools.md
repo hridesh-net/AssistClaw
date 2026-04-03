@@ -13,7 +13,7 @@ In AssistClaw, a "Skill" is a high-level package of domain knowledge and special
 ---
 name: "Web Searching"
 description: "Allows the agent to browse the live web."
-openclaw:
+assistclaw:
   emoji: "🌐"
   requires:
     bins: ["python3", "pip"]

@@ -255,7 +255,7 @@ func (s *Server) buildToolList() ListToolsResult {
 
 	// 2. One compact entry per skill — name + one-line description ONLY (no tool specs)
 	for _, sk := range s.skillReg.List() {
-		emoji := sk.Metadata.OpenClaw.Emoji
+		emoji := sk.Metadata.AssistClaw.Emoji
 		desc := sk.Description
 		if emoji != "" {
 			desc = emoji + "  " + desc

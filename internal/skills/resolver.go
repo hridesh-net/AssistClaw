@@ -43,7 +43,7 @@ func (t *DynamicTool) Execute(ctx context.Context, input json.RawMessage) (strin
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 	cmd.Dir = t.workDir
 
-	// Provide the input as STDIN (most OpenClaw tools expect this)
+	// Provide the input as STDIN (most bundled skill scripts expect this)
 	cmd.Stdin = bytes.NewReader(input)
 
 	output, err := cmd.CombinedOutput()

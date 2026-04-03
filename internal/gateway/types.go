@@ -7,7 +7,7 @@ import (
 )
 
 // MessagePayload represents a JSON message sent over the WebSocket.
-// It loosely follows the OpenClaw WS JSON protocol.
+// It loosely follows a simple WebSocket JSON envelope for agent streaming.
 type MessagePayload struct {
 	Type    string          `json:"type"`              // e.g., "ping", "message", "status", "stream_token", "tool_call"
 	Session string          `json:"session,omitempty"` // Target or source session ID

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 )
 
-// Skill represents a loaded OpenClaw-compatible skill graph.
+// Skill represents a loaded skill graph (SKILL.md + optional metadata).
 type Skill struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
@@ -17,7 +17,7 @@ type Skill struct {
 
 	// Metadata contains additional skill information like emojis or hardware requirements.
 	Metadata struct {
-		OpenClaw struct {
+		AssistClaw struct {
 			Emoji      string   `yaml:"emoji,omitempty"`
 			Always     bool     `yaml:"always,omitempty"`
 			PrimaryEnv string   `yaml:"primaryEnv,omitempty"`
@@ -29,7 +29,7 @@ type Skill struct {
 				Config  []string `yaml:"config,omitempty"`
 			} `yaml:"requires,omitempty"`
 			Install []map[string]any `yaml:"install,omitempty"`
-		} `yaml:"openclaw,omitempty"`
+		} `yaml:"assistclaw,omitempty"`
 	} `yaml:"metadata,omitempty"`
 
 	// Nodes contains all content files (.md) within the skill directory.

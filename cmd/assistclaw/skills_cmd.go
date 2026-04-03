@@ -104,7 +104,7 @@ func skillsListCmd(gf *globalFlags) *cobra.Command {
 				if len(desc) > 70 {
 					desc = desc[:67] + "…"
 				}
-				emoji := s.Metadata.OpenClaw.Emoji
+				emoji := s.Metadata.AssistClaw.Emoji
 				name := s.Name
 				if emoji != "" {
 					name = emoji + " " + name
@@ -347,7 +347,7 @@ func skillsInfoCmd(gf *globalFlags) *cobra.Command {
 				return fmt.Errorf("skill %q not found", name)
 			}
 
-			emoji := s.Metadata.OpenClaw.Emoji
+			emoji := s.Metadata.AssistClaw.Emoji
 			if emoji != "" {
 				fmt.Printf("%s %s\n", emoji, s.Name)
 			} else {

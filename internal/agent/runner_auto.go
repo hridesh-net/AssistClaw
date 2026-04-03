@@ -39,7 +39,7 @@ func (r *Runner) RunAutonomous(ctx context.Context, goal string) (*RunResult, er
 	// Wait before loops to avoid API rate limits running unchecked
 	loopDelay := 2 * time.Second
 
-	// OpenClaw-style upfront plan for long-horizon work (same as interactive Run).
+	// Upfront plan for long-horizon work (same as interactive Run).
 	if r.cfg.EnablePlanning && goal != "" {
 		r.log.Info("autonomous: planning phase")
 		plan, err := r.plan(ctx, goal)

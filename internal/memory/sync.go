@@ -124,7 +124,7 @@ func (m *Manager) syncFile(ctx context.Context, registry *embeddings.Registry, w
 func listMemoryFiles(workspaceDir string) ([]string, error) {
 	var files []string
 
-	// OpenClaw specific logic: MEMORY.md and memory/*.md
+	// Workspace memory files: MEMORY.md and memory/*.md
 	memoryFile := filepath.Join(workspaceDir, "MEMORY.md")
 	if _, err := os.Stat(memoryFile); err == nil {
 		files = append(files, memoryFile)

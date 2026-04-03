@@ -1,9 +1,9 @@
-// Package catalogs holds static LLM model lists aligned with OpenClaw-style provider catalogs.
+// Package catalogs holds static LLM model lists aligned with common provider catalog layouts.
 package catalogs
 
 import "github.com/assistclaw/assistclaw/internal/provider"
 
-// XAIModels lists known x.ai Grok models (mirrors openclaw/extensions/xai/model-definitions.ts).
+// XAIModels lists known x.ai Grok models (refresh periodically against provider docs).
 func XAIModels(prov string) []provider.ModelInfo {
 	ts := []provider.Capability{provider.CapabilityTools, provider.CapabilityStreaming}
 	tv := append(append([]provider.Capability{}, ts...), provider.CapabilityVision)

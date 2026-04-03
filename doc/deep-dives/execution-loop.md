@@ -19,7 +19,7 @@ The agent iterates through tool calls (e.g., search, file reading, code executio
 - **Context Management**: AssistClaw uses "Working Memory" (RAM) to track the tokens used in the current conversation, auto-compacting the history to keep the conversation within the LLM's context window.
 
 ### 3. Reflection: Self-Correction & Learning
-This is the most critical differentiator from OpenClaw. After the task is "finished," AssistClaw enters a reflection state.
+This is the most critical differentiator from a plain chat loop. After the task is "finished," AssistClaw enters a reflection state.
 - **Critique**: The agent evaluates: "Did I actually fulfill the user's intent?"
 - **Lessons Learned**: If a mistake was made (e.g., "The search API requires quotes for exact matches"), the agent extracts a `<lesson_learned>` tag.
 

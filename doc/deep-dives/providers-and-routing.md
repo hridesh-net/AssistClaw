@@ -6,7 +6,7 @@ AssistClaw is designed to be **Model Agnostic**. It treats LLMs and Messaging Pl
 
 ## 🔌 The Universal Provider Adapter
 
-In OpenClaw, adding a new AI provider often required modifying core logic. AssistClaw uses a **Provider Interface** that abstracts all complexity.
+In many monolithic agent codebases, adding a new AI provider means touching core logic in several places. AssistClaw uses a **Provider Interface** that keeps that surface small.
 
 ### The abstraction logic:
 Every provider (OpenAI, Anthropic, Ollama, etc.) must implement a single Go interface. This interface handles:

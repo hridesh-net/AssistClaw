@@ -19,7 +19,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/system"
 )
 
-// SubAgentSvc holds shared dependencies for sub-agent tools (OpenClaw-style delegation).
+// SubAgentSvc holds shared dependencies for sub-agent tools (delegation to specialist runners).
 type SubAgentSvc struct {
 	Store *subagents.Store
 
@@ -29,11 +29,12 @@ type SubAgentSvc struct {
 	Mem            *memory.Manager
 	Log            *zap.Logger
 
-	Model               string
-	ActiveSkillsContext string
-	ProviderName        string
-	GatewayPublicBaseURL string
-	DefaultToolsProfile string // security profile for new sub-agents when not specified
+	Model                 string
+	ActiveSkillsContext   string
+	ProviderName          string
+	GatewayPublicBaseURL  string
+	ExtensionPromptAppend string
+	DefaultToolsProfile   string // security profile for new sub-agents when not specified
 
 	Guardrail *security.Guardrail
 	AuditLog  *security.AuditLog
@@ -57,7 +58,8 @@ func (s *SubAgentSvc) buildChildRunner(maxIterations int, toolsProfile, workspac
 		ActiveSkillsContext:   s.ActiveSkillsContext,
 		ProviderName:          s.ProviderName,
 		ToolsProfile:          prof,
-		GatewayPublicBaseURL: s.GatewayPublicBaseURL,
+		GatewayPublicBaseURL:  s.GatewayPublicBaseURL,
+		ExtensionPromptAppend: s.ExtensionPromptAppend,
 		EnablePlanning:        false,
 		EnableReflection:      false,
 	}, s.Provider, childReg, s.Mem, s.Log, workspace)
@@ -183,9 +185,9 @@ func (t SubAgentRunTool) Definition() provider.ToolDef {
 
 func (t SubAgentRunTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var args struct {
-		ID             string `json:"id"`
-		Task           string `json:"task"`
-		MaxIterations  int    `json:"max_iterations"`
+		ID            string `json:"id"`
+		Task          string `json:"task"`
+		MaxIterations int    `json:"max_iterations"`
 	}
 	if err := json.Unmarshal(input, &args); err != nil {
 		return "", err

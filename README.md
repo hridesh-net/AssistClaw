@@ -139,14 +139,15 @@ Works as **both** an MCP server (expose your agent to Claude Desktop / Cursor) a
 ### 🦾 Hardware Sensing
 C++ bridge for Camera (OpenCV) and Audio (PortAudio) — runs natively on Raspberry Pi 5.
 
-### 🪶 OpenClaw-Style Workspace & Autonomy *(v3.9+)*
-Markdown workspace under `~/.assistclaw` mirrors common OpenClaw patterns: **`SOUL.md`**, **`IDENTITY.md`**, **`USER.md`**, **`AGENTS.md`**, **`HEARTBEAT.md`**, daily **`memory/`** notes, and long-term **`MEMORY.md`**. Templates are seeded on first run.
+### 🪶 Markdown workspace & autonomy *(v3.9+)*
+The state directory under `~/.assistclaw` uses familiar agent-workspace files: **`SOUL.md`**, **`IDENTITY.md`**, **`USER.md`**, **`AGENTS.md`**, **`HEARTBEAT.md`**, daily **`memory/`** notes, and long-term **`MEMORY.md`**. Templates are seeded on first run.
 
 - **Heartbeat**: optional periodic synthetic turns on a **dedicated session** (`agent.heartbeat`) when you run `assistclaw start` or any messaging channel — good for proactive checks without spamming chat.
 - **Planning & reflection**: `agent.planning` defaults **on** (milestone-style plan at the start of a turn); `agent.reflection` is **opt-in** (self-critique + lesson hooks, extra LLM call).
 - **Autonomous mode**: `assistclaw auto "<goal>"` or `/auto` in chat runs until the model calls **`finish_task`**, with an upfront plan when planning is enabled and **checkpoints every 25 iterations** on long runs.
 - **Cron**: YAML `cron:` entries plus **`assistclaw cron add`** persist jobs in **`cron_jobs.json`**; scheduled runs use the **same runner** as the gateway (tool graph + guardrail + audit).
-- **Local dashboards**: Put HTML/CSS/JS under **`~/.assistclaw/workspace/public/`**. With **`assistclaw start`**, the gateway serves them at **`http://<gateway.host>:<gateway.port>/workspace/...`** (default `http://127.0.0.1:18790/workspace/...`) so the agent can give you a browser link like OpenClaw. That tree is **not** protected by the gateway Bearer token—do not store secrets there.
+- **Local dashboards**: Put HTML/CSS/JS under **`~/.assistclaw/workspace/public/`**. With **`assistclaw start`**, the gateway serves them at **`http://<gateway.host>:<gateway.port>/workspace/...`** (default `http://127.0.0.1:18790/workspace/...`) so the agent can give you a normal browser URL. That tree is **not** protected by the gateway Bearer token—do not store secrets there.
+- **Extensions (built-in)**: AssistClaw does not load third-party Node plugin bundles. Use **`assistclaw extensions list`** to see built-in coverage (channels, MCP, webhooks, cron, skills, browser, voice). Optional **`extensions.prompt_files`** in **`assistclaw.yaml`** appends extra markdown to the system prompt.
 
 ---
 
@@ -268,7 +269,7 @@ plano:
 security:
   mode: enforce          # monitor | enforce | strict
   pii_mask: true
-  profile: full          # full | coding — tool visibility (OpenClaw-style)
+  profile: full          # full | coding — tool visibility profile
 
 # ─── MCP (optional) ──────────────────────────────────────────
 mcp:
@@ -372,7 +373,7 @@ channels:
 
 ## 🦞 The Claw Ecosystem
 
-| | OpenClaw | NanoClaw | ZeroClaw | **AssistClaw** |
+| | Node + plugins | NanoClaw | ZeroClaw | **AssistClaw** |
 |:--|:--|:--|:--|:--|
 | **Language** | TypeScript (gateway) | TypeScript | Rust | **Go** |
 | **Footprint** | Large (Node + UI) | Minimal | Ultra-light (<5 MB) | **Light (~40 MB)** |

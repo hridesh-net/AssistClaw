@@ -65,6 +65,18 @@ type Config struct {
 
 	// Voice configures internal STT/TTS and continuous conversation.
 	Voice VoiceConfig `yaml:"voice"`
+
+	// Extensions configures optional hooks available in AssistClaw (prompt
+	// fragments only; there is no Node plugin loader). See `assistclaw extensions list`.
+	Extensions ExtensionsConfig `yaml:"extensions"`
+}
+
+// ExtensionsConfig holds lightweight extension points: optional markdown merged into the system prompt.
+type ExtensionsConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// PromptFiles are paths to UTF-8 text/markdown files merged into the system prompt when
+	// Enabled is true. Relative paths resolve under StateDir (e.g. extensions/extra-prompt.md).
+	PromptFiles []string `yaml:"prompt_files"`
 }
 
 // A2AConfig holds metadata for the Agent-to-Agent protocol.
@@ -90,12 +102,12 @@ type WebhookConfig struct {
 
 // WebhookMapping defines how an incoming webhook maps to an agent action.
 type WebhookMapping struct {
-	Path            string            `yaml:"path"`             // Match /api/webhook/{path}
-	PromptTemplate  string            `yaml:"prompt_template"`  // Template for agent prompt (e.g. "Got webhook from {{.source}}: {{.body}}")
-	Deliver         bool              `yaml:"deliver"`          // Whether to deliver results to a channel
-	Channel         string            `yaml:"channel"`          // Channel title to deliver to (e.g. "telegram")
-	To              string            `yaml:"to"`               // Destination account
-	AllowUnsafe     bool              `yaml:"allow_unsafe"`     // If true, doesn't wrap payload in safety boundaries
+	Path           string `yaml:"path"`            // Match /api/webhook/{path}
+	PromptTemplate string `yaml:"prompt_template"` // Template for agent prompt (e.g. "Got webhook from {{.source}}: {{.body}}")
+	Deliver        bool   `yaml:"deliver"`         // Whether to deliver results to a channel
+	Channel        string `yaml:"channel"`         // Channel title to deliver to (e.g. "telegram")
+	To             string `yaml:"to"`              // Destination account
+	AllowUnsafe    bool   `yaml:"allow_unsafe"`    // If true, doesn't wrap payload in safety boundaries
 }
 
 // GmailConfig holds settings for the Gmail Pub/Sub integration.
@@ -111,9 +123,9 @@ type GmailConfig struct {
 // VoiceConfig configures internal voice processing (STT/TTS).
 type VoiceConfig struct {
 	Enabled       bool   `yaml:"enabled"`
-	ServicePort   int    `yaml:"service_port"`   // default: 11000
-	STTModel      string `yaml:"stt_model"`      // whisper: tiny, base, small, medium, large
-	TTSModel      string `yaml:"tts_model"`      // voxcpm
+	ServicePort   int    `yaml:"service_port"`    // default: 11000
+	STTModel      string `yaml:"stt_model"`       // whisper: tiny, base, small, medium, large
+	TTSModel      string `yaml:"tts_model"`       // voxcpm
 	VoiceCloneRef string `yaml:"voice_clone_ref"` // Path to 5s voice clip
 	VenvPath      string `yaml:"venv_path"`       // Path to py venv
 }
@@ -329,9 +341,9 @@ type AgentConfig struct {
 	ToolsDir        string   `yaml:"tools_dir"`
 	SkillsDir       string   `yaml:"skills_dir"`
 	EnabledSkills   []string `yaml:"enabled_skills"`
-	// Heartbeat schedules periodic synthetic prompts (OpenClaw-style proactive ticks).
+	// Heartbeat schedules periodic synthetic prompts (proactive ticks on a dedicated session).
 	Heartbeat HeartbeatConfig `yaml:"heartbeat"`
-	// Planning adds an upfront milestone breakdown (extra LLM call). Nil = enabled (OpenClaw-style default).
+	// Planning adds an upfront milestone breakdown (extra LLM call). Nil = enabled (default on).
 	Planning *bool `yaml:"planning"`
 	// Reflection adds a self-critique pass when a turn completes without tools. Nil = disabled (saves tokens).
 	Reflection *bool `yaml:"reflection"`

@@ -4,7 +4,7 @@ description: Manage Apple Reminders via remindctl CLI (list, add, edit, complete
 homepage: https://github.com/steipete/remindctl
 metadata:
   {
-    "openclaw":
+    "assistclaw":
       {
         "emoji": "⏰",
         "os": ["darwin"],

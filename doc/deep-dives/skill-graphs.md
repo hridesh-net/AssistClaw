@@ -59,7 +59,7 @@ name: legal-ai
 description: Legal compliance and drafting assistant
 version: 1.0.0
 metadata:
-  openclaw:
+  assistclaw:
     emoji: ⚖️
     requires:
       bins: [python3]

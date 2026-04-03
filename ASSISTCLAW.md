@@ -1,7 +1,7 @@
 # AssistClaw
 
 AssistClaw is a polyglot, production-grade AI assistant built in Go.
-It shares the "Claw" philosophy with OpenClaw but extends it with native hardware sensing, autonomous tool generation, a skill-graph memory system, smart multi-model routing, and a token-efficient MCP integration.
+It shares the broader "Claw" agent philosophy and extends it with native hardware sensing, autonomous tool generation, a skill-graph memory system, smart multi-model routing, and a token-efficient MCP integration.
 
 ---
 
@@ -32,7 +32,7 @@ Map of Content (~200 tokens)
 Agent calls: read_skill_node("nano-pdf") → gets tools → calls tool
 ```
 
-Bundled skills: `1password`, `apple-notes`, `coding-agent`, `discord`, `nano-pdf` (and more at [OpenClaw skill registry](https://github.com/hridesh-net/AssistClaw)).
+Bundled skills: `1password`, `apple-notes`, `coding-agent`, `discord`, `nano-pdf` (and more at [AssistClaw skill registry](https://github.com/hridesh-net/AssistClaw)).
 
 ### Plano Smart Routing *(v3.2.0+)*
 

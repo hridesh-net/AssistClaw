@@ -12,7 +12,7 @@ process.title = "assistclaw";
 installProcessWarningFilter();
 normalizeEnv();
 
-// Ensure ASSISTCLAW env vars take priority, but also accept legacy OPENCLAW vars
+// Ensure ASSISTCLAW_* env vars take priority for AssistClaw-specific aliases below.
 // and the standard provider-native vars (OPENAI_API_KEY, ANTHROPIC_API_KEY etc.)
 const envAliases: Record<string, string> = {
     ASSISTCLAW_OPENAI_API_KEY: "OPENAI_API_KEY",

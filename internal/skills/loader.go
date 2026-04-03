@@ -140,7 +140,7 @@ func (l *loader) Discover(dir string) ([]SkillInfo, error) {
 		out = append(out, SkillInfo{
 			Name:        skill.Name,
 			Description: skill.Description,
-			Emoji:       skill.Metadata.OpenClaw.Emoji,
+			Emoji:       skill.Metadata.AssistClaw.Emoji,
 			Eligible:    met,
 			Missing:     missing,
 		})
@@ -257,12 +257,12 @@ func (l *loader) RepairAllEnabled(ctx context.Context, enabledNames []string) er
 }
 
 func (l *loader) InstallDependency(ctx context.Context, skill *Skill) error {
-	if skill.Metadata.OpenClaw.Install == nil {
+	if skill.Metadata.AssistClaw.Install == nil {
 		return fmt.Errorf("no installation instructions for skill %s", skill.Name)
 	}
 
 	var lastErr error
-	for _, inst := range skill.Metadata.OpenClaw.Install {
+	for _, inst := range skill.Metadata.AssistClaw.Install {
 		kind, _ := inst["kind"].(string)
 		label, _ := inst["label"].(string)
 
@@ -316,23 +316,23 @@ func (l *loader) CheckRequirements(skill *Skill) (bool, []string) {
 	var missing []string
 
 	// Check bins
-	for _, bin := range skill.Metadata.OpenClaw.Requires.Bins {
+	for _, bin := range skill.Metadata.AssistClaw.Requires.Bins {
 		if _, err := exec.LookPath(bin); err != nil {
 			missing = append(missing, bin)
 		}
 	}
 
 	// Check anyBins
-	if len(skill.Metadata.OpenClaw.Requires.AnyBins) > 0 {
+	if len(skill.Metadata.AssistClaw.Requires.AnyBins) > 0 {
 		found := false
-		for _, bin := range skill.Metadata.OpenClaw.Requires.AnyBins {
+		for _, bin := range skill.Metadata.AssistClaw.Requires.AnyBins {
 			if _, err := exec.LookPath(bin); err == nil {
 				found = true
 				break
 			}
 		}
 		if !found {
-			missing = append(missing, fmt.Sprintf("one of (%s)", strings.Join(skill.Metadata.OpenClaw.Requires.AnyBins, ", ")))
+			missing = append(missing, fmt.Sprintf("one of (%s)", strings.Join(skill.Metadata.AssistClaw.Requires.AnyBins, ", ")))
 		}
 	}
 
