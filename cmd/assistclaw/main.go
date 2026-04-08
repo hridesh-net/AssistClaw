@@ -182,6 +182,7 @@ func rootCmd() *cobra.Command {
 		securityCmd(flags),
 		logicTestCmd(flags),
 		cronCmd(flags),
+		doctorCmd(flags),
 		versionCmd(),
 	)
 	return root
