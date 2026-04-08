@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.10.6] - 2026-04-02
+### Added
+- **`install.sh`:** After install, registers the **login auto-start service** on macOS (launchd) and Linux (systemd user) via **`assistclaw service install`**. Set **`SKIP_SERVICE=1`** to skip. Exports **`ASSISTCLAW_STATE_DIR`** when running service install so custom **`STATE_DIR`** is baked into the plist/unit when set.
+- **`assistclaw onboard`:** Automatically installs the login service on **macOS/Linux** after saving config (no confirmation step). Sets **`ASSISTCLAW_STATE_DIR`** from the config file directory. **Windows** still prints Task Scheduler guidance only.
+- **`assistclaw service status`:** Shows launchd / systemd user / linger state (Linux) or plist load state (macOS).
+- **Service units:** Optional **`ASSISTCLAW_STATE_DIR`** in the **launchd plist** and **systemd user unit** when that variable is set at **`service install`** time.
+
+### Changed
+- **macOS service install:** Prefer **`launchctl bootstrap gui/$UID`** with **`bootout`** fallback to legacy **`load`/`unload`**.
+- **Linux `service install`:** Post-install note on **`loginctl enable-linger`** for headless/boot-without-login; detects **`Linger=yes`** when present.
+- **`assistclaw service`:** Expanded help text describing platform behavior.
+
 ## [v3.10.6-beta.1] - 2026-04-02
 ### Added
 - **Owner-only policy paths (`security.owner_only_paths`):** The agent cannot modify **`POLICIES.md`**, **`RULES.md`**, or the **`policies/`** tree under the state directory via **`write_file`**, **`edit`**, **`apply_patch`**, **`env`** write_file, or **`bash`** when those absolute paths appear in the command. Enforcement is always on (independent of guardrail **monitor** mode). **`read_file`** remains allowed. Defaults apply when the YAML key is omitted; set **`owner_only_paths: []`** to disable. New workspace templates seed **`POLICIES.md`** and **`RULES.md`**; **`AGENTS.md`** and the system prompt document the rule.

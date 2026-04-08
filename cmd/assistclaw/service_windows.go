@@ -49,3 +49,14 @@ func serviceLogsCmd(_ *globalFlags) *cobra.Command {
 		RunE:  func(cmd *cobra.Command, args []string) error { return tailServiceLogs() },
 	}
 }
+
+func serviceStatusCmd(_ *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Windows does not register a service automatically",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Println("AssistClaw has no built-in Windows service. Use Task Scheduler (see assistclaw service install).")
+			return nil
+		},
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -72,7 +73,7 @@ func ensureSelectValue(opts []huh.Option[string], current, prefix string) []huh.
 	if len(label) > 72 {
 		label = label[:69] + "…"
 	}
-	return append([]huh.Option[string]{huh.NewOption(prefix + label, current)}, opts...)
+	return append([]huh.Option[string]{huh.NewOption(prefix+label, current)}, opts...)
 }
 
 func normalizeGatewayBind(bind string) string {
@@ -442,29 +443,29 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 // Returns (true, nil) if the agent should be started immediately.
 func runOnboarding(configPath string) (bool, error) {
 	var (
-		primary          provEntry
-		secondary        provEntry
-		embed            embedEntry
-		gwMode           string
-		gwPort           int    = 18790
-		gwHost           string = "127.0.0.1"
-		gwToken          string
-		tsMode           string = "off"
-		selectedChannels []string
-		tgBotToken       string
-		tgDMMode         string = "pairing"
-		tgAllowFromRaw   string
-		dcBotToken       string
-		dcDMMode         string = "pairing"
-		dcAllowFromRaw   string
-		slBotToken       string
-		slAppToken       string
-		slDMMode         string = "pairing"
-		slAllowFromRaw   string
-		waSessionID      string
-		waDMMode         string = "pairing"
-		waAllowFromRaw   string
-		selectedSkills   []string
+		primary            provEntry
+		secondary          provEntry
+		embed              embedEntry
+		gwMode             string
+		gwPort             int    = 18790
+		gwHost             string = "127.0.0.1"
+		gwToken            string
+		tsMode             string = "off"
+		selectedChannels   []string
+		tgBotToken         string
+		tgDMMode           string = "pairing"
+		tgAllowFromRaw     string
+		dcBotToken         string
+		dcDMMode           string = "pairing"
+		dcAllowFromRaw     string
+		slBotToken         string
+		slAppToken         string
+		slDMMode           string = "pairing"
+		slAllowFromRaw     string
+		waSessionID        string
+		waDMMode           string = "pairing"
+		waAllowFromRaw     string
+		selectedSkills     []string
 		codingModel        string
 		visionModel        string
 		tpl                string
@@ -1078,9 +1079,9 @@ func runOnboarding(configPath string) (bool, error) {
 	}
 
 	embedModels := map[string][]huh.Option[string]{
-		"openai": {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
-		"azure":  {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
-		"ollama": {huh.NewOption("nomic-embed-text", "nomic-embed-text"), huh.NewOption("mxbai-embed-large", "mxbai-embed-large")},
+		"openai":  {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
+		"azure":   {huh.NewOption("text-embedding-3-small", "text-embedding-3-small"), huh.NewOption("text-embedding-3-large", "text-embedding-3-large")},
+		"ollama":  {huh.NewOption("nomic-embed-text", "nomic-embed-text"), huh.NewOption("mxbai-embed-large", "mxbai-embed-large")},
 		"cohere":  {huh.NewOption("embed-v4.0", "embed-v4.0")},
 		"google":  {huh.NewOption("text-embedding-004", "text-embedding-004")},
 		"voyage":  {huh.NewOption("voyage-3", "voyage-3"), huh.NewOption("voyage-3-lite", "voyage-3-lite")},
@@ -1632,25 +1633,33 @@ func runOnboarding(configPath string) (bool, error) {
 
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ Configuration saved!"))
 
-	// ── Auto-start on login ───────────────────────────────────────────────────
-	var installSvc bool
-	_ = huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().
-			Title("Start AssistClaw automatically on login?").
-			Description("Installs a system service (launchd on macOS, systemd on Linux).\nThe web UI will be available at http://localhost:" + fmt.Sprintf("%d", gwPort) + " after every reboot.").
-			Value(&installSvc),
-	)).WithTheme(theme).Run()
-
-	if installSvc {
-		if err := installService(); err != nil {
-			fmt.Printf("\n⚠  Service install failed: %v\n", err)
-			fmt.Println("   You can retry later with: assistclaw service install")
+	// ── Auto-start on login (no prompt; idempotent on macOS/Linux) ────────────
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	switch runtime.GOOS {
+	case "windows":
+		fmt.Println()
+		fmt.Println(dim.Render("  Windows: add AssistClaw to Task Scheduler for login start — run: assistclaw service install"))
+	case "darwin", "linux":
+		fmt.Println()
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Render("  Registering AssistClaw login service (auto-start after you sign in)…"))
+		if root := filepath.Dir(configPath); root != "" && root != "." {
+			_ = os.Setenv("ASSISTCLAW_STATE_DIR", root)
+			defer func() { _ = os.Unsetenv("ASSISTCLAW_STATE_DIR") }()
 		}
+		if err := installService(); err != nil {
+			fmt.Printf("\n  %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("⚠ Login service install failed: "+err.Error()))
+			fmt.Println(dim.Render("  Retry with: assistclaw service install"))
+			fmt.Println(dim.Render("  On headless Linux, you may need: sudo loginctl enable-linger $USER"))
+		} else {
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("  ✔ Login service installed (launchd / systemd user)."))
+		}
+	default:
+		fmt.Println()
+		fmt.Println(dim.Render("  Run assistclaw service install if your OS supports it."))
 	}
 
 	// ── Launch summary banner ─────────────────────────────────────────────────
 	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	webURL := fmt.Sprintf("http://localhost:%d", gwPort)
 
 	fmt.Println()
@@ -1662,7 +1671,7 @@ func runOnboarding(configPath string) (bool, error) {
 	fmt.Println()
 	fmt.Println(dim.Render("  Manage with:"))
 	fmt.Println(dim.Render("    assistclaw gateway start   │ stop   │ restart"))
-	fmt.Println(dim.Render("    assistclaw service install          (auto-login)"))
+	fmt.Println(dim.Render("    assistclaw service status          (login auto-start)"))
 	fmt.Println(dim.Render("    assistclaw status"))
 	if len(selectedChannels) > 0 {
 		fmt.Println()

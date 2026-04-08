@@ -14,6 +14,7 @@
 #   FORCE_BUILD=1        Build from source instead of downloading release
 #   SKIP_VENV=1          Skip Python venv creation
 #   SKIP_SENSING=1       Skip optional C++ sensing build
+#   SKIP_SERVICE=1       Skip launchd/systemd login service registration (macOS/Linux)
 
 set -eo pipefail
 
@@ -336,6 +337,42 @@ verify() {
   fi
 }
 
+# Register launchd (macOS) or systemd user unit (Linux) so AssistClaw starts after login.
+install_login_service() {
+  [[ "${SKIP_SERVICE:-0}" == "1" ]] && {
+    log "SKIP_SERVICE=1 — skipping login service registration."
+    return 0
+  }
+
+  local bin="$INSTALL_DIR/assistclaw"
+  [[ -x "$bin" ]] || bin="$INSTALL_DIR/assistclaw.exe"
+  [[ -x "$bin" ]] || return 0
+
+  case "$PLATFORM" in
+    darwin-*|linux-*)
+      log "Registering AssistClaw login service (auto-start after sign-in)…"
+      export ASSISTCLAW_STATE_DIR="$STATE_DIR"
+      if "$bin" service install; then
+        ok "Login service installed. (Set SKIP_SERVICE=1 to skip on future runs.)"
+        if [[ "$PLATFORM" == linux-* ]]; then
+          echo ""
+          echo -e "  ${YELLOW}Headless Linux?${NC} User services may need: ${BOLD}sudo loginctl enable-linger \"\$USER\"${NC}"
+        fi
+      else
+        warn "Login service registration failed — run manually after fixing PATH or systemd:"
+        echo -e "    ${BOLD}$bin service install${NC}"
+      fi
+      ;;
+    windows-*)
+      log "Windows: use Task Scheduler for login start:"
+      "$bin" service install 2>/dev/null || true
+      ;;
+    *)
+      warn "Unknown platform for auto service: $PLATFORM"
+      ;;
+  esac
+}
+
 # ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
@@ -364,6 +401,7 @@ main() {
   build_sensing
   setup_config
   verify
+  install_login_service
 
   echo ""
   echo -e "${GREEN}${BOLD}AssistClaw installed successfully!${NC}"
@@ -377,6 +415,9 @@ main() {
   echo ""
   echo -e "  Config: ${BOLD}$STATE_DIR/assistclaw.yaml${NC}"
   echo -e "  Binary: ${BOLD}$INSTALL_DIR/assistclaw${NC}"
+  if [[ "${SKIP_SERVICE:-0}" != "1" ]] && [[ "$PLATFORM" == darwin-* || "$PLATFORM" == linux-* ]]; then
+    echo -e "  Login service: ${BOLD}installed${NC} (auto-start after sign-in; ${BOLD}SKIP_SERVICE=1${NC} to skip next time)"
+  fi
   echo ""
 }
 

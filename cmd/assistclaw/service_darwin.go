@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"text/template"
 
 	"github.com/spf13/cobra"
@@ -39,6 +41,13 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
 
     <key>ThrottleInterval</key>
     <integer>10</integer>
+{{- if .StateDir}}
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>ASSISTCLAW_STATE_DIR</key>
+        <string>{{.StateDir}}</string>
+    </dict>
+{{- end}}
 </dict>
 </plist>
 `
@@ -46,6 +55,7 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
 type plistData struct {
 	BinaryPath string
 	LogDir     string
+	StateDir   string // optional; passed to assistclaw start via ASSISTCLAW_STATE_DIR
 }
 
 func plistPath() (string, error) {
@@ -93,21 +103,52 @@ func installService() error {
 	}
 	defer f.Close()
 
-	if err := tmpl.Execute(f, plistData{BinaryPath: binaryPath, LogDir: ld}); err != nil {
+	stateDir := strings.TrimSpace(os.Getenv("ASSISTCLAW_STATE_DIR"))
+	if err := tmpl.Execute(f, plistData{BinaryPath: binaryPath, LogDir: ld, StateDir: stateDir}); err != nil {
 		return err
 	}
 	f.Close()
 
-	// Load with launchctl
-	out, err := exec.Command("launchctl", "load", "-w", pPath).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("launchctl load failed: %s: %w", string(out), err)
+	if err := launchctlBootstrap(pPath); err != nil {
+		return err
 	}
 
 	fmt.Printf("✅ AssistClaw installed as a launch agent.\n")
 	fmt.Printf("   Plist: %s\n", pPath)
 	fmt.Printf("   Logs:  %s/assistclaw.log\n", ld)
-	fmt.Printf("   AssistClaw will start automatically on login.\n")
+	fmt.Printf("   AssistClaw starts when you log in to this Mac (LaunchAgent).\n")
+	fmt.Println("   If it does not start after reboot, run: assistclaw service status")
+	return nil
+}
+
+// launchctlBootstrap registers the agent. Prefer modern `bootstrap` (macOS 10.11+); fall back to `load -w`.
+func launchctlBootstrap(pPath string) error {
+	uid := strconv.Itoa(os.Getuid())
+	domain := "gui/" + uid
+	// Idempotent: ignore bootout errors (not loaded yet or older OS).
+	_, _ = exec.Command("launchctl", "bootout", domain, pPath).CombinedOutput()
+	out, err := exec.Command("launchctl", "bootstrap", domain, pPath).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	legacyOut, legacyErr := exec.Command("launchctl", "load", "-w", pPath).CombinedOutput()
+	if legacyErr != nil {
+		return fmt.Errorf("launchctl bootstrap failed: %s; load -w failed: %s: %w", string(out), string(legacyOut), legacyErr)
+	}
+	return nil
+}
+
+func launchctlRemove(pPath string) error {
+	uid := strconv.Itoa(os.Getuid())
+	domain := "gui/" + uid
+	out, err := exec.Command("launchctl", "bootout", domain, pPath).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	legacyOut, legacyErr := exec.Command("launchctl", "unload", "-w", pPath).CombinedOutput()
+	if legacyErr != nil {
+		return fmt.Errorf("launchctl bootout failed: %s; unload -w failed: %s: %w", string(out), string(legacyOut), legacyErr)
+	}
 	return nil
 }
 
@@ -121,9 +162,8 @@ func uninstallService() error {
 		return fmt.Errorf("service not installed (no plist at %s)", pPath)
 	}
 
-	out, err := exec.Command("launchctl", "unload", "-w", pPath).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("launchctl unload failed: %s: %w", string(out), err)
+	if err := launchctlRemove(pPath); err != nil {
+		return err
 	}
 
 	if err := os.Remove(pPath); err != nil {
@@ -173,6 +213,38 @@ func serviceLogsCmd(_ *globalFlags) *cobra.Command {
 		Short: "Tail the AssistClaw daemon log file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return tailServiceLogs()
+		},
+	}
+}
+
+func serviceStatusCmd(_ *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show whether the LaunchAgent plist exists and is loaded",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pPath, err := plistPath()
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(pPath); os.IsNotExist(err) {
+				fmt.Println("LaunchAgent: not installed (no plist).")
+				fmt.Println("Run: assistclaw service install")
+				return nil
+			}
+			fmt.Printf("plist: %s\n", pPath)
+			uid := strconv.Itoa(os.Getuid())
+			domain := "gui/" + uid
+			out, err := exec.Command("launchctl", "print", domain+"/com.assistclaw.agent").CombinedOutput()
+			if err != nil {
+				fmt.Printf("launchctl: not loaded in %s (reboot or run: assistclaw service install)\n", domain)
+				fmt.Printf("detail: %s\n", strings.TrimSpace(string(out)))
+				return nil
+			}
+			fmt.Printf("launchctl: loaded in %s\n", domain)
+			fmt.Println(strings.TrimSpace(string(out)))
+			ld, _ := logDir()
+			fmt.Printf("\nlog file: %s\n", filepath.Join(ld, "assistclaw.log"))
+			return nil
 		},
 	}
 }
