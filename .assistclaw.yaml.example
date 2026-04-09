@@ -43,6 +43,10 @@ channels:
   telegram:
     bot_token: ""
     require_mention: true
+  discord:
+    bot_token: ""
+    dm_mode: "pairing"
+    require_mention: true
 
 # Embedding Models (Priority defines fallback order)
 embeddings:

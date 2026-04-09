@@ -57,7 +57,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.11" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.12" // Overridden by -ldflags "-X main.version=..." during build
 
 type reliableToolSender struct {
 	rs *chadapter.ReliableSender
@@ -1248,11 +1248,23 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 	if cfg.Channels.Discord != nil {
-		dc, err := discord.New(cfg.Channels.Discord.BotToken, cfg.Channels.Discord.DMMode, cfg.Channels.Discord.AllowFrom, voiceClient)
+		discordRequireMention := true
+		if cfg.Channels.Discord.RequireMention != nil {
+			discordRequireMention = *cfg.Channels.Discord.RequireMention
+		}
+		dc, err := discord.New(
+			cfg.Channels.Discord.BotToken,
+			cfg.Channels.Discord.DMMode,
+			cfg.Channels.Discord.AllowFrom,
+			discordRequireMention,
+			voiceClient,
+		)
 		if err == nil {
+			dcRS := chadapter.NewReliableSender("discord", dc, reliabilityCfg)
+			dc.WithReliableOutbound(dcRS)
 			go dc.Start(ctx, runner.HandleChannelMessage)
 			channelSenders["discord"] = reliableToolSender{
-				rs: chadapter.NewReliableSender("discord", dc, reliabilityCfg),
+				rs: dcRS,
 			}
 			log.Info("Discord channel active")
 			activeChannels++

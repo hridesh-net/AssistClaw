@@ -157,7 +157,11 @@ func pingDiscord(ctx context.Context, cfg *config.Config) []doctorCheck {
 			Message:  "Not configured (no channels.discord or bot_token).",
 		}}
 	}
-	dc, err := discord.New(ch.BotToken, ch.DMMode, ch.AllowFrom, nil)
+	requireMention := true
+	if ch.RequireMention != nil {
+		requireMention = *ch.RequireMention
+	}
+	dc, err := discord.New(ch.BotToken, ch.DMMode, ch.AllowFrom, requireMention, nil)
 	if err != nil {
 		return []doctorCheck{{
 			ID:       "channel.discord",

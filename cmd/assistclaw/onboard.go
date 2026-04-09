@@ -458,6 +458,7 @@ func runOnboarding(configPath string) (bool, error) {
 		dcBotToken         string
 		dcDMMode           string = "pairing"
 		dcAllowFromRaw     string
+		dcRequireMention   bool = true
 		slBotToken         string
 		slAppToken         string
 		slDMMode           string = "pairing"
@@ -873,6 +874,9 @@ func runOnboarding(configPath string) (bool, error) {
 				dcDMMode = "pairing"
 			}
 			dcAllowFromRaw = strings.Join(existing.Channels.Discord.AllowFrom, ", ")
+			if existing.Channels.Discord.RequireMention != nil {
+				dcRequireMention = *existing.Channels.Discord.RequireMention
+			}
 		}
 		if existing.Channels.Slack != nil {
 			selectedChannels = append(selectedChannels, "slack")
@@ -1254,6 +1258,10 @@ func runOnboarding(configPath string) (bool, error) {
 					Title("Whitelisted Discord IDs").
 					Description("Comma-separated numeric IDs. Only for Allowlist mode.").
 					Value(&dcAllowFromRaw),
+				huh.NewConfirm().
+					Title("Require @bot mention in server channels?").
+					Description("Recommended: avoids noise in busy guild channels. DMs are unaffected.").
+					Value(&dcRequireMention),
 			)).WithTheme(theme).Run()
 		case "slack":
 			_ = huh.NewForm(huh.NewGroup(
@@ -1547,6 +1555,7 @@ func runOnboarding(configPath string) (bool, error) {
 			if ch == "discord" {
 				sb.WriteString(fmt.Sprintf("    bot_token: \"%s\"\n", dcBotToken))
 				sb.WriteString(fmt.Sprintf("    dm_mode: \"%s\"\n", dcDMMode))
+				sb.WriteString(fmt.Sprintf("    require_mention: %t\n", dcRequireMention))
 				if dcAllowFromRaw != "" {
 					sb.WriteString("    allow_from:\n")
 					parts := strings.Split(dcAllowFromRaw, ",")
@@ -1706,7 +1715,8 @@ func buildChannelSetupGuideLines(selectedChannels []string, gwHost string, gwPor
 	if enabled["discord"] {
 		out = append(out,
 			"[Discord] Enable Message Content Intent in the Discord Developer Portal.",
-			"[Discord] Invite bot with Send Messages, Read Message History, Add Reactions.",
+			"[Discord] Invite bot with View Channels, Send Messages, Read Message History, Add Reactions.",
+			"[Discord] If require_mention=true, use @BotName in guild channels to trigger replies.",
 		)
 	}
 	if enabled["slack"] {
@@ -1724,6 +1734,7 @@ func buildChannelSetupGuideLines(selectedChannels []string, gwHost string, gwPor
 	out = append(out,
 		"[All channels] Use `assistclaw doctor --fix` to validate channel tokens and config.",
 		"[Docs] Telegram setup: doc/channels/telegram-setup.md",
+		"[Docs] Discord setup: doc/channels/discord-setup.md",
 		fmt.Sprintf("[Web UI] http://%s:%d", gwHost, gwPort),
 	)
 	return out

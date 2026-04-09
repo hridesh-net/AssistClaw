@@ -28,6 +28,8 @@ type Channel struct {
 	session          *discordgo.Session
 	dmMode           string
 	allowFrom        []string
+	requireMention   bool
+	reliableSend     *adapter.ReliableSender
 	voiceClient      *voice.Client
 	voiceConnections map[string]*discordgo.VoiceConnection
 
@@ -35,7 +37,7 @@ type Channel struct {
 	legacyHandler channels.MessageHandler // used by voice path (!join) until refactored to InboundEvent
 }
 
-func New(token string, dmMode string, allowFrom []string, voiceClient *voice.Client) (*Channel, error) {
+func New(token string, dmMode string, allowFrom []string, requireMention bool, voiceClient *voice.Client) (*Channel, error) {
 	if token == "" {
 		return nil, fmt.Errorf("discord bot token is required")
 	}
@@ -50,9 +52,16 @@ func New(token string, dmMode string, allowFrom []string, voiceClient *voice.Cli
 		session:          dg,
 		dmMode:           dmMode,
 		allowFrom:        allowFrom,
+		requireMention:   requireMention,
 		voiceClient:      voiceClient,
 		voiceConnections: make(map[string]*discordgo.VoiceConnection),
 	}, nil
+}
+
+// WithReliableOutbound wires shared adapter reliability for Discord reply sends.
+func (c *Channel) WithReliableOutbound(rs *adapter.ReliableSender) *Channel {
+	c.reliableSend = rs
+	return c
 }
 
 func (c *Channel) Name() string {
@@ -216,6 +225,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 		if m.Author.ID == s.State.User.ID {
 			return
 		}
+		if !c.shouldAcceptMessage(m) {
+			return
+		}
 
 		sessionID := fmt.Sprintf("discord:%s:%s", m.GuildID, m.ChannelID)
 		authorID := m.Author.ID
@@ -341,32 +353,92 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 
 		msg := channels.MessageFromInbound(ev)
 
-		var buffer string
-		replyFn := func(chunk string) error {
-			buffer += chunk
-			if chunk == "" || len(buffer) > 500 {
-				if len(buffer) > 0 {
-					_, _ = c.session.ChannelMessageSend(chID, buffer)
-					if vc, ok := c.voiceConnections[guildID]; ok {
-						go c.speakVoice(vc, buffer)
+		sendText := func(text string) error {
+			for _, part := range splitDiscordMessage(text) {
+				out := adapter.OutboundMessage{
+					SessionID: fmt.Sprintf("discord:%s:%s", guildID, chID),
+					Text:      part,
+				}
+				if c.reliableSend != nil {
+					if _, err := c.reliableSend.Send(ctx, out); err != nil {
+						return adapter.NewChannelError(adapter.ErrorKindRetryable, "discord reply send", err)
 					}
-					buffer = ""
+				} else {
+					if _, err := c.Send(ctx, out); err != nil {
+						return adapter.NewChannelError(adapter.ErrorKindRetryable, "discord reply send", err)
+					}
+				}
+				if vc, ok := c.voiceConnections[guildID]; ok {
+					go c.speakVoice(vc, part)
 				}
 			}
 			return nil
 		}
+		buf := channels.NewStreamingBuffer(sendText, 700*time.Millisecond)
+		replyFn := func(chunk string) error {
+			if chunk == "" {
+				return nil
+			}
+			return buf.Push(chunk)
+		}
 
 		go func() {
 			handler(ctx, msg, replyFn, nil, nil)
-			if buffer != "" {
-				_, _ = c.session.ChannelMessageSend(chID, buffer)
-				if vc, ok := c.voiceConnections[guildID]; ok {
-					go c.speakVoice(vc, buffer)
-				}
+			if err := buf.Done(); err != nil {
+				log.Printf("Discord: flush send: %v", err)
 			}
 		}()
 		return nil
 	}
+}
+
+func splitDiscordMessage(s string) []string {
+	const maxLen = 2000
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for len(s) > maxLen {
+		cut := strings.LastIndex(s[:maxLen], "\n")
+		if cut < 120 {
+			cut = strings.LastIndex(s[:maxLen], " ")
+		}
+		if cut < 120 {
+			cut = maxLen
+		}
+		out = append(out, strings.TrimSpace(s[:cut]))
+		s = strings.TrimSpace(s[cut:])
+	}
+	if s != "" {
+		out = append(out, s)
+	}
+	return out
+}
+
+func (c *Channel) shouldAcceptMessage(m *discordgo.MessageCreate) bool {
+	if m == nil || m.Message == nil || m.Author == nil || m.GuildID == "" {
+		return true // DMs and malformed events pass through existing policies.
+	}
+	if !c.requireMention {
+		return true
+	}
+	if c.session == nil || c.session.State == nil || c.session.State.User == nil {
+		return true
+	}
+	botID := c.session.State.User.ID
+	if botID == "" {
+		return true
+	}
+	if strings.Contains(m.Content, "<@"+botID+">") || strings.Contains(m.Content, "<@!"+botID+">") {
+		return true
+	}
+	if m.MessageReference != nil && m.ReferencedMessage != nil && m.ReferencedMessage.Author != nil {
+		if m.ReferencedMessage.Author.ID == botID {
+			return true
+		}
+	}
+	return false
 }
 
 // Stop implements [channels.Channel] and [adapter.InboundLifecycle].

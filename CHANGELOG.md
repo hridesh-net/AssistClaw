@@ -3,7 +3,15 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+## [v3.10.12] - 2026-04-09
+### Added
+- **Discord setup docs:** Added `doc/channels/discord-setup.md` with bot creation, intents, invite permissions, config examples, verification, and troubleshooting.
+- **Discord tests:** Added unit coverage for session parsing, message splitting, and mention-gating behavior.
+
 ### Changed
+- **Discord adapter migration parity:** Discord legacy reply path now uses adapter-backed outbound reliability (retry/backoff, circuit-breaker, DLQ), matching the Telegram migration pattern.
+- **Discord mention gating:** Added `channels.discord.require_mention` (default `true`) to reduce guild-channel noise; DMs remain unaffected.
+- **Onboarding + examples:** Onboarding now captures Discord mention-gating and links Discord setup docs; `.assistclaw.yaml.example` now includes a Discord block.
 - **Telegram adapter migration (Story-004):** Telegram now runs through adapter-shaped inbound/outbound paths with shared reliability for outbound reply sends (retry/backoff, circuit-breaker, DLQ) via the centralized adapter reliability layer.
 - **Channel capability registry (Story-003):** Added machine-readable capability registry and docs matrix, with runtime graceful degradation for unsupported optional features (e.g., threading on channels that do not support it).
 
