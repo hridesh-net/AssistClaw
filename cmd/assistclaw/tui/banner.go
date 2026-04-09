@@ -38,13 +38,12 @@ func RenderBanner(ver, sessionID string, providers, skillsCount int) string {
 	}
 
 	// Info block — right pane
-	titleStyle := lipgloss.NewStyle().Foreground(ColorNeon).Bold(true)
 	subStyle := lipgloss.NewStyle().Foreground(ColorPrimary)
 	dimStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 
 	infoLines := []string{
 		"",
-		titleStyle.Render("  AssistClaw  ") + Muted.Render(ver),
+		"  " + GradientWord("ASSISTCLAW") + " " + Muted.Render(ver),
 		subStyle.Render("  Edge Intelligence System"),
 		"",
 		dimStyle.Render("  session  ") + Primary.Render(shortID(sessionID)),
@@ -74,10 +73,9 @@ func RenderBanner(ver, sessionID string, providers, skillsCount int) string {
 		Padding(0, 1).
 		Render(combined)
 
-	// Tagline below
-	tagline := lipgloss.NewStyle().
-		Foreground(ColorBorder).
-		Render("  ── The Autonomous Edge Intelligence System ──")
+	// Tagline below — scanline + bracket for hacker-terminal vibe
+	tagline := lipgloss.NewStyle().Foreground(ColorBorder).Render("  ") +
+		CyberBracket("AUTONOMOUS EDGE CORE") + "\n  " + ScanlineSuffix(56)
 
 	return "\n" + banner + "\n" + tagline + "\n"
 }
@@ -103,8 +101,7 @@ func PrintOnboardBanner(ver string) {
 
 	infoLines := []string{
 		"",
-		lipgloss.NewStyle().Foreground(ColorNeon).Bold(true).Render("  AssistClaw  ") +
-			Muted.Render(ver),
+		"  " + GradientWord("ASSISTCLAW") + " " + Muted.Render(ver),
 		Primary.Render("  Setup Wizard"),
 		"",
 		Muted.Render("  Let's get you configured."),

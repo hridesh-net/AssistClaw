@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -21,6 +22,9 @@ type agentTokenMsg string
 type agentToolMsg string
 type agentDoneMsg struct{ iterations, tokens int }
 type agentErrMsg error
+
+// pulseMsg drives a slow border / header pulse independent of the spinner.
+type pulseMsg struct{}
 
 // ─────────────────────────────────────────────
 // Agent interface (matches agent.StreamHandler + agent.Runner)
@@ -67,6 +71,9 @@ type REPLModel struct {
 	width       int
 	height      int
 	ready       bool
+	pulseFrame  int
+	sessionID   string
+	version     string
 
 	// sendMsg is set by RunREPL so the Update loop can call it.
 	sendMsg func(line string)
@@ -74,7 +81,7 @@ type REPLModel struct {
 
 // NewREPLModel creates a configured REPL model. sendMsg is called when the
 // user presses Enter; it must dispatch the message to the agent asynchronously.
-func NewREPLModel(ctx context.Context, runner AgentRunner, sendMsg func(string)) *REPLModel {
+func NewREPLModel(ctx context.Context, runner AgentRunner, sessionID, ver string, sendMsg func(string)) *REPLModel {
 	ctx, cancel := context.WithCancel(ctx)
 
 	ta := textarea.New()
@@ -87,21 +94,29 @@ func NewREPLModel(ctx context.Context, runner AgentRunner, sendMsg func(string))
 	ta.CharLimit = 4096
 
 	sp := spinner.New()
-	sp.Spinner = spinner.MiniDot
-	sp.Style = lipgloss.NewStyle().Foreground(ColorCyan)
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(ColorCyan).Bold(true)
 
 	return &REPLModel{
-		ctx:      ctx,
-		cancel:   cancel,
-		runner:   runner,
-		textarea: ta,
-		spinner:  sp,
-		sendMsg:  sendMsg,
+		ctx:       ctx,
+		cancel:    cancel,
+		runner:    runner,
+		textarea:  ta,
+		spinner:   sp,
+		sendMsg:   sendMsg,
+		sessionID: sessionID,
+		version:   ver,
 	}
 }
 
+func pulseCmd() tea.Cmd {
+	return tea.Tick(480*time.Millisecond, func(time.Time) tea.Msg {
+		return pulseMsg{}
+	})
+}
+
 func (m *REPLModel) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.spinner.Tick)
+	return tea.Batch(textarea.Blink, m.spinner.Tick, pulseCmd())
 }
 
 func (m *REPLModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -112,7 +127,7 @@ func (m *REPLModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		vpH := m.height - 8
+		vpH := m.height - 10 // header row + chat + input chrome
 		if vpH < 4 {
 			vpH = 4
 		}
@@ -176,10 +191,14 @@ func (m *REPLModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.appendHistory(ErrorStyle.Render("✗ ") + Muted.Render(msg.Error()))
 		m.refreshViewport()
 
+	case pulseMsg:
+		m.pulseFrame++
+		cmds = append(cmds, pulseCmd())
+
 	case spinner.TickMsg:
 		var sc tea.Cmd
 		m.spinner, sc = m.spinner.Update(msg)
-		cmds = append(cmds, sc, m.spinner.Tick)
+		cmds = append(cmds, sc)
 	}
 
 	if !m.thinking {
@@ -202,22 +221,39 @@ func (m *REPLModel) View() string {
 
 	// Viewport (chat history)
 	m.viewport.SetContent(m.buildContent())
+	borderCol := PulseBorder(m.pulseFrame)
 	chatBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorPrimary).
+		BorderForeground(borderCol).
 		Width(m.width - 2).
 		Render(m.viewport.View())
+
+	pulseMark := lipgloss.NewStyle().Foreground(borderCol).Bold(true).Render("▶")
+	headerRow := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		pulseMark,
+		lipgloss.NewStyle().Render(" "),
+		GradientWord("ASSISTCLAW"),
+		lipgloss.NewStyle().Render(" "),
+		CyberBracket("REPL"),
+		Muted.Render("  "+strings.TrimSpace(m.version)+"  ·  session "+shortID(m.sessionID)),
+	)
+	headerBar := lipgloss.NewStyle().
+		Width(m.width-2).
+		Padding(0, 0, 0, 0).
+		Render(headerRow)
+	under := lipgloss.NewStyle().Foreground(ColorBorder).Width(m.width - 2).Render(ScanlineSuffix(minReplScanlineWidth(m.width)))
 
 	// Status footer
 	var footer string
 	if m.thinking {
 		tool := ""
 		if m.currentTool != "" {
-			tool = "  " + ToolBadge.Render("⚙ "+m.currentTool)
+			tool = "  " + ToolBadge.Render("⚡ "+m.currentTool)
 		}
-		footer = m.spinner.View() + Muted.Render(" thinking...") + tool
+		footer = m.spinner.View() + Neon.Render(" · ") + Muted.Render("thinking") + tool
 	} else {
-		footer = Muted.Render("Enter ↵ send · Ctrl+J newline · ↑↓ scroll · ESC quit")
+		footer = Muted.Render("↵ send  ·  Ctrl+J newline  ·  ↑↓ scroll  ·  ESC quit")
 	}
 
 	// Input box
@@ -229,7 +265,18 @@ func (m *REPLModel) View() string {
 		Padding(0, 1).
 		Render(Primary.Render("›") + " " + m.textarea.View() + "\n  " + footer)
 
-	return lipgloss.JoinVertical(lipgloss.Left, chatBox, inputBox)
+	return lipgloss.JoinVertical(lipgloss.Left, headerBar, under, chatBox, inputBox)
+}
+
+func minReplScanlineWidth(termW int) int {
+	w := termW - 6
+	if w < 24 {
+		w = 24
+	}
+	if w > 72 {
+		w = 72
+	}
+	return w
 }
 
 func (m *REPLModel) buildContent() string {
@@ -241,7 +288,7 @@ func (m *REPLModel) buildContent() string {
 		sb.WriteString(AgentPrefix.Render("🤖") + " " + m.tokenBuf)
 	}
 	if m.currentTool != "" {
-		sb.WriteString("\n" + ToolBadge.Render("  ⚙ "+m.currentTool) + " " + m.spinner.View())
+		sb.WriteString("\n" + ToolBadge.Render("  ⚡ "+m.currentTool) + " " + m.spinner.View())
 	}
 	return sb.String()
 }
@@ -305,7 +352,7 @@ func RunREPL(ctx context.Context, runner AgentRunner, ver string, providerCount,
 		}()
 	}
 
-	model := NewREPLModel(ctx, runner, sendMsg)
+	model := NewREPLModel(ctx, runner, runner.SessionID(), ver, sendMsg)
 	p = tea.NewProgram(
 		model,
 		tea.WithAltScreen(),

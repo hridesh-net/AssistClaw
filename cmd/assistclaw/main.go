@@ -124,7 +124,9 @@ func agentReflectionEnabled(c *config.Config) bool {
 }
 
 func main() {
-	fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
+	if tui.ShouldPrintStartupBanner() {
+		tui.MaybePrintCLIHeader(version)
+	}
 	if err := rootCmd().Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -183,7 +185,7 @@ func rootCmd() *cobra.Command {
 		logicTestCmd(flags),
 		cronCmd(flags),
 		doctorCmd(flags),
-		versionCmd(),
+		versionCmd(flags),
 	)
 	return root
 }
@@ -809,12 +811,12 @@ Subcommands:
 // version command
 // ─────────────────────────────────────────────
 
-func versionCmd() *cobra.Command {
+func versionCmd(gf *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("assistclaw %s\n", version)
+			tui.MaybePrintVersion(version, gf.noColor)
 		},
 	}
 }
