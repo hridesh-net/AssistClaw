@@ -222,11 +222,12 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 			senderJID := v.Info.Sender
 			chatJID := v.Info.Chat
 			msgID := v.Info.ID
+			msgTS := v.Info.Timestamp
 
 			// Run the agent call in a separate goroutine so we don't block
 			// the WhatsApp event pump (which would cause keepalive misses
 			// and eventual disconnection under load).
-			go c.handleMessage(ctx, senderJID, chatJID, msgID, sender, txt, parts, handler)
+			go c.handleMessage(ctx, senderJID, chatJID, msgID, msgTS, sender, txt, parts, handler)
 
 		case *events.Disconnected:
 			log.Printf("WhatsApp: disconnected — will auto-reconnect")
@@ -248,19 +249,26 @@ func (c *Channel) handleMessage(
 	ctx context.Context,
 	senderJID types.JID,
 	chatJID types.JID,
-	msgID string,
+	msgID types.MessageID,
+	msgTS time.Time,
 	senderStr string,
 	txt string,
 	parts []provider.ContentPart,
 	msgHandler channels.MessageHandler,
 ) {
+	// Mark inbound message as read to send WhatsApp read receipts.
+	// In groups, senderJID is required as the participant argument.
+	if err := c.client.MarkRead(ctx, []types.MessageID{msgID}, msgTS, chatJID, senderJID); err != nil {
+		log.Printf("WhatsApp: mark-read failed for %s: %v", msgID, err)
+	}
+
 	sessionID := senderStr
 	if chatJID.Server == "g.us" {
 		sessionID = chatJID.String() // Shared context for groups
 	}
 
 	msg := channels.Message{
-		ID:        msgID,
+		ID:        string(msgID),
 		ChannelID: c.Name(),
 		SessionID: sessionID,
 		Text:      txt,
