@@ -710,22 +710,43 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 	}
 
 	// ── Workspace Identity (markdown persona files) ─────────────────────────
-	// Read each identity file and build a persona block. When SOUL.md is
-	// present it becomes the PRIMARY identity, replacing the hardcoded default.
-	type wsFile struct{ name, header string }
-	identityFiles := []wsFile{
-		{"SOUL.md", "Agent Soul / Persona"},
-		{"IDENTITY.md", "Identity"},
-		{"USER.md", "User Context"},
-		{"AGENTS.md", "Agent Rules"},
-		{"BOOTSTRAP.md", "Bootstrap Instructions"},
-		{"TOOLS.md", "Tool Preferences"},
-	}
-	personaFromWorkspace := ""
-	for _, wf := range identityFiles {
-		if data, err := os.ReadFile(filepath.Join(ws, wf.name)); err == nil && len(strings.TrimSpace(string(data))) > 0 {
-			personaFromWorkspace += fmt.Sprintf("\n## %s\n%s\n", wf.header, strings.TrimSpace(string(data)))
+	// SOUL.md is the source of truth for core behavior/capabilities.
+	readWS := func(name string) (string, bool) {
+		data, err := os.ReadFile(filepath.Join(ws, name))
+		if err != nil {
+			return "", false
 		}
+		content := strings.TrimSpace(string(data))
+		if content == "" || looksLikeTemplate(content) {
+			return "", false
+		}
+		return content, true
+	}
+	soulContent, hasSoul := readWS("SOUL.md")
+	identityContent, hasIdentity := readWS("IDENTITY.md")
+	userContent, hasUser := readWS("USER.md")
+	agentsContent, hasAgents := readWS("AGENTS.md")
+	bootstrapContent, hasBootstrap := readWS("BOOTSTRAP.md")
+	toolsContent, hasTools := readWS("TOOLS.md")
+
+	personaFromWorkspace := ""
+	if hasSoul {
+		personaFromWorkspace += fmt.Sprintf("\n## Agent Soul / Persona (Source of Truth)\n%s\n", soulContent)
+	}
+	if hasIdentity {
+		personaFromWorkspace += fmt.Sprintf("\n## Identity\n%s\n", identityContent)
+	}
+	if hasUser {
+		personaFromWorkspace += fmt.Sprintf("\n## User Context\n%s\n", userContent)
+	}
+	if hasAgents {
+		personaFromWorkspace += fmt.Sprintf("\n## Agent Rules\n%s\n", agentsContent)
+	}
+	if hasBootstrap {
+		personaFromWorkspace += fmt.Sprintf("\n## Bootstrap Instructions\n%s\n", bootstrapContent)
+	}
+	if hasTools {
+		personaFromWorkspace += fmt.Sprintf("\n## Tool Preferences\n%s\n", toolsContent)
 	}
 
 	// ── Dynamic tool table — built from the live ToolRegistry ────────────────
@@ -735,6 +756,7 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 
 	// ── Core identity ────────────────────────────────────────────────────────
 	// If workspace identity files exist, they ARE the identity.
+	// SOUL.md is authoritative for core behavior/capabilities.
 	// The hardcoded block is the fallback for bare installs with no workspace files.
 	var identityBlock string
 	if personaFromWorkspace != "" {
@@ -754,6 +776,10 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 ## Critical Rules
 
 **Product identity:** This runtime is **AssistClaw**. Use **IDENTITY.md** / **SOUL.md** for persona name and tone; do not claim a different product or runtime name unless those files explicitly define one.
+**Core behavior authority:** When **SOUL.md** exists, it is the highest-priority source for behavior, values, and deep capability posture.
+**Identity authority:** Use **IDENTITY.md** for identity role, name, and evolving traits/style over time.
+**User profile authority:** Use **USER.md** for user-specific preferences/context.
+**Conversation quality:** Sound human, grounded, and reliable. Do not narrate hidden internals such as startup phases, file-loading progress, or tool activation unless the user explicitly asks for technical trace output. Default to outcome-first answers.
 
 **Owner-only policies (hard rule):** ` + "`POLICIES.md`" + `, ` + "`RULES.md`" + `, and everything under ` + "`policies/`" + ` in the state directory are written only by the human operator on disk. You may ` + "`read_file`" + ` them to follow rules; you must not use ` + "`write_file`" + `, ` + "`edit`" + `, ` + "`apply_patch`" + `, ` + "`env`" + ` write_file, or ` + "`bash`" + ` to create, overwrite, or shell-edit those paths (attempts are blocked).
 
@@ -847,6 +873,31 @@ When the user asks for a **dashboard**, **status page**, or **live monitor**:
 	}
 
 	return strings.Join(parts, "\n\n")
+}
+
+// looksLikeTemplate detects untouched template markdown so we don't inject
+// bootstrap scaffolding into the live system prompt.
+func looksLikeTemplate(content string) bool {
+	lc := strings.ToLower(content)
+	if strings.Contains(lc, `title: "identity template"`) ||
+		strings.Contains(lc, `title: "soul.md template"`) ||
+		strings.Contains(lc, `title: "user template"`) ||
+		strings.Contains(lc, `title: "agents.md template"`) {
+		return true
+	}
+	templateMarkers := []string{
+		"_fill this in during your first conversation.",
+		"_you're not a chatbot. you're becoming someone._",
+		"_learn about the person you're helping. update this as you go._",
+		"if `bootstrap.md` exists, that's your birth certificate.",
+	}
+	hits := 0
+	for _, marker := range templateMarkers {
+		if strings.Contains(lc, marker) {
+			hits++
+		}
+	}
+	return hits >= 2
 }
 
 // buildToolTable generates a markdown table of all registered tools for the system prompt.
@@ -1091,6 +1142,26 @@ func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message,
 		}
 	}
 
+	// First-message bootstrap: if identity/user files are still templates,
+	// ask a concise setup question before normal assistant operation.
+	if sessionRunner.shouldRunIdentityBootstrap() {
+		_ = replyFn("Quick setup so I can be genuinely helpful from day one:\n" +
+			"• What should I call you?\n" +
+			"• What name should I use for myself?\n" +
+			"• Pick my vibe: calm / builder / hacker / witty\n\n" +
+			"Reply like: `you=Elross, me=Claw, vibe=builder` (or just say `skip`).")
+		bootstrapMsg := memory.Message{
+			ID:        uuid.New().String(),
+			SessionID: msg.SessionID,
+			Role:      memory.RoleAssistant,
+			Content:   "Identity bootstrap prompt sent.",
+			CreatedAt: time.Now(),
+		}
+		sessionRunner.working.Append(bootstrapMsg)
+		_ = sessionRunner.memory.Episodic.Save(ctx, bootstrapMsg)
+		return
+	}
+
 	handler := &channelStreamHandler{
 		replyFn: replyFn,
 		reactFn: reactFn,
@@ -1125,11 +1196,11 @@ func (h *channelStreamHandler) OnToolCall(name string, _ json.RawMessage) {
 	if h.reactFn != nil {
 		_ = h.reactFn("⏳")
 	}
-	_ = h.replyFn(fmt.Sprintf("\n[🛠️ Activating %s...]\n", name))
+	// Keep chat UX natural: reactions indicate progress; avoid debug-log chatter.
 }
 
 func (h *channelStreamHandler) OnToolResult(name string, _ string) {
-	_ = h.replyFn(fmt.Sprintf("\n[✅ %s finished]\n", name))
+	// Intentionally no text event; final assistant message should carry the result.
 }
 
 func (h *channelStreamHandler) OnDone(_ *RunResult) {
@@ -1165,6 +1236,8 @@ func normalizeSlashCommand(cmd string) string {
 		return "/export-session"
 	case "/plugin":
 		return "/plugins"
+	case "/persona":
+		return "/identity"
 	default:
 		return cmd
 	}
@@ -1242,6 +1315,9 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 			r.sessionID, ch, r.cfg.Model, r.workspaceDir))
 		return true
 
+	case "/identity":
+		return r.handleIdentityCommand(parts, replyFn)
+
 	case "/context":
 		_ = replyFn("🧩 *How context works (AssistClaw)*\n" +
 			"• *System prompt:* `SOUL.md`, `IDENTITY.md`, `USER.md`, `AGENTS.md` from the state dir + tool table + rules.\n" +
@@ -1302,7 +1378,7 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 				}
 			}
 			if shown >= maxLines {
-				b.WriteString(fmt.Sprintf("… _truncated_\n"))
+				b.WriteString("… _truncated_\n")
 				break
 			}
 			line := fmt.Sprintf("• `%s/%s`", m.Provider, m.ID)
@@ -1362,6 +1438,7 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 		cmds += "• `/help` `/commands`\n"
 		cmds += "• `/status` — model, provider, session, working-memory size\n"
 		cmds += "• `/whoami` (alias `/id`) — session, channel, model, state dir\n"
+		cmds += "• `/identity` (alias `/persona`) — show or set assistant identity fields\n"
 		cmds += "• `/context` — how prompts + memory + tools are built\n"
 		cmds += "• `/compact` — drop oldest working-memory turns (token trim)\n"
 		cmds += "• `/model` `[provider/id]` — show current; changing needs yaml + restart\n"
@@ -1464,6 +1541,7 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 	case "/help":
 		help := "📋 *Commands* — `/commands` for full list\n"
 		help += "• *Core:* `/status` `/whoami` `/context` `/compact`\n"
+		help += "• *Persona:* `/identity show` `/identity set name=... vibe=... emoji=... creature=...`\n"
 		help += "• *Models/tools:* `/model` `/models` `/tools` `/tools verbose` `/skills` `/subagents`\n"
 		help += "• *Session:* `/reset` `/new` `/sessions` `/forget` `/auto`\n"
 		help += "• *Legacy names:* `/stop` `/usage` `/think` … → stub with pointers\n"
@@ -1477,6 +1555,145 @@ func (r *Runner) HandleChatCommand(ctx context.Context, text string, replyFn cha
 	}
 
 	return false
+}
+
+func (r *Runner) shouldRunIdentityBootstrap() bool {
+	// Messaging channels only; CLI/web has its own onboarding flow.
+	if r.channelID == "" {
+		return false
+	}
+	// Do it once per session.
+	if len(r.working.Messages()) > 0 {
+		return false
+	}
+	idPath := filepath.Join(r.workspaceDir, "IDENTITY.md")
+	userPath := filepath.Join(r.workspaceDir, "USER.md")
+	idData, idErr := os.ReadFile(idPath)
+	userData, userErr := os.ReadFile(userPath)
+	if idErr != nil && userErr != nil {
+		return false
+	}
+	idTemplate := idErr == nil && looksLikeTemplate(string(idData))
+	userTemplate := userErr == nil && looksLikeTemplate(string(userData))
+	return idTemplate || userTemplate
+}
+
+func (r *Runner) handleIdentityCommand(parts []string, replyFn channels.StreamingReplyFunc) bool {
+	usage := "Usage:\n" +
+		"• `/identity show`\n" +
+		"• `/identity set name=<...> vibe=<...> emoji=<...> creature=<...>`\n" +
+		"Example: `/identity set name=Claw vibe=builder emoji=🛠️ creature=fox`"
+
+	if len(parts) < 2 || strings.ToLower(parts[1]) == "show" {
+		idPath := filepath.Join(r.workspaceDir, "IDENTITY.md")
+		data, err := os.ReadFile(idPath)
+		if err != nil {
+			_ = replyFn("❌ Could not read IDENTITY.md.\n" + usage)
+			return true
+		}
+		_ = replyFn("🪪 *Identity* (`IDENTITY.md`)\n" + summarizeIdentity(string(data)))
+		return true
+	}
+
+	if strings.ToLower(parts[1]) != "set" {
+		_ = replyFn("❌ Unknown `/identity` subcommand.\n" + usage)
+		return true
+	}
+
+	if len(parts) < 3 {
+		_ = replyFn("❌ Missing fields.\n" + usage)
+		return true
+	}
+
+	updates := map[string]string{}
+	for _, token := range parts[2:] {
+		kv := strings.SplitN(token, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := strings.ToLower(strings.TrimSpace(kv[0]))
+		v := strings.TrimSpace(kv[1])
+		if v == "" {
+			continue
+		}
+		updates[k] = v
+	}
+
+	if len(updates) == 0 {
+		_ = replyFn("❌ No valid `key=value` fields found.\n" + usage)
+		return true
+	}
+
+	idPath := filepath.Join(r.workspaceDir, "IDENTITY.md")
+	data, err := os.ReadFile(idPath)
+	if err != nil {
+		_ = replyFn("❌ Could not read IDENTITY.md.")
+		return true
+	}
+	updated := string(data)
+	fieldMap := map[string]string{
+		"name":     "Name",
+		"creature": "Creature",
+		"vibe":     "Vibe",
+		"emoji":    "Emoji",
+		"avatar":   "Avatar",
+	}
+	changed := 0
+	for k, field := range fieldMap {
+		if v, ok := updates[k]; ok {
+			next, did := setIdentityField(updated, field, v)
+			updated = next
+			if did {
+				changed++
+			}
+		}
+	}
+
+	if changed == 0 {
+		_ = replyFn("ℹ️ No supported fields changed.\n" + usage)
+		return true
+	}
+	if err := os.WriteFile(idPath, []byte(updated), 0o644); err != nil {
+		_ = replyFn(fmt.Sprintf("❌ Failed to update IDENTITY.md: %v", err))
+		return true
+	}
+	_ = replyFn("✅ Updated `IDENTITY.md`.\n" + summarizeIdentity(updated))
+	return true
+}
+
+func summarizeIdentity(content string) string {
+	fields := []string{"Name", "Creature", "Vibe", "Emoji", "Avatar"}
+	var out []string
+	for _, f := range fields {
+		v := getIdentityField(content, f)
+		if v == "" {
+			v = "—"
+		}
+		out = append(out, fmt.Sprintf("• *%s:* %s", f, v))
+	}
+	return strings.Join(out, "\n")
+}
+
+func getIdentityField(content, field string) string {
+	re := regexp.MustCompile(`(?m)^- \*\*` + regexp.QuoteMeta(field) + `:\*\*\s*(.*)$`)
+	m := re.FindStringSubmatch(content)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
+
+func setIdentityField(content, field, value string) (string, bool) {
+	re := regexp.MustCompile(`(?m)^- \*\*` + regexp.QuoteMeta(field) + `:\*\*.*$`)
+	line := fmt.Sprintf("- **%s:** %s", field, value)
+	if re.MatchString(content) {
+		return re.ReplaceAllString(content, line), true
+	}
+	// Append if the field is missing.
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return content + line + "\n", true
 }
 
 func (r *Runner) shouldFlush() bool {
