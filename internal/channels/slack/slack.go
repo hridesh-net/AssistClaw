@@ -67,6 +67,8 @@ func (c *Channel) Capabilities() adapter.ChannelCapabilities {
 		Attachments:      true,
 		DirectMessages:   true,
 		GroupMessages:    true,
+		Mentions:         true,
+		Voice:            false,
 		Reactions:        true,
 		Edits:            true,
 		MaxMessageLength: 40000,

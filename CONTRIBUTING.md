@@ -20,9 +20,16 @@ Thank you for your interest in AssistClaw! We welcome contributions to make this
 - `cmd/assistclaw/`: CLI entrypoints and daemon management.
 - `internal/agent/`: Core reasoning loop (Planning, Execution, Reflection).
 - `internal/channels/`: Integration layers (WhatsApp, Telegram, Discord, Slack).
+- `internal/channels/adapter/`: Versioned channel contract + reliability wrappers + capability registry.
 - `internal/provider/`: LLM client implementations.
 - `internal/memory/`: Semantic (vector) and Episodic (FTS5) persistence.
 - `bridge/`: C++ layer for hardware sensing (Camera, GPIO).
+
+## 🔌 Channel Capabilities
+
+- Built-in capability matrix: `doc/channels/capability-registry.md`
+- Runtime lookup: `adapter.CapabilitiesFor(channelType)`
+- New channel registration hook: `adapter.RegisterCapabilities(channelType, caps)`
 
 ## 🧪 Coding Standards
 

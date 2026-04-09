@@ -17,10 +17,10 @@ type ThreadRef struct {
 
 // Attachment describes an inbound file or media handle without necessarily loading bytes.
 type Attachment struct {
-	ID       string
-	Kind     string // e.g. "image", "file", "audio"
-	URL      string
-	MimeType string
+	ID        string
+	Kind      string // e.g. "image", "file", "audio"
+	URL       string
+	MimeType  string
 	SizeBytes int64
 }
 
@@ -53,7 +53,7 @@ type InboundEvent struct {
 	// Parts mirrors multimodal content when present; Text may duplicate plain text for convenience.
 	Parts []provider.ContentPart
 
-	ThreadRef *ThreadRef
+	ThreadRef   *ThreadRef
 	Attachments []Attachment
 	// Metadata holds small string-keyed channel-specific fields (ids, reply references).
 	Metadata map[string]string
@@ -65,6 +65,8 @@ type ChannelCapabilities struct {
 	Attachments      bool
 	DirectMessages   bool
 	GroupMessages    bool
+	Mentions         bool
+	Voice            bool
 	Reactions        bool
 	Edits            bool
 	MaxMessageLength int // 0 means unknown / no fixed limit

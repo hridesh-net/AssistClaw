@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
+	chadapter "github.com/assistclaw/assistclaw/internal/channels/adapter"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -56,7 +57,22 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.10" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.11" // Overridden by -ldflags "-X main.version=..." during build
+
+type reliableToolSender struct {
+	rs *chadapter.ReliableSender
+}
+
+func (s reliableToolSender) SendText(ctx context.Context, sessionID, text string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("session_id is required for outbound channel sends")
+	}
+	_, err := s.rs.Send(ctx, chadapter.OutboundMessage{
+		SessionID: sessionID,
+		Text:      text,
+	})
+	return err
+}
 
 // defaultHeartbeatPrompt matches AGENTS.md guidance for periodic heartbeat polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
@@ -184,6 +200,7 @@ func rootCmd() *cobra.Command {
 		securityCmd(flags),
 		logicTestCmd(flags),
 		cronCmd(flags),
+		dlqCmd(flags),
 		doctorCmd(flags),
 		versionCmd(flags),
 	)
@@ -998,7 +1015,8 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 		return memMgr.Semantic.GetSnippet(snippetCtx, path, startLine, endLine)
 	}
-	for _, t := range tools.Default(memSearchFn, memSnippetFn, memMgr.Episodic, p, modelInfo.ID, nil, cfg.StateDir) {
+	channelSenders := map[string]tools.ChannelSender{}
+	for _, t := range tools.Default(memSearchFn, memSnippetFn, memMgr.Episodic, p, modelInfo.ID, channelSenders, cfg.StateDir) {
 		if tool, ok := t.(agent.Tool); ok {
 			toolReg.Register(tool)
 		}
@@ -1194,6 +1212,19 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 
 	// Start Messaging Channels
 	activeChannels := 0
+	reliabilityCfg := chadapter.ReliabilityConfig{
+		Retry: chadapter.RetryPolicy{
+			MaxAttempts:   cfg.Channels.Outbound.MaxAttempts,
+			BaseDelay:     time.Duration(cfg.Channels.Outbound.BaseDelayMS) * time.Millisecond,
+			MaxDelay:      time.Duration(cfg.Channels.Outbound.MaxDelayMS) * time.Millisecond,
+			JitterPercent: cfg.Channels.Outbound.JitterPercent,
+		},
+		Breaker: chadapter.CircuitBreakerPolicy{
+			FailureThreshold: cfg.Channels.Outbound.BreakerThreshold,
+			Cooldown:         time.Duration(cfg.Channels.Outbound.BreakerCooldownS) * time.Second,
+		},
+		DLQPath: cfg.Channels.Outbound.DLQPath,
+	}
 	if cfg.Channels.Telegram != nil {
 		requireMention := true
 		if cfg.Channels.Telegram.RequireMention != nil {
@@ -1206,7 +1237,12 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 			requireMention,
 		)
 		if err == nil {
+			tgRS := chadapter.NewReliableSender("telegram", tg, reliabilityCfg)
+			tg.WithReliableOutbound(tgRS)
 			go tg.Start(ctx, runner.HandleChannelMessage)
+			channelSenders["telegram"] = reliableToolSender{
+				rs: tgRS,
+			}
 			log.Info("Telegram channel active")
 			activeChannels++
 		}
@@ -1215,6 +1251,9 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		dc, err := discord.New(cfg.Channels.Discord.BotToken, cfg.Channels.Discord.DMMode, cfg.Channels.Discord.AllowFrom, voiceClient)
 		if err == nil {
 			go dc.Start(ctx, runner.HandleChannelMessage)
+			channelSenders["discord"] = reliableToolSender{
+				rs: chadapter.NewReliableSender("discord", dc, reliabilityCfg),
+			}
 			log.Info("Discord channel active")
 			activeChannels++
 		}
@@ -1223,6 +1262,9 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		sl, err := slack.New(cfg.Channels.Slack.BotToken, cfg.Channels.Slack.AppToken, cfg.Channels.Slack.DMMode, cfg.Channels.Slack.AllowFrom)
 		if err == nil {
 			go sl.Start(ctx, runner.HandleChannelMessage)
+			channelSenders["slack"] = reliableToolSender{
+				rs: chadapter.NewReliableSender("slack", sl, reliabilityCfg),
+			}
 			log.Info("Slack channel active")
 			activeChannels++
 		}

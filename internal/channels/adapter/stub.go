@@ -39,6 +39,8 @@ func (s *Stub) Capabilities() ChannelCapabilities {
 		Attachments:    true,
 		DirectMessages: true,
 		GroupMessages:  true,
+		Mentions:       true,
+		Voice:          false,
 	}
 }
 

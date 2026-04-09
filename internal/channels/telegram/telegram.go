@@ -30,6 +30,7 @@ type Channel struct {
 	dmMode         string
 	allowFrom      []string
 	requireMention bool
+	reliableSend   *adapter.ReliableSender
 }
 
 func New(apiKey string, dmMode string, allowFrom []string, requireMention bool) (*Channel, error) {
@@ -49,6 +50,13 @@ func New(apiKey string, dmMode string, allowFrom []string, requireMention bool) 
 	}, nil
 }
 
+// WithReliableOutbound sets the shared reliability wrapper used for outbound
+// sends from Telegram legacy reply paths.
+func (c *Channel) WithReliableOutbound(rs *adapter.ReliableSender) *Channel {
+	c.reliableSend = rs
+	return c
+}
+
 // Name implements [channels.Channel] and [adapter.Identity].
 func (c *Channel) Name() string {
 	return "telegram"
@@ -66,6 +74,8 @@ func (c *Channel) Capabilities() adapter.ChannelCapabilities {
 		Attachments:      true,
 		DirectMessages:   true,
 		GroupMessages:    true,
+		Mentions:         true,
+		Voice:            false,
 		Reactions:        true,
 		Edits:            true,
 		MaxMessageLength: 4096,
@@ -295,11 +305,20 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 
 		sendText := func(text string) error {
 			for i, part := range splitTelegramMessage(text) {
-				tgMsg := tgbotapi.NewMessage(chatID, part)
-				if i == 0 && replyToID > 0 {
-					tgMsg.ReplyToMessageID = replyToID
+				out := adapter.OutboundMessage{
+					SessionID: fmt.Sprintf("tg:%d", chatID),
+					Text:      part,
 				}
-				if _, err := c.bot.Send(tgMsg); err != nil {
+				if i == 0 && replyToID > 0 {
+					out.ReplyToID = strconv.Itoa(replyToID)
+				}
+				if c.reliableSend != nil {
+					if _, err := c.reliableSend.Send(ctx, out); err != nil {
+						return adapter.NewChannelError(adapter.ErrorKindRetryable, "telegram reply send", err)
+					}
+					continue
+				}
+				if _, err := c.Send(ctx, out); err != nil {
 					return adapter.NewChannelError(adapter.ErrorKindRetryable, "telegram reply send", err)
 				}
 			}

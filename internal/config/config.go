@@ -385,10 +385,23 @@ type SecurityConfig struct {
 
 // ChannelsConfig configures messaging channels.
 type ChannelsConfig struct {
-	Telegram *TelegramConfig `yaml:"telegram"`
-	Discord  *DiscordConfig  `yaml:"discord"`
-	Slack    *SlackConfig    `yaml:"slack"`
-	WhatsApp *WhatsAppConfig `yaml:"whatsapp"`
+	Outbound OutboundReliabilityConfig `yaml:"outbound"`
+	Telegram *TelegramConfig           `yaml:"telegram"`
+	Discord  *DiscordConfig            `yaml:"discord"`
+	Slack    *SlackConfig              `yaml:"slack"`
+	WhatsApp *WhatsAppConfig           `yaml:"whatsapp"`
+}
+
+// OutboundReliabilityConfig configures shared retry/circuit-breaker/DLQ behavior
+// for adapter outbound sends.
+type OutboundReliabilityConfig struct {
+	MaxAttempts      int     `yaml:"max_attempts"`
+	BaseDelayMS      int     `yaml:"base_delay_ms"`
+	MaxDelayMS       int     `yaml:"max_delay_ms"`
+	JitterPercent    float64 `yaml:"jitter_percent"`
+	BreakerThreshold int     `yaml:"breaker_threshold"`
+	BreakerCooldownS int     `yaml:"breaker_cooldown_s"`
+	DLQPath          string  `yaml:"dlq_path"`
 }
 
 type WhatsAppConfig struct {
@@ -560,6 +573,29 @@ func applyDefaults(cfg *Config) {
 		p := []string{"POLICIES.md", "RULES.md", "policies"}
 		cfg.Security.OwnerOnlyPaths = &p
 	}
+
+	// Shared outbound reliability defaults (adapter send path).
+	if cfg.Channels.Outbound.MaxAttempts == 0 {
+		cfg.Channels.Outbound.MaxAttempts = 5
+	}
+	if cfg.Channels.Outbound.BaseDelayMS == 0 {
+		cfg.Channels.Outbound.BaseDelayMS = 250
+	}
+	if cfg.Channels.Outbound.MaxDelayMS == 0 {
+		cfg.Channels.Outbound.MaxDelayMS = 10_000
+	}
+	if cfg.Channels.Outbound.JitterPercent == 0 {
+		cfg.Channels.Outbound.JitterPercent = 0.2
+	}
+	if cfg.Channels.Outbound.BreakerThreshold == 0 {
+		cfg.Channels.Outbound.BreakerThreshold = 5
+	}
+	if cfg.Channels.Outbound.BreakerCooldownS == 0 {
+		cfg.Channels.Outbound.BreakerCooldownS = 30
+	}
+	if strings.TrimSpace(cfg.Channels.Outbound.DLQPath) == "" {
+		cfg.Channels.Outbound.DLQPath = filepath.Join(cfg.StateDir, "channels", "dlq.ndjson")
+	}
 }
 
 // validate checks that required fields are present.
@@ -573,6 +609,24 @@ func validate(cfg *Config) error {
 
 	if cfg.Gateway.Port < 1 || cfg.Gateway.Port > 65535 {
 		issues = append(issues, "gateway.port must be between 1 and 65535")
+	}
+	if cfg.Channels.Outbound.MaxAttempts < 1 {
+		issues = append(issues, "channels.outbound.max_attempts must be >= 1")
+	}
+	if cfg.Channels.Outbound.BaseDelayMS < 1 {
+		issues = append(issues, "channels.outbound.base_delay_ms must be >= 1")
+	}
+	if cfg.Channels.Outbound.MaxDelayMS < cfg.Channels.Outbound.BaseDelayMS {
+		issues = append(issues, "channels.outbound.max_delay_ms must be >= channels.outbound.base_delay_ms")
+	}
+	if cfg.Channels.Outbound.JitterPercent < 0 || cfg.Channels.Outbound.JitterPercent > 1 {
+		issues = append(issues, "channels.outbound.jitter_percent must be between 0 and 1")
+	}
+	if cfg.Channels.Outbound.BreakerThreshold < 1 {
+		issues = append(issues, "channels.outbound.breaker_threshold must be >= 1")
+	}
+	if cfg.Channels.Outbound.BreakerCooldownS < 1 {
+		issues = append(issues, "channels.outbound.breaker_cooldown_s must be >= 1")
 	}
 
 	if len(issues) > 0 {

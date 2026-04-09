@@ -32,6 +32,14 @@ memory:
 
 # Channel Messaging
 channels:
+  outbound:
+    max_attempts: 5
+    base_delay_ms: 250
+    max_delay_ms: 10000
+    jitter_percent: 0.2
+    breaker_threshold: 5
+    breaker_cooldown_s: 30
+    dlq_path: "~/.assistclaw/channels/dlq.ndjson"
   telegram:
     bot_token: ""
     require_mention: true

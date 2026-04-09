@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- **Telegram adapter migration (Story-004):** Telegram now runs through adapter-shaped inbound/outbound paths with shared reliability for outbound reply sends (retry/backoff, circuit-breaker, DLQ) via the centralized adapter reliability layer.
+- **Channel capability registry (Story-003):** Added machine-readable capability registry and docs matrix, with runtime graceful degradation for unsupported optional features (e.g., threading on channels that do not support it).
+
 ## [v3.10.6] - 2026-04-02
 ### Added
 - **`install.sh`:** After install, registers the **login auto-start service** on macOS (launchd) and Linux (systemd user) via **`assistclaw service install`**. Set **`SKIP_SERVICE=1`** to skip. Exports **`ASSISTCLAW_STATE_DIR`** when running service install so custom **`STATE_DIR`** is baked into the plist/unit when set.
