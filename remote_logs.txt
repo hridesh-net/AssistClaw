@@ -1,4 +1,0 @@
-spawn ssh deros@100.96.25.105 journalctl --user -u assistclaw --since '30 minutes ago' --no-pager
-deros@100.96.25.105's password: 
-Permission denied, please try again.
-deros@100.96.25.105's password: 
