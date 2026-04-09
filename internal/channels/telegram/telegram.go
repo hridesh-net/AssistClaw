@@ -24,14 +24,15 @@ var (
 
 // Channel implements [channels.Channel] and [adapter.Adapter] for Telegram.
 type Channel struct {
-	bot       *tgbotapi.BotAPI
-	stopCh    chan struct{}
-	stopOnce  sync.Once
-	dmMode    string
-	allowFrom []string
+	bot            *tgbotapi.BotAPI
+	stopCh         chan struct{}
+	stopOnce       sync.Once
+	dmMode         string
+	allowFrom      []string
+	requireMention bool
 }
 
-func New(apiKey string, dmMode string, allowFrom []string) (*Channel, error) {
+func New(apiKey string, dmMode string, allowFrom []string, requireMention bool) (*Channel, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("telegram API key is required")
 	}
@@ -40,10 +41,11 @@ func New(apiKey string, dmMode string, allowFrom []string) (*Channel, error) {
 		return nil, err
 	}
 	return &Channel{
-		bot:       bot,
-		stopCh:    make(chan struct{}),
-		dmMode:    dmMode,
-		allowFrom: allowFrom,
+		bot:            bot,
+		stopCh:         make(chan struct{}),
+		dmMode:         dmMode,
+		allowFrom:      allowFrom,
+		requireMention: requireMention,
 	}, nil
 }
 
@@ -85,9 +87,10 @@ func (c *Channel) Ping(ctx context.Context) error {
 	}
 }
 
-// Send implements [adapter.OutboundSender] for proactive outbound (cron, tools) using session id tg:<chatID>.
+// Send implements [adapter.OutboundSender] for proactive outbound (cron, tools) using
+// session id tg:<chatID> or tg:<chatID>:<threadID>.
 func (c *Channel) Send(ctx context.Context, msg adapter.OutboundMessage) (*adapter.DeliveryReceipt, error) {
-	chatID, err := parseTelegramSession(msg.SessionID)
+	target, err := parseTelegramSession(msg.SessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -98,10 +101,28 @@ func (c *Channel) Send(ctx context.Context, msg adapter.OutboundMessage) (*adapt
 	if body == "" {
 		return nil, adapter.NewChannelError(adapter.ErrorKindPermanent, "telegram: empty outbound body", nil)
 	}
-	m := tgbotapi.NewMessage(chatID, body)
-	sent, err := c.bot.Send(m)
-	if err != nil {
-		return nil, classifyTelegramSendErr(err)
+	var sent tgbotapi.Message
+	for i, part := range splitTelegramMessage(body) {
+		m := tgbotapi.NewMessage(target.ChatID, part)
+		if i == 0 {
+			if msg.ReplyToID != "" {
+				if replyID, convErr := strconv.Atoi(msg.ReplyToID); convErr == nil {
+					m.ReplyToMessageID = replyID
+				}
+			}
+			if msg.ThreadRef != nil && msg.ThreadRef.ParentMessageID != "" && m.ReplyToMessageID == 0 {
+				if replyID, convErr := strconv.Atoi(msg.ThreadRef.ParentMessageID); convErr == nil {
+					m.ReplyToMessageID = replyID
+				}
+			}
+		}
+		out, sendErr := c.bot.Send(m)
+		if sendErr != nil {
+			return nil, classifyTelegramSendErr(sendErr)
+		}
+		if i == 0 {
+			sent = out
+		}
 	}
 	now := time.Now().UTC()
 	return &adapter.DeliveryReceipt{
@@ -124,16 +145,31 @@ func outboundBody(msg adapter.OutboundMessage) string {
 	return strings.TrimSpace(b.String())
 }
 
-func parseTelegramSession(sessionID string) (int64, error) {
+type telegramTarget struct {
+	ChatID   int64
+	ThreadID int
+}
+
+func parseTelegramSession(sessionID string) (telegramTarget, error) {
 	const prefix = "tg:"
 	if !strings.HasPrefix(sessionID, prefix) {
-		return 0, adapter.NewChannelError(adapter.ErrorKindPermanent, "telegram: session id must be tg:<chatId>", nil)
+		return telegramTarget{}, adapter.NewChannelError(adapter.ErrorKindPermanent, "telegram: session id must be tg:<chatId>[:threadId]", nil)
 	}
-	id, err := strconv.ParseInt(strings.TrimPrefix(sessionID, prefix), 10, 64)
+	raw := strings.TrimPrefix(sessionID, prefix)
+	parts := strings.Split(raw, ":")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || id == 0 {
-		return 0, adapter.NewChannelError(adapter.ErrorKindPermanent, "telegram: invalid chat id in session", err)
+		return telegramTarget{}, adapter.NewChannelError(adapter.ErrorKindPermanent, "telegram: invalid chat id in session", err)
 	}
-	return id, nil
+	target := telegramTarget{ChatID: id}
+	if len(parts) >= 2 && parts[1] != "" {
+		threadID, convErr := strconv.Atoi(parts[1])
+		if convErr != nil || threadID <= 0 {
+			return telegramTarget{}, adapter.NewChannelError(adapter.ErrorKindPermanent, "telegram: invalid thread id in session", convErr)
+		}
+		target.ThreadID = threadID
+	}
+	return target, nil
 }
 
 func classifyTelegramSendErr(err error) error {
@@ -160,6 +196,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 				return
 			case update := <-updates:
 				if update.Message == nil || update.Message.Text == "" {
+					continue
+				}
+				if !c.shouldAcceptMessage(update.Message) {
 					continue
 				}
 
@@ -211,10 +250,10 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 						Text: update.Message.Text,
 					}},
 					Metadata: map[string]string{
-						channels.MetaTelegramChatID: strconv.FormatInt(chatID, 10),
+						channels.MetaTelegramChatID:    strconv.FormatInt(chatID, 10),
+						channels.MetaTelegramMessageID: strconv.Itoa(update.Message.MessageID),
 					},
 				}
-
 				go func(ev adapter.InboundEvent) {
 					if err := h(ctx, ev); err != nil {
 						log.Printf("Telegram: inbound handler error: %v", err)
@@ -247,32 +286,94 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 
 		msg := channels.MessageFromInbound(ev)
 
-		var buffer string
-		replyFn := func(chunk string) error {
-			buffer += chunk
-			if chunk == "" || len(buffer) > 200 {
-				if len(buffer) > 0 {
-					tgMsg := tgbotapi.NewMessage(chatID, buffer)
-					if _, err := c.bot.Send(tgMsg); err != nil {
-						return adapter.NewChannelError(adapter.ErrorKindRetryable, "telegram reply send", err)
-					}
-					buffer = ""
+		replyToID := 0
+		if msgID := ev.Metadata[channels.MetaTelegramMessageID]; msgID != "" {
+			if parsed, convErr := strconv.Atoi(msgID); convErr == nil && parsed > 0 {
+				replyToID = parsed
+			}
+		}
+
+		sendText := func(text string) error {
+			for i, part := range splitTelegramMessage(text) {
+				tgMsg := tgbotapi.NewMessage(chatID, part)
+				if i == 0 && replyToID > 0 {
+					tgMsg.ReplyToMessageID = replyToID
+				}
+				if _, err := c.bot.Send(tgMsg); err != nil {
+					return adapter.NewChannelError(adapter.ErrorKindRetryable, "telegram reply send", err)
 				}
 			}
 			return nil
 		}
+		buf := channels.NewStreamingBuffer(sendText, 700*time.Millisecond)
+		replyFn := func(chunk string) error {
+			if chunk == "" {
+				return nil
+			}
+			return buf.Push(chunk)
+		}
 
 		go func() {
 			handler(ctx, msg, replyFn, nil, nil)
-			if buffer != "" {
-				tgMsg := tgbotapi.NewMessage(chatID, buffer)
-				if _, err := c.bot.Send(tgMsg); err != nil {
-					log.Printf("Telegram: flush send: %v", err)
-				}
+			if err := buf.Done(); err != nil {
+				log.Printf("Telegram: flush send: %v", err)
 			}
 		}()
 		return nil
 	}
+}
+
+func splitTelegramMessage(s string) []string {
+	const maxLen = 4096
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for len(s) > maxLen {
+		cut := strings.LastIndex(s[:maxLen], "\n")
+		if cut < 120 {
+			cut = strings.LastIndex(s[:maxLen], " ")
+		}
+		if cut < 120 {
+			cut = maxLen
+		}
+		out = append(out, strings.TrimSpace(s[:cut]))
+		s = strings.TrimSpace(s[cut:])
+	}
+	if s != "" {
+		out = append(out, s)
+	}
+	return out
+}
+
+func (c *Channel) shouldAcceptMessage(m *tgbotapi.Message) bool {
+	if m.Chat == nil {
+		return false
+	}
+	chatType := m.Chat.Type
+	if chatType != "group" && chatType != "supergroup" {
+		return true
+	}
+	if !c.requireMention {
+		return true
+	}
+	username := strings.ToLower(strings.TrimSpace(c.bot.Self.UserName))
+	if username == "" {
+		return true
+	}
+	// If user replies directly to the bot's prior message in group, allow.
+	if m.ReplyToMessage != nil && m.ReplyToMessage.From != nil {
+		if strings.EqualFold(m.ReplyToMessage.From.UserName, c.bot.Self.UserName) {
+			return true
+		}
+	}
+	text := strings.ToLower(m.Text)
+	needle := "@" + username
+	if strings.Contains(text, needle) {
+		return true
+	}
+	return false
 }
 
 // Stop implements [channels.Channel] and [adapter.InboundLifecycle].

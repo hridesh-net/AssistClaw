@@ -1675,12 +1675,58 @@ func runOnboarding(configPath string) (bool, error) {
 	fmt.Println(dim.Render("    assistclaw status"))
 	if len(selectedChannels) > 0 {
 		fmt.Println()
-		fmt.Println(dim.Render("  Tip: Scan the QR code in the terminal to link WhatsApp."))
+		fmt.Println(dim.Render("  Channel setup guides:"))
+		for _, line := range buildChannelSetupGuideLines(selectedChannels, gwHost, gwPort) {
+			fmt.Println(dim.Render("   " + line))
+		}
 	}
 	fmt.Println()
 
 	// Always start daemon after onboarding completes
 	return true, nil
+}
+
+func buildChannelSetupGuideLines(selectedChannels []string, gwHost string, gwPort int) []string {
+	if len(selectedChannels) == 0 {
+		return nil
+	}
+	enabled := make(map[string]bool, len(selectedChannels))
+	for _, ch := range selectedChannels {
+		enabled[strings.ToLower(strings.TrimSpace(ch))] = true
+	}
+
+	var out []string
+	if enabled["telegram"] {
+		out = append(out,
+			"[Telegram] In @BotFather run /setprivacy -> Disable if you want all group messages.",
+			"[Telegram] Keep privacy enabled for mention-only group behavior (recommended).",
+			"[Telegram] DM the bot once, then use /status to verify replies.",
+		)
+	}
+	if enabled["discord"] {
+		out = append(out,
+			"[Discord] Enable Message Content Intent in the Discord Developer Portal.",
+			"[Discord] Invite bot with Send Messages, Read Message History, Add Reactions.",
+		)
+	}
+	if enabled["slack"] {
+		out = append(out,
+			"[Slack] Install app to workspace and confirm Bot + App tokens are valid.",
+			"[Slack] Enable Socket Mode and subscribe to app_mention + message.im events.",
+		)
+	}
+	if enabled["whatsapp"] {
+		out = append(out,
+			"[WhatsApp] Run `assistclaw start` and scan QR (Linked Devices) if not already linked.",
+		)
+	}
+
+	out = append(out,
+		"[All channels] Use `assistclaw doctor --fix` to validate channel tokens and config.",
+		"[Docs] Telegram setup: doc/channels/telegram-setup.md",
+		fmt.Sprintf("[Web UI] http://%s:%d", gwHost, gwPort),
+	)
+	return out
 }
 
 func randomToken(n int) string {

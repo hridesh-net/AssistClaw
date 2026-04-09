@@ -122,7 +122,11 @@ func pingTelegram(ctx context.Context, cfg *config.Config) []doctorCheck {
 			Message:  "Not configured (no channels.telegram or bot_token).",
 		}}
 	}
-	tg, err := telegram.New(ch.BotToken, ch.DMMode, ch.AllowFrom)
+	requireMention := true
+	if ch.RequireMention != nil {
+		requireMention = *ch.RequireMention
+	}
+	tg, err := telegram.New(ch.BotToken, ch.DMMode, ch.AllowFrom, requireMention)
 	if err != nil {
 		return []doctorCheck{{
 			ID:       "channel.telegram",

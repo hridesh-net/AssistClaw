@@ -398,9 +398,10 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	BotToken  string   `yaml:"bot_token"`
-	DMMode    string   `yaml:"dm_mode"`    // open, pairing, allowlist, disabled
-	AllowFrom []string `yaml:"allow_from"` // Whitelisted IDs/Usernames
+	BotToken       string   `yaml:"bot_token"`
+	DMMode         string   `yaml:"dm_mode"`         // open, pairing, allowlist, disabled
+	AllowFrom      []string `yaml:"allow_from"`      // Whitelisted IDs/Usernames
+	RequireMention *bool    `yaml:"require_mention"` // Group chats require @bot mention when true (default)
 }
 
 type DiscordConfig struct {

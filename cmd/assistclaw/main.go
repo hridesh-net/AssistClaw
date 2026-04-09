@@ -56,7 +56,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.9" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.10" // Overridden by -ldflags "-X main.version=..." during build
 
 // defaultHeartbeatPrompt matches AGENTS.md guidance for periodic heartbeat polls.
 const defaultHeartbeatPrompt = `Read HEARTBEAT.md if it exists in your workspace (state directory). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.`
@@ -1195,7 +1195,16 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	// Start Messaging Channels
 	activeChannels := 0
 	if cfg.Channels.Telegram != nil {
-		tg, err := telegram.New(cfg.Channels.Telegram.BotToken, cfg.Channels.Telegram.DMMode, cfg.Channels.Telegram.AllowFrom)
+		requireMention := true
+		if cfg.Channels.Telegram.RequireMention != nil {
+			requireMention = *cfg.Channels.Telegram.RequireMention
+		}
+		tg, err := telegram.New(
+			cfg.Channels.Telegram.BotToken,
+			cfg.Channels.Telegram.DMMode,
+			cfg.Channels.Telegram.AllowFrom,
+			requireMention,
+		)
 		if err == nil {
 			go tg.Start(ctx, runner.HandleChannelMessage)
 			log.Info("Telegram channel active")

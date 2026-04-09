@@ -6,7 +6,9 @@ import (
 
 // Metadata keys for [adapter.InboundEvent.Metadata] string maps. Used by bridges, doctor, and outbound Send.
 const (
-	MetaTelegramChatID = "telegram_chat_id"
+	MetaTelegramChatID    = "telegram_chat_id"
+	MetaTelegramThreadID  = "telegram_thread_id"
+	MetaTelegramMessageID = "telegram_message_id"
 
 	MetaDiscordChannelID = "discord_channel_id"
 	MetaDiscordGuildID   = "discord_guild_id"
