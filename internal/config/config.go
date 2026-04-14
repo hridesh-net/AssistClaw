@@ -69,6 +69,9 @@ type Config struct {
 	// Extensions configures optional hooks available in AssistClaw (prompt
 	// fragments only; there is no Node plugin loader). See `assistclaw extensions list`.
 	Extensions ExtensionsConfig `yaml:"extensions"`
+
+	// Tracing configures optional OpenTelemetry tracing.
+	Tracing TracingConfig `yaml:"tracing"`
 }
 
 // ExtensionsConfig holds lightweight extension points: optional markdown merged into the system prompt.
@@ -77,6 +80,14 @@ type ExtensionsConfig struct {
 	// PromptFiles are paths to UTF-8 text/markdown files merged into the system prompt when
 	// Enabled is true. Relative paths resolve under StateDir (e.g. extensions/extra-prompt.md).
 	PromptFiles []string `yaml:"prompt_files"`
+}
+
+// TracingConfig controls optional OpenTelemetry tracing.
+type TracingConfig struct {
+	Enabled     bool    `yaml:"enabled"`
+	OTLPEndpoint string `yaml:"otlp_endpoint"` // e.g. localhost:4317
+	ServiceName string  `yaml:"service_name"`
+	SampleRatio float64 `yaml:"sample_ratio"` // 0..1
 }
 
 // A2AConfig holds metadata for the Agent-to-Agent protocol.
@@ -597,6 +608,15 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Channels.Outbound.DLQPath) == "" {
 		cfg.Channels.Outbound.DLQPath = filepath.Join(cfg.StateDir, "channels", "dlq.ndjson")
 	}
+	if strings.TrimSpace(cfg.Tracing.OTLPEndpoint) == "" {
+		cfg.Tracing.OTLPEndpoint = "localhost:4317"
+	}
+	if strings.TrimSpace(cfg.Tracing.ServiceName) == "" {
+		cfg.Tracing.ServiceName = "assistclaw"
+	}
+	if cfg.Tracing.SampleRatio <= 0 {
+		cfg.Tracing.SampleRatio = 0.01
+	}
 }
 
 // validate checks that required fields are present.
@@ -628,6 +648,9 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Channels.Outbound.BreakerCooldownS < 1 {
 		issues = append(issues, "channels.outbound.breaker_cooldown_s must be >= 1")
+	}
+	if cfg.Tracing.SampleRatio < 0 || cfg.Tracing.SampleRatio > 1 {
+		issues = append(issues, "tracing.sample_ratio must be between 0 and 1")
 	}
 
 	if len(issues) > 0 {

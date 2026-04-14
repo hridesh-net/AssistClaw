@@ -22,6 +22,8 @@ import (
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/observability/correlation"
+	"github.com/assistclaw/assistclaw/internal/observability/metrics"
+	obstracing "github.com/assistclaw/assistclaw/internal/observability/tracing"
 	"github.com/assistclaw/assistclaw/internal/voice"
 	"github.com/assistclaw/assistclaw/internal/webui"
 )
@@ -88,6 +90,7 @@ func (s *Server) withCorrelation(h http.HandlerFunc) http.HandlerFunc {
 // Start begins listening on the configured port.
 func (s *Server) Start() error {
 	go s.Hub.Run()
+	metrics.Default().SetGatewayUp(true)
 
 	// Start automation workers if configured
 	if s.Config != nil && s.Config.Gmail.Enabled {
@@ -159,6 +162,7 @@ func (s *Server) Start() error {
 
 	// ── API: Status ───────────────────────────────────────────────────────────
 	mux.HandleFunc("/api/status", auth(s.withCorrelation(s.handleStatus)))
+	mux.HandleFunc("/metrics", auth(s.withCorrelation(s.handleMetrics)))
 
 	// ── API: Chat (SSE streaming) ─────────────────────────────────────────────
 	mux.HandleFunc("/api/chat", auth(s.withCorrelation(s.handleChat)))
@@ -230,6 +234,7 @@ func (s *Server) Start() error {
 // Stop safely shuts down the server.
 func (s *Server) Stop(ctx context.Context) error {
 	log.Printf("Stopping gateway...")
+	metrics.Default().SetGatewayUp(false)
 	if s.TS != nil {
 		s.TS.Close()
 	}
@@ -244,6 +249,11 @@ func (s *Server) Stop(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	_, _ = w.Write([]byte(metrics.Default().RenderPrometheus()))
 }
 
 // ── API Handlers ──────────────────────────────────────────────────────────────
@@ -292,8 +302,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	sessionRunner := s.Runner.WithSession(sessionID)
 	ctx := correlation.WithSessionID(r.Context(), sessionID)
 	ctx = correlation.WithChannel(ctx, "gateway")
+	spanCtx, span := obstracing.StartSpan(ctx, "gateway.receive_message")
+	defer span.End()
 	s.logger().Info("gateway chat request",
-		append(correlation.Fields(ctx),
+		append(correlation.Fields(spanCtx),
 			zap.String("event", "chat.receive"),
 		)...,
 	)
@@ -319,7 +331,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		sessionRunner.RunStream(ctx, memory.Message{
+		sessionRunner.RunStream(spanCtx, memory.Message{
 			ID:        uuid.New().String(),
 			SessionID: sessionID,
 			Role:      memory.RoleUser,

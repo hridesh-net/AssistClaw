@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/assistclaw/assistclaw/internal/observability/metrics"
+	obstracing "github.com/assistclaw/assistclaw/internal/observability/tracing"
 )
 
 // RetryPolicy configures exponential backoff behavior.
@@ -118,6 +121,9 @@ func NewReliableSender(channelName string, sender OutboundSender, cfg Reliabilit
 
 // Send executes the wrapped send with reliability controls.
 func (r *ReliableSender) Send(ctx context.Context, msg OutboundMessage) (*DeliveryReceipt, error) {
+	ctx, span := obstracing.StartSpan(ctx, "adapter.send")
+	defer span.End()
+	start := r.nowFn()
 	if msg.IdempotencyKey == "" {
 		msg.IdempotencyKey = ensureIdempotencyKey(msg)
 	}
@@ -131,6 +137,8 @@ func (r *ReliableSender) Send(ctx context.Context, msg OutboundMessage) (*Delive
 	if allowed := r.beforeAttempt(); !allowed {
 		err := NewChannelError(ErrorKindRetryable, "circuit breaker open", nil)
 		_ = r.writeDLQ(msg, err, 0)
+		metrics.Default().IncMessagesFailed(r.channelName)
+		metrics.Default().ObserveMessageLatency(r.channelName, r.nowFn().Sub(start).Seconds())
 		return nil, err
 	}
 
@@ -139,6 +147,8 @@ func (r *ReliableSender) Send(ctx context.Context, msg OutboundMessage) (*Delive
 		rec, err := r.sender.Send(ctx, msg)
 		if err == nil {
 			r.onSuccess()
+			metrics.Default().IncMessagesSent(r.channelName)
+			metrics.Default().ObserveMessageLatency(r.channelName, r.nowFn().Sub(start).Seconds())
 			return rec, nil
 		}
 		lastErr = err
@@ -146,6 +156,8 @@ func (r *ReliableSender) Send(ctx context.Context, msg OutboundMessage) (*Delive
 		if IsPermanent(err) {
 			r.onFailure()
 			_ = r.writeDLQ(msg, err, attempt)
+			metrics.Default().IncMessagesFailed(r.channelName)
+			metrics.Default().ObserveMessageLatency(r.channelName, r.nowFn().Sub(start).Seconds())
 			return nil, err
 		}
 
@@ -153,6 +165,7 @@ func (r *ReliableSender) Send(ctx context.Context, msg OutboundMessage) (*Delive
 		if attempt >= r.cfg.Retry.MaxAttempts {
 			break
 		}
+		metrics.Default().IncAdapterRetries(r.channelName)
 		delay := r.backoff(attempt)
 		if sleepErr := r.sleepFn(ctx, delay); sleepErr != nil {
 			return nil, NewChannelError(ErrorKindRetryable, "retry cancelled", sleepErr)
@@ -160,6 +173,8 @@ func (r *ReliableSender) Send(ctx context.Context, msg OutboundMessage) (*Delive
 	}
 
 	_ = r.writeDLQ(msg, lastErr, r.cfg.Retry.MaxAttempts)
+	metrics.Default().IncMessagesFailed(r.channelName)
+	metrics.Default().ObserveMessageLatency(r.channelName, r.nowFn().Sub(start).Seconds())
 	return nil, lastErr
 }
 
@@ -265,5 +280,22 @@ func (r *ReliableSender) writeDLQ(msg OutboundMessage, err error, attempts int) 
 	if _, wErr := f.Write(append(line, '\n')); wErr != nil {
 		return wErr
 	}
+	if depth, dErr := countDLQLines(r.cfg.DLQPath); dErr == nil {
+		metrics.Default().SetDLQDepth(r.channelName, float64(depth))
+	}
 	return nil
+}
+
+func countDLQLines(path string) (int, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, ch := range b {
+		if ch == '\n' {
+			count++
+		}
+	}
+	return count, nil
 }

@@ -54,6 +54,13 @@ embeddings:
     - "openai"
     - "ollama"
 
+# Optional OpenTelemetry tracing (off by default for edge performance)
+tracing:
+  enabled: false
+  otlp_endpoint: "localhost:4317"
+  service_name: "assistclaw"
+  sample_ratio: 0.01
+
 # Provider Configurations
 providers:
   anthropic:

@@ -20,6 +20,8 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/observability/correlation"
+	"github.com/assistclaw/assistclaw/internal/observability/metrics"
+	obstracing "github.com/assistclaw/assistclaw/internal/observability/tracing"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/security"
 	"github.com/assistclaw/assistclaw/internal/system"
@@ -343,6 +345,7 @@ func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error
 	ctx, _ = correlation.EnsureRequestID(ctx)
 	ctx = correlation.WithSessionID(ctx, r.sessionID)
 	ctx = correlation.WithChannel(ctx, r.channelID)
+	ctx, enqueueSpan := obstracing.StartSpan(ctx, "agent.enqueue_message")
 
 	userMessage := msg.Content
 	// Append user message to working memory.
@@ -357,6 +360,7 @@ func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error
 	if err := r.memory.Episodic.Save(ctx, userMsg); err != nil {
 		r.log.Warn("episodic save failed", zap.Error(err))
 	}
+	enqueueSpan.End()
 
 	var totalUsage provider.TokenUsage
 	iterations := 0
@@ -398,12 +402,15 @@ func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error
 		)
 
 		// Stream the response.
-		stream, err := r.provider.Stream(ctx, req)
+		modelCtx, modelSpan := obstracing.StartSpan(ctx, "agent.model_call")
+		stream, err := r.provider.Stream(modelCtx, req)
 		if err != nil {
+			modelSpan.End()
 			return nil, fmt.Errorf("agent: stream: %w", err)
 		}
 
-		resp, err := provider.CollectStream(ctx, stream)
+		resp, err := provider.CollectStream(modelCtx, stream)
+		modelSpan.End()
 		if err != nil {
 			return nil, fmt.Errorf("agent: collect stream: %w", err)
 		}
@@ -995,6 +1002,7 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 	ctx, _ = correlation.EnsureRequestID(ctx)
 	ctx = correlation.WithSessionID(ctx, r.sessionID)
 	ctx = correlation.WithChannel(ctx, r.channelID)
+	ctx, enqueueSpan := obstracing.StartSpan(ctx, "agent.enqueue_message")
 
 	userMessage := msg.Content
 	// Append user message to working memory and persistence.
@@ -1009,6 +1017,7 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 	if err := r.memory.Episodic.Save(ctx, userMsg); err != nil {
 		r.log.Warn("episodic save failed", zap.Error(err))
 	}
+	enqueueSpan.End()
 
 	var totalUsage provider.TokenUsage
 	var fullResponse strings.Builder
@@ -1043,8 +1052,10 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 		fullResponse.Reset()
 
 		// V3: Use buildRequestV3 with query context
-		stream, err := r.provider.Stream(ctx, r.buildRequestV3(ctx, userMessage))
+		modelCtx, modelSpan := obstracing.StartSpan(ctx, "agent.model_call")
+		stream, err := r.provider.Stream(modelCtx, r.buildRequestV3(modelCtx, userMessage))
 		if err != nil {
+			modelSpan.End()
 			handler.OnError(fmt.Errorf("agent: stream: %w", err))
 			return
 		}
@@ -1073,6 +1084,7 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 				return
 			}
 		}
+		modelSpan.End()
 
 		assistantContent := fullResponse.String()
 		if strings.TrimSpace(assistantContent) == "" && len(toolCalls) > 0 {
@@ -1151,9 +1163,12 @@ func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message,
 	reactFn channels.ReactionFunc,
 	mediaFn channels.MediaReplyFunc,
 ) {
+	metrics.Default().IncMessagesReceived(msg.ChannelID)
 	ctx, _ = correlation.EnsureRequestID(ctx)
 	ctx = correlation.WithSessionID(ctx, msg.SessionID)
 	ctx = correlation.WithChannel(ctx, msg.ChannelID)
+	ctx, sendReplySpan := obstracing.StartSpan(ctx, "agent.send_reply")
+	defer sendReplySpan.End()
 
 	r.log.Info("inbound message",
 		r.logFields(ctx,

@@ -39,7 +39,7 @@ Add **optional** OpenTelemetry traces for gateway ↔ channel ↔ agent spans to
 
 ## Definition of Done
 
-- [ ] Performance note: overhead when enabled at 1% sampling.
+- [x] Performance note: overhead when enabled at 1% sampling.
 
 ## Dependencies
 
@@ -48,3 +48,13 @@ Add **optional** OpenTelemetry traces for gateway ↔ channel ↔ agent spans to
 ## Risks
 
 - CPU overhead on Raspberry Pi; keep default off.
+
+## Implementation status
+
+- [x] Optional tracing config added under `tracing.*` (off by default).
+- [x] OTel initialization wired at runtime in `cmd/assistclaw/main.go` without requiring recompile.
+- [x] Sampling configurable via `tracing.sample_ratio` (1% default when enabled).
+- [x] Exporter failures are non-fatal; warnings logged and runtime continues.
+- [x] Spans added across gateway, runner, and adapter send paths.
+- [x] Local Jaeger setup documented in `doc/runbooks/opentelemetry-tracing.md`.
+- [x] In-memory span test verifies required span names.

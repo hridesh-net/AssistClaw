@@ -39,6 +39,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/gateway"
 	"github.com/assistclaw/assistclaw/internal/graph"
 	"github.com/assistclaw/assistclaw/internal/memory"
+	obstracing "github.com/assistclaw/assistclaw/internal/observability/tracing"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/provider/anthropic"
 	"github.com/assistclaw/assistclaw/internal/provider/bedrock"
@@ -867,6 +868,16 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	if err != nil {
 		return err
 	}
+
+	shutdownTracing := obstracing.Init(ctx, obstracing.Config{
+		Enabled:     cfg.Tracing.Enabled,
+		Endpoint:    cfg.Tracing.OTLPEndpoint,
+		ServiceName: cfg.Tracing.ServiceName,
+		SampleRatio: cfg.Tracing.SampleRatio,
+	}, log)
+	defer func() {
+		_ = shutdownTracing(context.Background())
+	}()
 
 	// Seed workspace identity files (SOUL.md, IDENTITY.md, AGENTS.md, etc.)
 	// Use cfg.StateDir (already resolved to ~/.assistclaw) not the raw configPath
