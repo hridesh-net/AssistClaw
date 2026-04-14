@@ -49,3 +49,12 @@ Expose **Prometheus-compatible metrics** (or agreed format) for: outbound/inboun
 ## Risks
 
 - Metric explosion; enforce label allowlist in code review.
+
+## Implementation status
+
+- [x] Prometheus-compatible metrics endpoint exposed at `/metrics` in gateway.
+- [x] Required metrics implemented: `messages_sent_total`, `messages_failed_total`, `message_latency_seconds`, `dlq_depth`, `channel_reconnects_total`, `adapter_retries_total`.
+- [x] Label policy documented with low-cardinality allowlist and forbidden labels.
+- [x] Dashboard JSON added at `doc/observability/grafana-sprint-02-channel-golden-signals.json`.
+- [x] Alert examples documented in `doc/runbooks/metrics-slo-indicators.md`.
+- [x] Unit tests added for singleton registration safety and critical counter/histogram increments.

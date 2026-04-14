@@ -1,0 +1,46 @@
+{
+  "title": "AssistClaw Channel Golden Signals (Sprint-02)",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Messages Sent / Failed Rate",
+      "targets": [
+        { "expr": "sum(rate(messages_sent_total[5m])) by (channel)", "legendFormat": "sent {{channel}}" },
+        { "expr": "sum(rate(messages_failed_total[5m])) by (channel)", "legendFormat": "failed {{channel}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "P95 Message Latency",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(message_latency_seconds_bucket[5m])) by (le, channel))", "legendFormat": "p95 {{channel}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "DLQ Depth",
+      "targets": [
+        { "expr": "dlq_depth", "legendFormat": "{{channel}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Retries and Reconnects",
+      "targets": [
+        { "expr": "sum(rate(adapter_retries_total[5m])) by (channel)", "legendFormat": "retries {{channel}}" },
+        { "expr": "sum(rate(channel_reconnects_total[5m])) by (channel)", "legendFormat": "reconnects {{channel}}" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Gateway Health",
+      "targets": [
+        { "expr": "gateway_health", "legendFormat": "gateway" }
+      ]
+    }
+  ],
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s"
+}

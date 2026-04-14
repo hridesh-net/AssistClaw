@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/assistclaw/assistclaw/internal/observability/metrics"
 )
 
 type flakySender struct {
@@ -29,6 +31,7 @@ func (f *flakySender) Send(_ context.Context, msg OutboundMessage) (*DeliveryRec
 
 func TestReliableSender_RetryThenSuccess(t *testing.T) {
 	t.Helper()
+	metrics.Default().ResetForTests()
 	tmp := t.TempDir()
 	inner := &flakySender{failCount: 2, errKind: ErrorKindRetryable}
 	rs := NewReliableSender("telegram", inner, ReliabilityConfig{
@@ -64,10 +67,18 @@ func TestReliableSender_RetryThenSuccess(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(tmp, "dlq.ndjson")); len(strings.TrimSpace(string(b))) != 0 {
 		t.Fatalf("unexpected DLQ content: %s", string(b))
 	}
+	rendered := metrics.Default().RenderPrometheus()
+	if !strings.Contains(rendered, `messages_sent_total{channel="telegram"} 1`) {
+		t.Fatalf("expected messages_sent_total metric update, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, `adapter_retries_total{channel="telegram"} 2`) {
+		t.Fatalf("expected adapter_retries_total metric update, got:\n%s", rendered)
+	}
 }
 
 func TestReliableSender_PermanentWritesDLQ(t *testing.T) {
 	t.Helper()
+	metrics.Default().ResetForTests()
 	tmp := t.TempDir()
 	inner := &flakySender{failCount: 10, errKind: ErrorKindPermanent}
 	rs := NewReliableSender("slack", inner, ReliabilityConfig{
@@ -103,6 +114,13 @@ func TestReliableSender_PermanentWritesDLQ(t *testing.T) {
 	s := string(b)
 	if !strings.Contains(s, `"channel":"slack"`) || !strings.Contains(s, `"idempotency_key":"k1"`) {
 		t.Fatalf("unexpected DLQ content: %s", s)
+	}
+	rendered := metrics.Default().RenderPrometheus()
+	if !strings.Contains(rendered, `messages_failed_total{channel="slack"} 1`) {
+		t.Fatalf("expected messages_failed_total metric update, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, `dlq_depth{channel="slack"} 1`) {
+		t.Fatalf("expected dlq_depth metric update, got:\n%s", rendered)
 	}
 }
 

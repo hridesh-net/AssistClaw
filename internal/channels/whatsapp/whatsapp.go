@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/assistclaw/assistclaw/internal/channels"
+	"github.com/assistclaw/assistclaw/internal/observability/metrics"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/voice"
 	"github.com/mdp/qrterminal/v3"
@@ -230,9 +231,11 @@ func (c *Channel) Start(ctx context.Context, handler channels.MessageHandler) er
 			go c.handleMessage(ctx, senderJID, chatJID, msgID, msgTS, sender, txt, parts, handler)
 
 		case *events.Disconnected:
+			metrics.Default().IncChannelReconnects("whatsapp")
 			log.Printf("WhatsApp: disconnected — will auto-reconnect")
 
 		case *events.ConnectFailure:
+			metrics.Default().IncChannelReconnects("whatsapp")
 			log.Printf("WhatsApp: connection failure: %v", v.Reason)
 
 		case *events.LoggedOut:
