@@ -38,8 +38,8 @@ Publish a **Contributor checklist** for implementing a new channel adapter: inte
 
 ## Definition of Done
 
-- [ ] New contributor can follow doc and run tests locally without asking in chat.
-- [ ] Cross-link to STORY-003 capability table.
+- [x] New contributor can follow doc and run tests locally without asking in chat.
+- [x] Cross-link to STORY-003 capability table.
 
 ## Dependencies
 
@@ -55,3 +55,11 @@ Publish a **Contributor checklist** for implementing a new channel adapter: inte
 
 - **Adapter v1 code:** [`internal/channels/adapter`](../../../../internal/channels/adapter/)
 - **ADR / versioning:** [`doc/architecture/channel-adapter-v1.md`](../../../architecture/channel-adapter-v1.md)
+
+## Implementation status
+
+- [x] Checklist added to `CONTRIBUTING.md` (`New Channel Adapter Checklist`) with artifact mapping for STORIES 001-005.
+- [x] Checklist linked from `README.md`.
+- [x] Capability matrix and DLQ runbook cross-links added to contributor docs.
+- [x] PR template added at `.github/PULL_REQUEST_TEMPLATE.md` with checklist references.
+- [ ] Maintainer review sign-off remains a manual repository process (outside code changes).

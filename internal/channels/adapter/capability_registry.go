@@ -1,6 +1,9 @@
 package adapter
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 var capabilityRegistry = map[string]ChannelCapabilities{
 	"telegram": {
@@ -49,9 +52,14 @@ var capabilityRegistry = map[string]ChannelCapabilities{
 	},
 }
 
+var capabilityRegistryMu sync.RWMutex
+
 // CapabilitiesFor returns known capabilities for a built-in channel type.
 func CapabilitiesFor(channelType string) (ChannelCapabilities, bool) {
-	c, ok := capabilityRegistry[strings.ToLower(strings.TrimSpace(channelType))]
+	key := strings.ToLower(strings.TrimSpace(channelType))
+	capabilityRegistryMu.RLock()
+	c, ok := capabilityRegistry[key]
+	capabilityRegistryMu.RUnlock()
 	return c, ok
 }
 
@@ -61,5 +69,7 @@ func RegisterCapabilities(channelType string, caps ChannelCapabilities) {
 	if channelType == "" {
 		return
 	}
+	capabilityRegistryMu.Lock()
 	capabilityRegistry[channelType] = caps
+	capabilityRegistryMu.Unlock()
 }

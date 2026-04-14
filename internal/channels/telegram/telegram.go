@@ -304,23 +304,8 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 		}
 
 		sendText := func(text string) error {
-			for i, part := range splitTelegramMessage(text) {
-				out := adapter.OutboundMessage{
-					SessionID: fmt.Sprintf("tg:%d", chatID),
-					Text:      part,
-				}
-				if i == 0 && replyToID > 0 {
-					out.ReplyToID = strconv.Itoa(replyToID)
-				}
-				if c.reliableSend != nil {
-					if _, err := c.reliableSend.Send(ctx, out); err != nil {
-						return adapter.NewChannelError(adapter.ErrorKindRetryable, "telegram reply send", err)
-					}
-					continue
-				}
-				if _, err := c.Send(ctx, out); err != nil {
-					return adapter.NewChannelError(adapter.ErrorKindRetryable, "telegram reply send", err)
-				}
+			if err := c.sendLegacyReplyText(ctx, chatID, replyToID, text); err != nil {
+				return adapter.NewChannelError(adapter.ErrorKindRetryable, "telegram reply send", err)
 			}
 			return nil
 		}
@@ -340,6 +325,28 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 		}()
 		return nil
 	}
+}
+
+func (c *Channel) sendLegacyReplyText(ctx context.Context, chatID int64, replyToID int, text string) error {
+	for i, part := range splitTelegramMessage(text) {
+		out := adapter.OutboundMessage{
+			SessionID: fmt.Sprintf("tg:%d", chatID),
+			Text:      part,
+		}
+		if i == 0 && replyToID > 0 {
+			out.ReplyToID = strconv.Itoa(replyToID)
+		}
+		if c.reliableSend != nil {
+			if _, err := c.reliableSend.Send(ctx, out); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := c.Send(ctx, out); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func splitTelegramMessage(s string) []string {

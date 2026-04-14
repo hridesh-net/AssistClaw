@@ -39,8 +39,16 @@ Add **contract tests** that validate any adapter implementation against the expe
 
 ## Definition of Done
 
-- [ ] Required check for merge to main.
-- [ ] Example of adding a new adapter to the suite (snippet in doc).
+- [ ] Required check for merge to main. _(Workflow added in `.github/workflows/adapter-contract-tests.yml`; branch protection still needs to mark it as required.)_
+- [x] Example of adding a new adapter to the suite (snippet added to `CONTRIBUTING.md`).
+
+## Implementation status
+
+- [x] Contract harness added in `internal/channels/adapter/contract_property_test.go`.
+- [x] Contract scenarios covered: start/stop, send success, retryable failure classification, permanent failure classification.
+- [x] Property tests added with deterministic seed and minimum fuzz count (`seed=20260414`, `count=300`).
+- [x] CI job added to run contract/property tests on PRs in under 2 minutes (`timeout-minutes: 2`).
+- [x] Local run documentation added in `CONTRIBUTING.md`.
 
 ## Dependencies
 

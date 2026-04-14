@@ -31,6 +31,7 @@ type Channel struct {
 	stopOnce  sync.Once
 	dmMode    string
 	allowFrom []string
+	reliableSend *adapter.ReliableSender
 }
 
 func New(botToken, appToken string, dmMode string, allowFrom []string) (*Channel, error) {
@@ -73,6 +74,12 @@ func (c *Channel) Capabilities() adapter.ChannelCapabilities {
 		Edits:            true,
 		MaxMessageLength: 40000,
 	}
+}
+
+// WithReliableOutbound wires shared adapter reliability for Slack reply sends.
+func (c *Channel) WithReliableOutbound(rs *adapter.ReliableSender) *Channel {
+	c.reliableSend = rs
+	return c
 }
 
 // Ping calls auth.test (embedded [slack.Client]).
@@ -259,12 +266,7 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 			buffer += chunk
 			if chunk == "" || len(buffer) > 500 {
 				if len(buffer) > 0 {
-					opts := []slack.MsgOption{slack.MsgOptionText(buffer, false)}
-					if threadTS != "" {
-						opts = append(opts, slack.MsgOptionTS(threadTS))
-					}
-					_, _, err := c.client.PostMessage(chID, opts...)
-					if err != nil {
+					if err := c.sendLegacyReplyChunk(ctx, chID, threadTS, buffer); err != nil {
 						return adapter.NewChannelError(adapter.ErrorKindRetryable, "slack reply", err)
 					}
 					buffer = ""
@@ -276,6 +278,27 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 		go handler(ctx, msg, replyFn, nil, nil)
 		return nil
 	}
+}
+
+func (c *Channel) sendLegacyReplyChunk(ctx context.Context, channelID, threadTS, text string) error {
+	if c.reliableSend != nil {
+		sessionID := "slack:" + channelID
+		if threadTS != "" {
+			sessionID += ":" + threadTS
+		}
+		_, err := c.reliableSend.Send(ctx, adapter.OutboundMessage{
+			SessionID: sessionID,
+			Text:      text,
+		})
+		return err
+	}
+
+	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+	if threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(threadTS))
+	}
+	_, _, err := c.client.PostMessageContext(ctx, channelID, opts...)
+	return err
 }
 
 // Stop implements [channels.Channel] and [adapter.InboundLifecycle].

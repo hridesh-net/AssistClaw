@@ -394,6 +394,9 @@ channels:
 | [ASSISTCLAW.md](ASSISTCLAW.md) | Full feature reference and architecture deep dive |
 | [CHANGELOG.md](CHANGELOG.md) | What's new in each release |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Developer guide and architecture overview |
+| [Adapter Contributor Checklist](CONTRIBUTING.md#new-channel-adapter-checklist) | Merge checklist for new/updated channel adapters (Sprint-01 Stories 001-006) |
+| [Channel Capability Matrix](doc/channels/capability-registry.md) | Source-of-truth capability table for channel behavior |
+| [DLQ Runbook](doc/runbooks/dlq-inspection.md) | How to inspect and triage outbound delivery failures |
 | [doc/](doc/) | Additional docs, assets, and guides |
 
 ---

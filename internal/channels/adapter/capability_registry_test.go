@@ -1,6 +1,10 @@
 package adapter
 
-import "testing"
+import (
+	"fmt"
+	"sync"
+	"testing"
+)
 
 func TestCapabilitiesFor_Builtins(t *testing.T) {
 	t.Helper()
@@ -39,4 +43,36 @@ func TestRegisterCapabilities_Extensible(t *testing.T) {
 	if c.MaxMessageLength != 28000 || !c.Threading {
 		t.Fatalf("unexpected capabilities: %+v", c)
 	}
+}
+
+func TestRegisterCapabilities_ConcurrentAccess(t *testing.T) {
+	t.Helper()
+	const workers = 16
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := range workers {
+		i := i
+		go func() {
+			defer wg.Done()
+			name := fmt.Sprintf("testchannel-%d", i)
+			RegisterCapabilities(name, ChannelCapabilities{
+				Threading:        i%2 == 0,
+				Attachments:      true,
+				DirectMessages:   true,
+				GroupMessages:    true,
+				Mentions:         true,
+				MaxMessageLength: 1000 + i,
+			})
+			got, ok := CapabilitiesFor(name)
+			if !ok {
+				t.Errorf("expected capability for %s", name)
+				return
+			}
+			if got.MaxMessageLength != 1000+i {
+				t.Errorf("unexpected maxMessageLength for %s: %d", name, got.MaxMessageLength)
+			}
+		}()
+	}
+	wg.Wait()
 }

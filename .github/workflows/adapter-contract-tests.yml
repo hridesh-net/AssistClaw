@@ -1,0 +1,27 @@
+name: Adapter Contract Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  adapter-contract-tests:
+    name: adapter-contract-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run adapter contract and property tests
+        run: go test ./internal/channels/adapter -run 'TestAdapterContract|TestProperty' -count=1

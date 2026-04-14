@@ -1273,9 +1273,11 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	if cfg.Channels.Slack != nil {
 		sl, err := slack.New(cfg.Channels.Slack.BotToken, cfg.Channels.Slack.AppToken, cfg.Channels.Slack.DMMode, cfg.Channels.Slack.AllowFrom)
 		if err == nil {
+			slRS := chadapter.NewReliableSender("slack", sl, reliabilityCfg)
+			sl.WithReliableOutbound(slRS)
 			go sl.Start(ctx, runner.HandleChannelMessage)
 			channelSenders["slack"] = reliableToolSender{
-				rs: chadapter.NewReliableSender("slack", sl, reliabilityCfg),
+				rs: slRS,
 			}
 			log.Info("Slack channel active")
 			activeChannels++

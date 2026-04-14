@@ -51,9 +51,9 @@ Today channels may be implemented ad hoc. A stable interface reduces duplication
 
 ## Definition of Done
 
-- [ ] Code reviewed and merged.
-- [ ] No user-visible behavior change until STORY-004 lands (interface-only + mock).
-- [ ] Contributor-facing note links from STORY-006 checklist.
+- [ ] Code reviewed and merged. _(manual PR/reviewer process)_
+- [x] No user-visible behavior change until STORY-004 lands (interface-only + mock).
+- [x] Contributor-facing note links from STORY-006 checklist.
 
 ## Dependencies
 
@@ -62,3 +62,10 @@ Today channels may be implemented ad hoc. A stable interface reduces duplication
 ## Risks
 
 - Overfitting the interface to one channel; mitigate with second channel review in Sprint 5–6 planning.
+
+## Implementation status
+
+- [x] Adapter v1 interfaces published in `internal/channels/adapter/adapter.go` with godoc.
+- [x] Shared types and error taxonomy implemented in `internal/channels/adapter/types.go` and `internal/channels/adapter/errors.go`.
+- [x] Stub/contract tests implemented in `internal/channels/adapter/stub.go` and `internal/channels/adapter/adapter_test.go`.
+- [x] Versioning and migration notes documented in `doc/architecture/channel-adapter-v1.md`.

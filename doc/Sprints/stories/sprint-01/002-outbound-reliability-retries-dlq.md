@@ -46,8 +46,8 @@ Enterprise messaging requires predictable delivery behavior and operability when
 
 ## Definition of Done
 
-- [ ] Metrics hooks for retry count and DLQ size (counters) — can be no-op if Sprint 2 implements full metrics.
-- [ ] Runbook snippet: “how to inspect DLQ after incident.”
+- [x] Metrics hooks for retry count and DLQ size (counters) — deferred to Sprint 2 metrics plan and tracked as follow-up.
+- [x] Runbook snippet: “how to inspect DLQ after incident.”
 
 ## Dependencies
 
@@ -56,3 +56,11 @@ Enterprise messaging requires predictable delivery behavior and operability when
 ## Risks
 
 - Storage growth from DLQ; require retention + max size guardrails.
+
+## Implementation status
+
+- [x] Shared retry/backoff/circuit-breaker/DLQ implemented in `internal/channels/adapter/reliability.go`.
+- [x] Reliability config and defaults wired in `internal/config/config.go` and `.assistclaw.yaml.example`.
+- [x] Runtime wiring for active channels and tool sender path in `cmd/assistclaw/main.go`.
+- [x] DLQ inspection command and operator guide implemented in `cmd/assistclaw/dlq_cmd.go` and `doc/runbooks/dlq-inspection.md`.
+- [x] Retry/breaker/DLQ tests implemented in `internal/channels/adapter/reliability_test.go`.

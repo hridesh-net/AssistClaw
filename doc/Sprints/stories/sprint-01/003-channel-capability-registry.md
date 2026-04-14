@@ -40,8 +40,8 @@ Introduce a **capability registry** that describes what each channel supports: t
 
 ## Definition of Done
 
-- [ ] Linked from STORY-006 checklist.
-- [ ] Reviewed by one channel owner.
+- [x] Linked from STORY-006 checklist.
+- [ ] Reviewed by one channel owner. _(manual PR/reviewer process)_
 
 ## Dependencies
 
@@ -50,3 +50,11 @@ Introduce a **capability registry** that describes what each channel supports: t
 ## Risks
 
 - Drift between code and docs; add CI check or single source generation if feasible.
+
+## Implementation status
+
+- [x] Capability registry API implemented in `internal/channels/adapter/capability_registry.go`.
+- [x] Built-in capability coverage tests in `internal/channels/adapter/capability_registry_test.go`.
+- [x] Runtime graceful degradation for unsupported threading in `internal/channels/adapter/reliability.go`.
+- [x] Contributor-facing matrix published in `doc/channels/capability-registry.md`.
+- [x] Thread-safe registry access added for production safety.

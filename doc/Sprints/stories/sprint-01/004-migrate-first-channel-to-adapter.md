@@ -39,8 +39,8 @@ Migrate **one** production channel (recommended: **Telegram**) to implement the 
 
 ## Definition of Done
 
-- [ ] Code reviewed with channel owner.
-- [ ] CHANGELOG entry under “Refactor” or “Internal”.
+- [ ] Code reviewed with channel owner. _(manual PR/reviewer process)_
+- [x] CHANGELOG entry under “Refactor” or “Internal”.
 
 ## Dependencies
 
@@ -49,3 +49,11 @@ Migrate **one** production channel (recommended: **Telegram**) to implement the 
 ## Risks
 
 - Subtle API timing differences; mitigate with staged rollout or feature flag if available.
+
+## Implementation status
+
+- [x] Telegram adapter migration and runtime wiring completed in `internal/channels/telegram/telegram.go` and `cmd/assistclaw/main.go`.
+- [x] Legacy Telegram reply path uses shared reliability wrapper via `WithReliableOutbound`.
+- [x] Telegram test coverage includes session parsing, message splitting, and reliable legacy reply path.
+- [x] CI baseline added in `.github/workflows/ci.yml` for regression detection.
+- [x] Rollback guidance documented in `doc/Sprints/story-done/sprint-01-004-migrate-first-channel-to-adapter.md`.
