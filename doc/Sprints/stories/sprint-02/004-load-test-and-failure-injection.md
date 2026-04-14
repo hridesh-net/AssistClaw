@@ -39,7 +39,7 @@ Provide a **repeatable load test** (script or Go test) that simulates inbound me
 
 ## Definition of Done
 
-- [ ] Linked from on-call runbook for “performance regression” triage.
+- [x] Linked from on-call runbook for “performance regression” triage.
 
 ## Dependencies
 
@@ -48,3 +48,12 @@ Provide a **repeatable load test** (script or Go test) that simulates inbound me
 ## Risks
 
 - Flaky CI timing; use generous thresholds for smoke mode.
+
+## Implementation status
+
+- [x] Load/failure-injection harness implemented in `internal/channels/adapter/load_failure_injection_test.go`.
+- [x] Runnable via `make load-test`.
+- [x] CI smoke workflow added at `.github/workflows/load-test-smoke.yml`.
+- [x] Failure injection patterns documented for 429/500/permanent adapter errors.
+- [x] Initial baseline file added in `doc/observability/load-test-baseline.md`.
+- [x] Exit criteria checks included (no panic path, best-effort goroutine leak guard, metrics counter movement assertions).

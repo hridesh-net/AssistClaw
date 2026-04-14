@@ -1,0 +1,27 @@
+name: Load Test Smoke
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  load-test-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run smoke load harness
+        run: go test ./internal/channels/adapter -run TestLoadHarness_Smoke -count=1 -v

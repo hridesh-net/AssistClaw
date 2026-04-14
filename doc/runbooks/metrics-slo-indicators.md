@@ -2,6 +2,10 @@
 
 This runbook defines the default Prometheus-compatible metrics exposed by AssistClaw at `GET /metrics` on the gateway.
 
+For performance regression triage using load/failure harness outputs, see:
+
+- `doc/runbooks/load-test-and-failure-injection.md`
+
 ## Required SLO metrics
 
 - `messages_sent_total{channel}`: outbound successful sends.

@@ -2,7 +2,7 @@
 # Industry-standard build targets for the polyglot project.
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-go build-ts build-sensing clean test lint vet fmt install uninstall help
+.PHONY: all build build-go build-ts build-sensing clean test load-test lint vet fmt install uninstall help
 
 # ─────────────────────────────────────────────
 # Variables
@@ -81,6 +81,12 @@ test:
 	@echo "$(BLUE)Running Go tests (race detector enabled)...$(NC)"
 	$(GOTEST) -race -coverprofile=coverage.out $(PKG)
 	@echo "$(GREEN)✓ Tests passed$(NC)"
+
+## load-test: Run sprint-02 load and failure-injection harness
+load-test:
+	@echo "$(BLUE)Running load test harness...$(NC)"
+	$(GOTEST) ./internal/channels/adapter -run TestLoadHarness_Report -count=1 -v
+	@echo "$(GREEN)✓ Load test harness completed$(NC)"
 
 ## test-ts: Run TypeScript/Node tests
 test-ts:
