@@ -40,7 +40,7 @@ Standardize **structured logging** across gateway, channels, and agent runner wi
 ## Definition of Done
 
 - [ ] On-call runbook references correlation ID usage (STORY-012).
-- [ ] Sample queries for one target backend (e.g. “filter by request_id”).
+- [x] Sample queries for one target backend (e.g. “filter by request_id”).
 
 ## Dependencies
 
@@ -49,3 +49,12 @@ Standardize **structured logging** across gateway, channels, and agent runner wi
 ## Risks
 
 - Log volume explosion; add sampling for DEBUG if needed.
+
+## Implementation status
+
+- [x] Correlation context utility added in `internal/observability/correlation/`.
+- [x] Gateway HTTP/WS inbound paths now preserve/generate `request_id` and propagate context.
+- [x] Runner and tool execution logs include standard correlation fields (`request_id`, `session_id`, `channel`, `trace_id` when present).
+- [x] Unit tests added for synthetic correlation propagation and request-id behavior.
+- [x] Logging schema + sample backend queries documented in `doc/runbooks/structured-logging-correlation-ids.md`.
+- [x] Added benchmark for correlation field extraction overhead (`BenchmarkFields`).

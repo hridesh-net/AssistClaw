@@ -782,6 +782,7 @@ Subcommands:
 			srv.Token = cfg.Gateway.Token
 			srv.Version = version
 			srv.Config = cfg
+			srv.Logger = log
 
 			if cfg.Gmail.Enabled {
 				srv.Gmail = automation.NewGmailWatcher(cfg.Gmail, log)
@@ -1336,6 +1337,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		srv.Token = cfg.Gateway.Token
 		srv.Runner = runner
 		srv.Version = version
+		srv.Logger = log
 
 		// Determine public-facing address for the web UI
 		webHost := cfg.Gateway.Host

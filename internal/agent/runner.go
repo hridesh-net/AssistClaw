@@ -19,6 +19,7 @@ import (
 
 	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/assistclaw/assistclaw/internal/memory"
+	"github.com/assistclaw/assistclaw/internal/observability/correlation"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/security"
 	"github.com/assistclaw/assistclaw/internal/system"
@@ -302,6 +303,17 @@ func (r *Runner) WithSession(sessionID string) *Runner {
 // SessionID returns the current session ID.
 func (r *Runner) SessionID() string { return r.sessionID }
 
+func (r *Runner) logFields(ctx context.Context, extra ...zap.Field) []zap.Field {
+	fields := correlation.Fields(ctx)
+	if correlation.SessionID(ctx) == "" && r.sessionID != "" {
+		fields = append(fields, zap.String("session_id", r.sessionID))
+	}
+	if correlation.Channel(ctx) == "" && r.channelID != "" {
+		fields = append(fields, zap.String("channel", r.channelID))
+	}
+	return append(fields, extra...)
+}
+
 // streamInternalAgentUI is true when we should show planning / reflection / maintenance
 // tokens to the stream handler (CLI, web SSE). Messaging apps must not surface this.
 func (r *Runner) streamInternalAgentUI() bool {
@@ -328,6 +340,10 @@ type RunResult struct {
 // Run processes a user message and returns the assistant's final response.
 // It handles the complete tool-use loop: LLM → tool calls → tool results → LLM.
 func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error) {
+	ctx, _ = correlation.EnsureRequestID(ctx)
+	ctx = correlation.WithSessionID(ctx, r.sessionID)
+	ctx = correlation.WithChannel(ctx, r.channelID)
+
 	userMessage := msg.Content
 	// Append user message to working memory.
 	userMsg := msg
@@ -551,22 +567,28 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 		}
 		if check.Blocked() {
 			r.log.Warn("guardrail blocked tool call",
-				zap.String("tool", tc.ToolName),
-				zap.String("reason", check.Message),
+				r.logFields(ctx,
+					zap.String("tool", tc.ToolName),
+					zap.String("reason", check.Message),
+				)...,
 			)
 			return "[Security] " + check.Message
 		}
 		if check.Action == security.ActionWarn {
 			r.log.Warn("guardrail warning on tool call",
-				zap.String("tool", tc.ToolName),
-				zap.String("warning", check.Message),
+				r.logFields(ctx,
+					zap.String("tool", tc.ToolName),
+					zap.String("warning", check.Message),
+				)...,
 			)
 		}
 	}
 
 	r.log.Info("tool call",
-		zap.String("tool", tc.ToolName),
-		zap.String("input", truncate(string(inputJSON), 200)),
+		r.logFields(ctx,
+			zap.String("tool", tc.ToolName),
+			zap.String("input", truncate(string(inputJSON), 200)),
+		)...,
 	)
 
 	// Record tool usage for session inertia (boosts graph neighbours next turn).
@@ -582,8 +604,10 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 	dur := time.Since(start)
 	if err != nil {
 		r.log.Error("tool execution failed",
-			zap.String("tool", tc.ToolName),
-			zap.Error(err),
+			r.logFields(ctx,
+				zap.String("tool", tc.ToolName),
+				zap.Error(err),
+			)...,
 		)
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -602,8 +626,10 @@ func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) strin
 	}
 
 	r.log.Info("tool result",
-		zap.String("tool", tc.ToolName),
-		zap.String("result", truncate(result, 200)),
+		r.logFields(ctx,
+			zap.String("tool", tc.ToolName),
+			zap.String("result", truncate(result, 200)),
+		)...,
 	)
 	return result
 }
@@ -966,6 +992,10 @@ type StreamHandler interface {
 // RunStream runs the agent loop and calls handler methods as events occur.
 // RunStream processes a user message and streams the assistant's response.
 func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler StreamHandler) {
+	ctx, _ = correlation.EnsureRequestID(ctx)
+	ctx = correlation.WithSessionID(ctx, r.sessionID)
+	ctx = correlation.WithChannel(ctx, r.channelID)
+
 	userMessage := msg.Content
 	// Append user message to working memory and persistence.
 	userMsg := msg
@@ -1121,10 +1151,14 @@ func (r *Runner) HandleChannelMessage(ctx context.Context, msg channels.Message,
 	reactFn channels.ReactionFunc,
 	mediaFn channels.MediaReplyFunc,
 ) {
+	ctx, _ = correlation.EnsureRequestID(ctx)
+	ctx = correlation.WithSessionID(ctx, msg.SessionID)
+	ctx = correlation.WithChannel(ctx, msg.ChannelID)
+
 	r.log.Info("inbound message",
-		zap.String("channel", msg.ChannelID),
-		zap.String("session", msg.SessionID),
-		zap.String("text", truncate(msg.Text, 100)),
+		r.logFields(ctx,
+			zap.String("text", truncate(msg.Text, 100)),
+		)...,
 	)
 
 	// Note: In a production system, we would resolve a dedicated Runner instance per SessionID

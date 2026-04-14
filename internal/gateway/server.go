@@ -14,12 +14,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 	"tailscale.com/tsnet"
 
 	"github.com/assistclaw/assistclaw/internal/agent"
 	"github.com/assistclaw/assistclaw/internal/automation"
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/memory"
+	"github.com/assistclaw/assistclaw/internal/observability/correlation"
 	"github.com/assistclaw/assistclaw/internal/voice"
 	"github.com/assistclaw/assistclaw/internal/webui"
 )
@@ -48,6 +50,7 @@ type Server struct {
 	Config     *config.Config
 	Gmail      *automation.GmailWatcher
 	Voice      *voice.Daemon
+	Logger     *zap.Logger
 }
 
 // NewServer initializes a new Gateway server on the specified port.
@@ -55,6 +58,30 @@ func NewServer(port int) *Server {
 	return &Server{
 		Hub:  NewHub(),
 		Port: port,
+	}
+}
+
+func (s *Server) logger() *zap.Logger {
+	if s.Logger != nil {
+		return s.Logger
+	}
+	return zap.NewNop()
+}
+
+func (s *Server) withCorrelation(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := correlation.EnrichFromHTTPHeaders(r.Context(), r.Header)
+		ctx, requestID := correlation.EnsureRequestID(ctx)
+		r = r.WithContext(ctx)
+
+		logFields := append(correlation.Fields(ctx),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+		s.logger().Info("gateway inbound request", logFields...)
+		w.Header().Set(correlation.HeaderRequestID, requestID)
+		h(w, r)
 	}
 }
 
@@ -103,6 +130,7 @@ func (s *Server) Start() error {
 		}
 	}
 
+
 	// ── Static web UI ─────────────────────────────────────────────────────────
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(webui.Assets()))))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -130,22 +158,22 @@ func (s *Server) Start() error {
 	})
 
 	// ── API: Status ───────────────────────────────────────────────────────────
-	mux.HandleFunc("/api/status", auth(s.handleStatus))
+	mux.HandleFunc("/api/status", auth(s.withCorrelation(s.handleStatus)))
 
 	// ── API: Chat (SSE streaming) ─────────────────────────────────────────────
-	mux.HandleFunc("/api/chat", auth(s.handleChat))
+	mux.HandleFunc("/api/chat", auth(s.withCorrelation(s.handleChat)))
 
 	// ── WebSocket (legacy / channel use) ─────────────────────────────────────
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(s.Hub, w, r)
-	})
+	mux.HandleFunc("/ws", s.withCorrelation(func(w http.ResponseWriter, r *http.Request) {
+		serveWs(s.Hub, s.logger(), w, r)
+	}))
 	
 	// ── A2A Protocol ──────────────────────────────────────────────────────────
 	mux.HandleFunc("/.well-known/agent.json", s.handleAgentCard)
 	mux.HandleFunc("/api/a2a", s.handleA2A)
 
 	// ── Webhooks ──────────────────────────────────────────────────────────────
-	mux.HandleFunc("/api/webhook/", auth(s.handleWebhook))
+	mux.HandleFunc("/api/webhook/", auth(s.withCorrelation(s.handleWebhook)))
 
 	if s.Gmail != nil {
 		if err := s.Gmail.Start(context.Background()); err != nil {
@@ -262,6 +290,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.New().String()
 	}
 	sessionRunner := s.Runner.WithSession(sessionID)
+	ctx := correlation.WithSessionID(r.Context(), sessionID)
+	ctx = correlation.WithChannel(ctx, "gateway")
+	s.logger().Info("gateway chat request",
+		append(correlation.Fields(ctx),
+			zap.String("event", "chat.receive"),
+		)...,
+	)
 
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -275,7 +310,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
 	done := make(chan struct{})
 
 	handler := &sseStreamHandler{
@@ -290,7 +324,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			SessionID: sessionID,
 			Role:      memory.RoleUser,
 			Content:   req.Message,
-			CreatedAt: time.Now(),
+				CreatedAt: time.Now(),
 		}, handler)
 	}()
 
@@ -370,9 +404,11 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		prompt = strings.ReplaceAll(prompt, placeholder, fmt.Sprintf("%v", v))
 	}
 
-	log.Printf("webhook: %s -> agent execution", path)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx := correlation.WithChannel(r.Context(), "webhook")
+	s.logger().Info("webhook receive",
+		append(correlation.Fields(ctx), zap.String("path", path))...,
+	)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	if s.Runner == nil {
@@ -381,6 +417,7 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := "webhook:" + path + ":" + uuid.New().String()
+	ctx = correlation.WithSessionID(ctx, sessionID)
 	runner := s.Runner.WithSession(sessionID)
 
 	res, err := runner.Run(ctx, memory.Message{
@@ -392,7 +429,9 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("webhook: agent failed: %v", err)
+		s.logger().Error("webhook agent failed",
+			append(correlation.Fields(ctx), zap.Error(err))...,
+		)
 		http.Error(w, fmt.Sprintf(`{"error":"agent execution failed","details":"%v"}`, err), http.StatusInternalServerError)
 		return
 	}
@@ -453,7 +492,7 @@ func (h *sseStreamHandler) OnError(err error) {
 
 // ── WebSocket (unchanged from original) ──────────────────────────────────────
 
-func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+func serveWs(hub *Hub, logger *zap.Logger, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("gateway/server upgrade error:", err)
@@ -466,6 +505,12 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		Hub:  hub,
 		Conn: conn,
 		Send: make(chan []byte, 256),
+	}
+
+	if logger != nil {
+		logger.Info("gateway websocket connected",
+			append(correlation.Fields(r.Context()), zap.String("client_id", clientID))...,
+		)
 	}
 
 	client.Hub.register <- client
