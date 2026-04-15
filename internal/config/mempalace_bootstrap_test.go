@@ -20,4 +20,8 @@ func TestMemPalaceBootstrapConfig_stateDirAndPaths(t *testing.T) {
 	if !strings.Contains(cfg.Memory.SemanticDBPath, root) {
 		t.Fatalf("SemanticDBPath %q should be under state dir", cfg.Memory.SemanticDBPath)
 	}
+	ci := filepath.Join(root, "localintel")
+	if cfg.Agent.LocalIntel.CacheDir != ci {
+		t.Fatalf("LocalIntel.CacheDir: got %q want %q", cfg.Agent.LocalIntel.CacheDir, ci)
+	}
 }

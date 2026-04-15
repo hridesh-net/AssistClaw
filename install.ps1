@@ -5,6 +5,7 @@
 .DESCRIPTION
     Downloads the pre-built binary from GitHub Releases, creates %USERPROFILE%\.assistclaw,
     and verifies the install. Optional -WithMemPalace runs managed MemPalace bootstrap (Python venv + pip).
+    Optional -WithGemma runs local-intel GGUF bootstrap.
 
 .PARAMETER Version
     Release tag (e.g. v3.10.4) or 'latest'.
@@ -20,12 +21,16 @@
 
 .EXAMPLE
     .\install.ps1 -WithMemPalace
+
+.EXAMPLE
+    .\install.ps1 -WithGemma
 #>
 
 param(
     [string]$Version = $(if ($env:ASSISTCLAW_VERSION) { $env:ASSISTCLAW_VERSION } else { "latest" }),
     [string]$InstallDir = $(if ($env:ASSISTCLAW_INSTALL_DIR) { $env:ASSISTCLAW_INSTALL_DIR } else { "" }),
-    [switch]$WithMemPalace = $false
+    [switch]$WithMemPalace = $false,
+    [switch]$WithGemma = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -124,6 +129,23 @@ if ($WithMemPalace -or $env:WITH_MEMPALACE -eq "1") {
     }
 }
 
+if ($WithGemma -or $env:WITH_GEMMA -eq "1") {
+    Write-Info "Bootstrapping local-intel GGUF under $ConfigDir\\models\\ (download may be large)..."
+    $args = @("--log-level", "info", "local-intel", "setup", "--state-dir", $ConfigDir)
+    if ($env:ASSISTCLAW_LOCAL_GEMMA_GGUF_URL) {
+        $args += @("--url", $env:ASSISTCLAW_LOCAL_GEMMA_GGUF_URL)
+    }
+    if ($env:ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256) {
+        $args += @("--sha256", $env:ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256)
+    }
+    & $DestPath @args
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "Local-intel GGUF bootstrap finished (merge printed local_intel YAML into assistclaw.yaml)"
+    } else {
+        Write-WarnLine "Local-intel GGUF bootstrap failed (exit $LASTEXITCODE). Retry: & '$DestPath' local-intel setup --state-dir '$ConfigDir'"
+    }
+}
+
 Write-Info "Verifying..."
 try {
     $verOut = & $DestPath version 2>&1
@@ -143,6 +165,11 @@ if ($WithMemPalace -or $env:WITH_MEMPALACE -eq "1") {
     Write-Host "  MemPalace: bootstrapped under $ConfigDir\mempalace\"
 } else {
     Write-Host "  MemPalace (optional): .\install.ps1 -WithMemPalace  OR  & '$DestPath' mempalace setup --state-dir '$ConfigDir'"
+}
+if ($WithGemma -or $env:WITH_GEMMA -eq "1") {
+    Write-Host "  Local Intel: GGUF prepared under $ConfigDir\models\ (merge printed local_intel YAML into assistclaw.yaml)"
+} else {
+    Write-Host "  Local Intel (optional): .\install.ps1 -WithGemma  OR  & '$DestPath' local-intel setup --state-dir '$ConfigDir'"
 }
 Write-Host ""
 

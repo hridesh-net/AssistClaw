@@ -17,6 +17,9 @@
 #   SKIP_SERVICE=1       Skip launchd/systemd login service registration (macOS/Linux)
 #   WITH_MEMPALACE=1     After install, run managed MemPalace bootstrap (venv + pip + mempalace init)
 #                        Requires system Python 3 with venv; uses ASSISTCLAW_MEMPALACE_BOOTSTRAP_PYTHON if set
+#   WITH_GEMMA=1         Download Gemma-compatible GGUF and print local_intel snippet via
+#                        'assistclaw local-intel setup --state-dir'. Override source via
+#                        ASSISTCLAW_LOCAL_GEMMA_GGUF_URL (and optional ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256).
 
 set -eo pipefail
 
@@ -307,6 +310,31 @@ setup_mempalace() {
   fi
 }
 
+# Local Intel (Gemma GGUF) — optional one-shot model bootstrap via CLI.
+setup_local_intel() {
+  [[ "${WITH_GEMMA:-0}" == "1" ]] || return 0
+
+  local bin="$INSTALL_DIR/assistclaw"
+  if [[ ! -x "$bin" ]]; then
+    warn "WITH_GEMMA=1 but binary not executable at $bin — skipping local-intel setup"
+    return 0
+  fi
+
+  log "WITH_GEMMA=1: bootstrapping Gemma GGUF under $STATE_DIR/models/ (download may be large)..."
+  local args=(--log-level info local-intel setup --state-dir "$STATE_DIR")
+  if [[ -n "${ASSISTCLAW_LOCAL_GEMMA_GGUF_URL:-}" ]]; then
+    args+=(--url "$ASSISTCLAW_LOCAL_GEMMA_GGUF_URL")
+  fi
+  if [[ -n "${ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256:-}" ]]; then
+    args+=(--sha256 "$ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256")
+  fi
+  if "$bin" "${args[@]}"; then
+    ok "Local-intel GGUF prepared (merge printed snippet into assistclaw.yaml)"
+  else
+    warn "Local-intel bootstrap failed — install continues. Retry: WITH_GEMMA=1 bash install.sh or $bin local-intel setup --state-dir \"$STATE_DIR\""
+  fi
+}
+
 # ─────────────────────────────────────────────
 # PATH hint
 # ─────────────────────────────────────────────
@@ -397,7 +425,7 @@ install_login_service() {
 # Main
 # ─────────────────────────────────────────────
 usage() {
-  sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -422,6 +450,7 @@ main() {
   setup_config
   verify
   setup_mempalace
+  setup_local_intel
   install_login_service
 
   echo ""
@@ -440,6 +469,11 @@ main() {
     echo -e "  MemPalace: ${BOLD}bootstrapped under $STATE_DIR/mempalace/${NC} (merge printed YAML into assistclaw.yaml)"
   else
     echo -e "  MemPalace: ${BOLD}optional${NC} — ${BOLD}WITH_MEMPALACE=1 bash install.sh${NC} or ${BOLD}assistclaw mempalace setup --state-dir \"$STATE_DIR\"${NC}"
+  fi
+  if [[ "${WITH_GEMMA:-0}" == "1" ]]; then
+    echo -e "  Local Intel: ${BOLD}GGUF prepared under $STATE_DIR/models/${NC} (merge printed local_intel YAML into assistclaw.yaml)"
+  else
+    echo -e "  Local Intel: ${BOLD}optional${NC} — ${BOLD}WITH_GEMMA=1 bash install.sh${NC} or ${BOLD}assistclaw local-intel setup --state-dir \"$STATE_DIR\"${NC}"
   fi
   if [[ "${SKIP_SERVICE:-0}" != "1" ]] && [[ "$PLATFORM" == darwin-* || "$PLATFORM" == linux-* ]]; then
     echo -e "  Login service: ${BOLD}installed${NC} (auto-start after sign-in; ${BOLD}SKIP_SERVICE=1${NC} to skip next time)"

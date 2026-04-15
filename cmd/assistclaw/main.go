@@ -195,6 +195,7 @@ func rootCmd() *cobra.Command {
 		memoryCmd(flags),
 		mempalaceCmd(flags),
 		toolsCmd(flags),
+		localIntelCmd(flags),
 		extensionsCmd(flags),
 		gatewayCmd(flags),
 		onboardCmd(flags),

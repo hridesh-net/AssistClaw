@@ -694,6 +694,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Agent.SkillsDir == "" {
 		cfg.Agent.SkillsDir = filepath.Join(cfg.StateDir, "skills")
 	}
+	if strings.TrimSpace(cfg.Agent.LocalIntel.CacheDir) == "" {
+		cfg.Agent.LocalIntel.CacheDir = filepath.Join(cfg.StateDir, "localintel")
+	}
 	if len(cfg.Embeddings.Priority) == 0 {
 		cfg.Embeddings.Priority = []string{"openai", "ollama", "cohere", "voyage", "mistral", "google", "huggingface"}
 	}

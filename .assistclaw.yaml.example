@@ -17,6 +17,12 @@ gateway:
 agent:
   max_iterations: 64
   system_prompt_ext: "" # Extra instructions appended to the global system prompt
+  # Optional on-device Gemma advisory pass (requires a localgemma-enabled build).
+  local_intel:
+    enabled: false
+    # gguf_path: "~/.assistclaw/models/gemma-4-e2b-it.gguf"  # or ASSISTCLAW_LOCAL_GEMMA_GGUF
+    max_tokens: 256
+    cache_dir: "~/.assistclaw/localintel"
   # Optional AssistClaw-local retrieval shaping (NOT the MemPalace Python product).
   palace:
     enabled: false

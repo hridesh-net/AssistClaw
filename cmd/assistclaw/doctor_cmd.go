@@ -137,7 +137,7 @@ func checkLocalIntel(cfg *config.Config) doctorCheck {
 			warnings = append(warnings, fmt.Sprintf("GGUF not readable at %q: %v", p, err))
 		}
 	} else if len(localintel.Gemma4E2BGGUF) == 0 {
-		warnings = append(warnings, "set agent.local_intel.gguf_path or ASSISTCLAW_LOCAL_GEMMA_GGUF, or build with assistclaw_embedlocalgemma and ship embedded weights")
+		warnings = append(warnings, "run `assistclaw local-intel setup` (or set agent.local_intel.gguf_path / ASSISTCLAW_LOCAL_GEMMA_GGUF), or build with assistclaw_embedlocalgemma and ship embedded weights")
 	}
 	if len(warnings) > 0 {
 		return doctorCheck{
