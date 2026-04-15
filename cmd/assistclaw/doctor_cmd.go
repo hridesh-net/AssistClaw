@@ -126,7 +126,7 @@ func checkLocalIntel(cfg *config.Config) doctorCheck {
 	}
 	var warnings []string
 	if !localintel.CompiledWithLocalGemma() {
-		warnings = append(warnings, "rebuild with in-process Gemma: make install EXTRA_TAGS=assistclaw_localgemma (or go build -tags fts5,assistclaw_localgemma)")
+		warnings = append(warnings, "this binary does not include in-process Gemma support (use official release v3.10.15+ or build with tag assistclaw_localgemma)")
 	}
 	p := strings.TrimSpace(cfg.Agent.LocalIntel.GGUFPath)
 	if p == "" {

@@ -27,4 +27,4 @@ jobs:
         run: go test ./... -count=1
 
       - name: Build CLI binary
-        run: go build -mod=vendor -tags fts5 ./cmd/assistclaw
+        run: go build -mod=vendor -tags fts5,assistclaw_localgemma ./cmd/assistclaw

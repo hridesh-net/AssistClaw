@@ -1140,7 +1140,7 @@ func runOnboarding(configPath string) (bool, error) {
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).
 		Render("  On-device Gemma (optional)"))
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).
-		Render("  A small Gemma 4 E2B model can run locally and attach a short advisory before your cloud model acts. Requires a GGUF file on disk (or embedded weights) and a binary built with the assistclaw_localgemma tag — see post-setup hints below.\n"))
+		Render("  A small Gemma 4 E2B model can run locally and attach a short advisory before your cloud model acts. Requires a GGUF file on disk (or embedded weights). Official release binaries include local Gemma support by default.\n"))
 
 	formLocalIntel := huh.NewForm(
 		huh.NewGroup(
@@ -1683,7 +1683,7 @@ func runOnboarding(configPath string) (bool, error) {
 		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).Render("  Local Gemma — next steps"))
 		fmt.Println(dim.Render("  • Install a binary with in-process Gemma:  make install EXTRA_TAGS=assistclaw_localgemma"))
 		fmt.Println(dim.Render("  • Or:  go build -tags fts5,assistclaw_localgemma -o assistclaw ./cmd/assistclaw"))
-		fmt.Println(dim.Render("  • Put your GGUF on disk (or set ASSISTCLAW_LOCAL_GEMMA_GGUF) unless you use an embedded-weights build."))
+		fmt.Println(dim.Render("  • Put your GGUF on disk (or set ASSISTCLAW_LOCAL_GEMMA_GGUF), unless you use an embedded-weights build."))
 		fmt.Println(dim.Render("  • Verify:  assistclaw doctor   (warns until GGUF + binary line up)"))
 	}
 

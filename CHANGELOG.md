@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.15] - 2026-04-15
+### Changed
+- **Release binaries now include local Gemma engine by default:** CI/release and Makefile default build tags now include **`assistclaw_localgemma`** (with **`fts5`**) so end users do not need a custom rebuild just to enable `localgemma` / `agent.local_intel`.
+- **Onboarding and doctor messaging:** user guidance now assumes official binaries include in-process Gemma support and focuses setup on GGUF path/env/embed alignment.
+
 ## [v3.10.14] - 2026-04-14
 ### Added
 - **Local Gemma 4 E2B (`internal/localintel`):** Optional in-process Gemma (llama.cpp via gollama.cpp) with build tags **`assistclaw_localgemma`** and optional **`assistclaw_embedlocalgemma`** for embedded GGUF; **`assistclaw localgemma`** CLI (tagged builds); materialized cache for embedded weights.

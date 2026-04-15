@@ -9,10 +9,10 @@
 # ─────────────────────────────────────────────
 BINARY     := assistclaw
 GOCMD      := go
-# Base tag fts5 (SQLite); append optional extras e.g. make install EXTRA_TAGS=assistclaw_localgemma
+# Default build includes in-process local Gemma; append optional extras (e.g. assistclaw_embedlocalgemma)
 EXTRA_TAGS ?=
 comma      := ,
-BUILD_TAGS := fts5
+BUILD_TAGS := fts5,assistclaw_localgemma
 ifneq ($(strip $(EXTRA_TAGS)),)
   BUILD_TAGS := $(BUILD_TAGS)$(comma)$(EXTRA_TAGS)
 endif
@@ -164,6 +164,6 @@ clean:
 help:
 	@echo "$(BLUE)AssistClaw Build System$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Optional:$(NC) EXTRA_TAGS=assistclaw_localgemma for in-process Gemma (see assistclaw onboard / doctor)."
+	@echo "$(YELLOW)Optional:$(NC) EXTRA_TAGS=assistclaw_embedlocalgemma to embed GGUF in binary."
 	@echo ""
 	@grep -E '^## ' Makefile | sed 's/## //' | column -t -s ':'

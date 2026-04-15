@@ -79,7 +79,7 @@ jobs:
           CC: ${{ matrix.os == 'windows-latest' && 'gcc' || '' }}
         run: |
           mkdir -p dist
-          go build -mod=vendor -tags fts5 -ldflags "-X main.version=${{ github.ref_name }} -s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
+          go build -mod=vendor -tags fts5,assistclaw_localgemma -ldflags "-X main.version=${{ github.ref_name }} -s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
 
       - name: Build Binary (Linux ARM64 Cross-Compile with Zig)
         if: matrix.target == 'linux-arm64'
@@ -92,7 +92,7 @@ jobs:
         run: |
           mkdir -p dist
           # Use -extldflags "-static" to ensure no glibc dependencies
-          go build -mod=vendor -tags fts5 -ldflags "-X main.version=${{ github.ref_name }} -s -w -extldflags '-static'" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
+          go build -mod=vendor -tags fts5,assistclaw_localgemma -ldflags "-X main.version=${{ github.ref_name }} -s -w -extldflags '-static'" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
