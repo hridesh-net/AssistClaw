@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.17] - 2026-04-15
+### Fixed
+- **Linux ARM64 installer/runtime panic (`Dynamic loading not supported`):** release workflow no longer forces static linking for the `linux-arm64` binary when local Gemma is enabled, allowing `libffi` dynamic loading required by the in-process Gemma stack.
+
 ## [v3.10.16] - 2026-04-15
 ### Fixed
 - **Release pipeline (darwin/windows) with local Gemma enabled:** Restored vendored libffi binary assets required by `github.com/jupiterrider/ffi` `go:embed` paths so release builds no longer fail with `no matching files found` for darwin targets.
