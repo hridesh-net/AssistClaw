@@ -52,6 +52,8 @@ internal/localintel/embedded/gemma-4-e2b-it.gguf
 *.sqlite3
 .assistclaw/
 /memory/
+# Local model staging area (install-time GGUF drops)
+/models/
 # /skills/
 /tools/
 /bin/

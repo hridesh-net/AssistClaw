@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,14 @@ Optional integrity check: --sha256 or ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256.`,
 			}
 			fmt.Fprintln(os.Stderr, "local-intel setup: state_dir", cfg.StateDir)
 			fmt.Fprintln(os.Stderr, "local-intel setup: gguf destination", path)
+			if !force {
+				if src, ok := discoverBundledGGUF(path); ok {
+					if err := copyFileAtomic(src, path); err != nil {
+						return fmt.Errorf("local-intel setup: copy bundled gguf: %w", err)
+					}
+					fmt.Fprintln(os.Stderr, "local-intel setup: using local bundled GGUF from", src)
+				}
+			}
 			if !localintel.CompiledWithLocalGemma() {
 				fmt.Fprintln(os.Stderr, "local-intel setup: warning: this binary was not built with assistclaw_localgemma; GGUF will be prepared but in-process Gemma remains unavailable until you install a localgemma-enabled build")
 			}
@@ -96,4 +105,86 @@ Optional integrity check: --sha256 or ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256.`,
 	cmd.Flags().StringVar(&sha256, "sha256", "", "Optional SHA-256 hex digest to verify download")
 	cmd.Flags().BoolVar(&force, "force", false, "Force re-download even if destination file exists")
 	return cmd
+}
+
+// discoverBundledGGUF checks common local "models/" locations before network download.
+// Priority: explicit canonical names, then first *.gguf match in cwd/models or executable-dir/models.
+func discoverBundledGGUF(dst string) (string, bool) {
+	seen := map[string]struct{}{}
+	candidates := make([]string, 0, 8)
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		p = filepath.Clean(p)
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		candidates = append(candidates, p)
+	}
+	cwd, _ := os.Getwd()
+	exe, _ := os.Executable()
+	exeDir := filepath.Dir(exe)
+	preferred := []string{"gemma-4-e2b-it.gguf", "gemma-2-2b-it-Q4_K_M.gguf"}
+	for _, root := range []string{
+		filepath.Join(cwd, "models"),
+		filepath.Join(exeDir, "models"),
+	} {
+		for _, n := range preferred {
+			add(filepath.Join(root, n))
+		}
+		if ents, err := os.ReadDir(root); err == nil {
+			for _, e := range ents {
+				if e.IsDir() {
+					continue
+				}
+				name := strings.ToLower(e.Name())
+				if strings.HasSuffix(name, ".gguf") {
+					add(filepath.Join(root, e.Name()))
+				}
+			}
+		}
+	}
+	dst = filepath.Clean(dst)
+	for _, p := range candidates {
+		if filepath.Clean(p) == dst {
+			continue
+		}
+		st, err := os.Stat(p)
+		if err == nil && !st.IsDir() && st.Size() > 0 {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+func copyFileAtomic(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	tmp := dst + ".copy"
+	out, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
