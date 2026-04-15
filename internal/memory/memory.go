@@ -54,6 +54,11 @@ type Document struct {
 	Source    string    `json:"source"` // file path, URL, session ID, etc.
 	Content   string    `json:"content"`
 	Hash      string    `json:"hash,omitempty"`
+	SourceType string   `json:"source_type,omitempty"`
+	Palace    string    `json:"palace,omitempty"`
+	Wing      string    `json:"wing,omitempty"`
+	Room      string    `json:"room,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
 	Model     string    `json:"model,omitempty"` // embedding model that generated this vector
 	Embedding []float32 `json:"embedding,omitempty"`
 	Score     float32   `json:"score,omitempty"` // similarity score (populated on search)
@@ -313,6 +318,22 @@ func scanMessages(rows *sql.Rows) ([]Message, error) {
 // Tier 3: Semantic Memory (sqlite-vec)
 // ─────────────────────────────────────────────
 
+// SemanticStore is the semantic memory contract used by the runner and tools.
+// This allows introducing alternative backends without changing higher layers.
+type SemanticStore interface {
+	Index(ctx context.Context, doc Document) error
+	Search(ctx context.Context, queryVec []float32, limit int) ([]Document, error)
+	SearchWithModel(ctx context.Context, queryVec []float32, limit int) ([]Document, error)
+	SaveLesson(ctx context.Context, lesson Lesson) error
+	SearchLessons(ctx context.Context, queryVec []float32, limit int) ([]Lesson, error)
+	Delete(ctx context.Context, id string) error
+	DeleteBySource(ctx context.Context, source string) error
+	GetSnippet(ctx context.Context, source string, startLine, endLine int) (string, error)
+	SourceHash(ctx context.Context, source string) (string, error)
+	ListSources(ctx context.Context) ([]string, error)
+	Close() error
+}
+
 // SemanticMemory stores document embeddings in sqlite-vec for vector search.
 type SemanticMemory struct {
 	db         *sql.DB
@@ -340,6 +361,11 @@ func (m *SemanticMemory) migrate() error {
 			source     TEXT NOT NULL,
 			content    TEXT NOT NULL,
 			hash       TEXT,
+			source_type TEXT,
+			palace     TEXT,
+			wing       TEXT,
+			room       TEXT,
+			tags_json  TEXT,
 			model      TEXT,
 			embedding  BLOB,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -362,6 +388,33 @@ func (m *SemanticMemory) migrate() error {
 			embedding float[%d]
 		);
 	`, m.dimensions, m.dimensions))
+	if err != nil {
+		return err
+	}
+	// Backward-compatible schema evolution for existing deployments.
+	maybeAddColumn := func(column, colType string) error {
+		_, e := m.db.Exec(fmt.Sprintf(`ALTER TABLE documents ADD COLUMN %s %s`, column, colType))
+		if e == nil || strings.Contains(strings.ToLower(e.Error()), "duplicate column name") {
+			return nil
+		}
+		return e
+	}
+	if err := maybeAddColumn("source_type", "TEXT"); err != nil {
+		return err
+	}
+	if err := maybeAddColumn("palace", "TEXT"); err != nil {
+		return err
+	}
+	if err := maybeAddColumn("wing", "TEXT"); err != nil {
+		return err
+	}
+	if err := maybeAddColumn("room", "TEXT"); err != nil {
+		return err
+	}
+	if err := maybeAddColumn("tags_json", "TEXT"); err != nil {
+		return err
+	}
+	_, err = m.db.Exec(`CREATE INDEX IF NOT EXISTS idx_documents_source ON documents(source);`)
 	return err
 }
 
@@ -374,9 +427,10 @@ func (m *SemanticMemory) Index(ctx context.Context, doc Document) error {
 	defer tx.Rollback() //nolint:errcheck
 
 	embJSON, _ := json.Marshal(doc.Embedding)
+	tagsJSON, _ := json.Marshal(doc.Tags)
 	_, err = tx.ExecContext(ctx,
-		`INSERT OR REPLACE INTO documents (id, source, content, hash, model, embedding, created_at) VALUES (?,?,?,?,?,?,?)`,
-		doc.ID, doc.Source, doc.Content, doc.Hash, doc.Model, embJSON, doc.CreatedAt,
+		`INSERT OR REPLACE INTO documents (id, source, content, hash, source_type, palace, wing, room, tags_json, model, embedding, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		doc.ID, doc.Source, doc.Content, doc.Hash, doc.SourceType, doc.Palace, doc.Wing, doc.Room, string(tagsJSON), doc.Model, embJSON, doc.CreatedAt,
 	)
 	if err != nil {
 		return err
@@ -403,7 +457,7 @@ func (m *SemanticMemory) Search(ctx context.Context, queryVec []float32, limit i
 	}
 	queryJSON, _ := json.Marshal(queryVec)
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT d.id, d.source, d.content, d.created_at, vd.distance
+		SELECT d.id, d.source, d.content, d.source_type, d.palace, d.wing, d.room, d.tags_json, d.created_at, vd.distance
 		FROM vec_documents vd
 		JOIN documents d ON d.rowid = vd.rowid
 		WHERE vd.embedding MATCH ? AND k = ?
@@ -418,9 +472,11 @@ func (m *SemanticMemory) Search(ctx context.Context, queryVec []float32, limit i
 	for rows.Next() {
 		var doc Document
 		var dist float32
-		if err := rows.Scan(&doc.ID, &doc.Source, &doc.Content, &doc.CreatedAt, &dist); err != nil {
+		var tagsJSON string
+		if err := rows.Scan(&doc.ID, &doc.Source, &doc.Content, &doc.SourceType, &doc.Palace, &doc.Wing, &doc.Room, &tagsJSON, &doc.CreatedAt, &dist); err != nil {
 			return nil, err
 		}
+		_ = json.Unmarshal([]byte(tagsJSON), &doc.Tags)
 		doc.Score = 1 - dist // convert distance to similarity
 		docs = append(docs, doc)
 	}
@@ -434,7 +490,7 @@ func (m *SemanticMemory) SearchWithModel(ctx context.Context, queryVec []float32
 	}
 	queryJSON, _ := json.Marshal(queryVec)
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT d.id, d.source, d.content, d.model, d.created_at, vd.distance
+		SELECT d.id, d.source, d.content, d.source_type, d.palace, d.wing, d.room, d.tags_json, d.model, d.created_at, vd.distance
 		FROM vec_documents vd
 		JOIN documents d ON d.rowid = vd.rowid
 		WHERE vd.embedding MATCH ? AND k = ?
@@ -449,9 +505,11 @@ func (m *SemanticMemory) SearchWithModel(ctx context.Context, queryVec []float32
 	for rows.Next() {
 		var doc Document
 		var dist float32
-		if err := rows.Scan(&doc.ID, &doc.Source, &doc.Content, &doc.Model, &doc.CreatedAt, &dist); err != nil {
+		var tagsJSON string
+		if err := rows.Scan(&doc.ID, &doc.Source, &doc.Content, &doc.SourceType, &doc.Palace, &doc.Wing, &doc.Room, &tagsJSON, &doc.Model, &doc.CreatedAt, &dist); err != nil {
 			return nil, err
 		}
+		_ = json.Unmarshal([]byte(tagsJSON), &doc.Tags)
 		doc.Score = 1 - dist
 		docs = append(docs, doc)
 	}
@@ -562,6 +620,34 @@ func (m *SemanticMemory) GetSnippet(ctx context.Context, source string, startLin
 	return "", fmt.Errorf("could not read source %q: %w", source, err)
 }
 
+// SourceHash returns the most recent hash we know for a source.
+func (m *SemanticMemory) SourceHash(ctx context.Context, source string) (string, error) {
+	var hash string
+	err := m.db.QueryRowContext(ctx, "SELECT hash FROM documents WHERE source = ? LIMIT 1", source).Scan(&hash)
+	if err != nil {
+		return "", err
+	}
+	return hash, nil
+}
+
+// ListSources returns all distinct source paths currently indexed.
+func (m *SemanticMemory) ListSources(ctx context.Context) ([]string, error) {
+	rows, err := m.db.QueryContext(ctx, "SELECT DISTINCT source FROM documents")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var source string
+		if err := rows.Scan(&source); err != nil {
+			return nil, err
+		}
+		out = append(out, source)
+	}
+	return out, rows.Err()
+}
+
 // ─────────────────────────────────────────────
 // Manager — unified facade over all three tiers
 // ─────────────────────────────────────────────
@@ -571,9 +657,11 @@ type Manager struct {
 	mu       sync.RWMutex
 	sessions map[string]*WorkingMemory
 	budget   int
+	chunkSize    int
+	chunkOverlap int
 
 	Episodic *EpisodicMemory
-	Semantic *SemanticMemory
+	Semantic SemanticStore
 }
 
 // ListSessions returns all session IDs from both working and episodic memory.
@@ -625,6 +713,12 @@ func (m *Manager) GetWorking(sessionID string) *WorkingMemory {
 
 // NewManager creates a Manager with all three tiers initialized.
 func NewManager(cfg ManagerConfig) (*Manager, error) {
+	if cfg.ChunkSize <= 0 {
+		cfg.ChunkSize = 512
+	}
+	if cfg.ChunkOverlap <= 0 {
+		cfg.ChunkOverlap = 64
+	}
 	episodic, err := NewEpisodicMemory(cfg.EpisodicDBPath)
 	if err != nil {
 		return nil, fmt.Errorf("episodic memory: %w", err)
@@ -639,6 +733,8 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	return &Manager{
 		sessions: make(map[string]*WorkingMemory),
 		budget:   cfg.WorkingTokenBudget,
+		chunkSize: cfg.ChunkSize,
+		chunkOverlap: cfg.ChunkOverlap,
 		Episodic: episodic,
 		Semantic: semantic,
 	}, nil
@@ -650,6 +746,8 @@ type ManagerConfig struct {
 	EpisodicDBPath      string // path to episodic SQLite DB
 	SemanticDBPath      string // path to semantic sqlite-vec DB
 	EmbeddingDimensions int    // dimensions for the configured embedding model
+	ChunkSize           int
+	ChunkOverlap        int
 }
 
 // Close shuts down all database connections.

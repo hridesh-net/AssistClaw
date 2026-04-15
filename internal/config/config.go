@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/assistclaw/assistclaw/internal/mempalace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -84,10 +85,10 @@ type ExtensionsConfig struct {
 
 // TracingConfig controls optional OpenTelemetry tracing.
 type TracingConfig struct {
-	Enabled     bool    `yaml:"enabled"`
-	OTLPEndpoint string `yaml:"otlp_endpoint"` // e.g. localhost:4317
-	ServiceName string  `yaml:"service_name"`
-	SampleRatio float64 `yaml:"sample_ratio"` // 0..1
+	Enabled      bool    `yaml:"enabled"`
+	OTLPEndpoint string  `yaml:"otlp_endpoint"` // e.g. localhost:4317
+	ServiceName  string  `yaml:"service_name"`
+	SampleRatio  float64 `yaml:"sample_ratio"` // 0..1
 }
 
 // A2AConfig holds metadata for the Agent-to-Agent protocol.
@@ -161,6 +162,8 @@ type MCPClientConfig struct {
 	Transport string   `yaml:"transport"` // "stdio" | "http"
 	Command   string   `yaml:"command"`   // e.g. "npx @modelcontextprotocol/server-filesystem /tmp"
 	Args      []string `yaml:"args"`
+	Dir       string   `yaml:"dir"` // stdio: working directory for the child process
+	Env       []string `yaml:"env"` // stdio: extra KEY=value entries for the child environment
 	URL       string   `yaml:"url"`
 	AuthToken string   `yaml:"auth_token"`
 }
@@ -296,6 +299,49 @@ type MemoryConfig struct {
 	EpisodicDBPath string `yaml:"episodic_db_path"`
 	// SemanticDBPath is the path to the semantic sqlite-vec database.
 	SemanticDBPath string `yaml:"semantic_db_path"`
+	// SemanticBackend selects AssistClaw's built-in semantic store (sqlite-vec only today).
+	SemanticBackend string `yaml:"semantic_backend"`
+	// MemPalace wires the upstream MemPalace project (Python + MCP). See memory.mempalace and mcp.clients.
+	MemPalace MemoryMemPalaceConfig `yaml:"mempalace"`
+	// Mining configures optional taxonomy mining/backfill runs.
+	Mining MemoryMiningConfig `yaml:"mining"`
+}
+
+// MemoryMemPalaceConfig integrates the real MemPalace memory system via MCP (python -m mempalace.mcp_server).
+// It does not replace AssistClaw's episodic DB; it adds MemPalace tools and optional delegation from memory_search.
+type MemoryMemPalaceConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// MCPClientName must match an entry in mcp.clients[].name or the synthetic client when AutoStart (default: mempalace).
+	MCPClientName string `yaml:"mcp_client_name"`
+	// AutoStart runs MemPalace as a stdio MCP child process (in-process sidecar) when no mcp.clients
+	// entry exists for MCPClientName. Recommended for single-binary installs; use explicit mcp.clients
+	// or an external supervisor instead when you want a true out-of-process sidecar.
+	AutoStart bool `yaml:"auto_start"`
+	// ManagedVenv creates state_dir/mempalace/venv, pip-installs mempalace, runs mempalace init once,
+	// and pins PythonExecutable to that venv. Requires auto_start: true. See `assistclaw mempalace setup`.
+	ManagedVenv bool `yaml:"managed_venv"`
+	// BootstrapPython is the host interpreter used only to create the managed venv (stdlib venv module).
+	// Default: python3, or ASSISTCLAW_MEMPALACE_BOOTSTRAP_PYTHON.
+	BootstrapPython string `yaml:"bootstrap_python"`
+	// PythonExecutable is the interpreter for `python -m mempalace.mcp_server` when AutoStart is true.
+	// Override with env ASSISTCLAW_MEMPALACE_PYTHON if unset in YAML.
+	PythonExecutable string `yaml:"python_executable"`
+	// InjectIntoMemorySearch appends MemPalace MCP mempalace_search results to the built-in memory_search tool output.
+	InjectIntoMemorySearch bool `yaml:"inject_into_memory_search"`
+	// SearchLimit caps the limit argument passed to mempalace_search (0 = use the memory_search limit).
+	SearchLimit int `yaml:"search_limit"`
+}
+
+type MemoryMiningConfig struct {
+	Enabled        bool     `yaml:"enabled"`
+	Mode           string   `yaml:"mode"` // incremental | full
+	Include        []string `yaml:"include"`
+	Exclude        []string `yaml:"exclude"`
+	ChunkSize      int      `yaml:"chunk_size"`
+	ChunkOverlap   int      `yaml:"chunk_overlap"`
+	MaxFileSizeKB  int      `yaml:"max_file_size_kb"`
+	MaxFilesPerRun int      `yaml:"max_files_per_run"`
+	StatePath      string   `yaml:"state_path"`
 }
 
 // RoutingConfig defines multi-model routing rules.
@@ -358,6 +404,18 @@ type AgentConfig struct {
 	Planning *bool `yaml:"planning"`
 	// Reflection adds a self-critique pass when a turn completes without tools. Nil = disabled (saves tokens).
 	Reflection *bool `yaml:"reflection"`
+	// Palace is optional AssistClaw-local retrieval shaping (not the MemPalace product).
+	Palace PalaceConfig `yaml:"palace"`
+}
+
+type PalaceConfig struct {
+	Enabled             bool `yaml:"enabled"`
+	ShadowOnly          bool `yaml:"shadow_only"`
+	PromptRouting       bool `yaml:"prompt_routing"`
+	MemorySearchRouting bool `yaml:"memory_search_routing"`
+	ToolRouting         bool `yaml:"tool_routing"`
+	FailOpen            bool `yaml:"fail_open"`
+	LogDecisions        bool `yaml:"log_decisions"`
 }
 
 // HeartbeatConfig drives autonomous periodic agent turns on a dedicated session.
@@ -474,8 +532,22 @@ func Load(path string) (*Config, error) {
 func LoadFromEnv() *Config {
 	cfg := &Config{}
 	applyDefaults(cfg)
+	applyProviderEnv(cfg)
+	return cfg
+}
 
-	// Provider keys from environment
+// MemPalaceBootstrapConfig returns a config with StateDir set and defaults applied, plus the same
+// provider environment wiring as [LoadFromEnv]. Use from installers / `assistclaw mempalace setup --state-dir`
+// when assistclaw.yaml does not exist yet.
+func MemPalaceBootstrapConfig(stateDir string) *Config {
+	cfg := &Config{}
+	cfg.StateDir = filepath.Clean(stateDir)
+	applyDefaults(cfg)
+	applyProviderEnv(cfg)
+	return cfg
+}
+
+func applyProviderEnv(cfg *Config) {
 	if key := os.Getenv("ASSISTCLAW_OPENAI_API_KEY"); key != "" {
 		cfg.Providers.OpenAI = &ProviderCreds{APIKey: key}
 	}
@@ -513,19 +585,15 @@ func LoadFromEnv() *Config {
 	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" && cfg.Providers.OpenRouter == nil {
 		cfg.Providers.OpenRouter = &OpenRouterCreds{ProviderCreds: ProviderCreds{APIKey: key}}
 	}
-	// Ollama (local, no key needed)
 	if url := os.Getenv("ASSISTCLAW_OLLAMA_BASE_URL"); url != "" {
 		cfg.Providers.Ollama = &LocalCreds{BaseURL: url}
 	} else if os.Getenv("ASSISTCLAW_OLLAMA_ENABLED") == "1" || os.Getenv("ASSISTCLAW_OLLAMA_ENABLED") == "true" {
 		cfg.Providers.Ollama = &LocalCreds{BaseURL: "http://localhost:11434"}
 	}
 
-	// Voice
 	if os.Getenv("ASSISTCLAW_VOICE_ENABLED") == "1" || os.Getenv("ASSISTCLAW_VOICE_ENABLED") == "true" {
 		cfg.Voice.Enabled = true
 	}
-
-	return cfg
 }
 
 // applyDefaults fills in default values for missing configuration.
@@ -552,6 +620,55 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Memory.SemanticDBPath == "" {
 		cfg.Memory.SemanticDBPath = filepath.Join(cfg.StateDir, "memory", "semantic.db")
+	}
+	if cfg.Memory.SemanticBackend == "" {
+		cfg.Memory.SemanticBackend = "sqlite_vec"
+	}
+	if cfg.Memory.Mining.Mode == "" {
+		cfg.Memory.Mining.Mode = "incremental"
+	}
+	if len(cfg.Memory.Mining.Include) == 0 {
+		cfg.Memory.Mining.Include = []string{"MEMORY.md", "memory/*.md"}
+	}
+	if cfg.Memory.Mining.ChunkSize == 0 {
+		cfg.Memory.Mining.ChunkSize = 512
+	}
+	if cfg.Memory.Mining.ChunkOverlap == 0 {
+		cfg.Memory.Mining.ChunkOverlap = 64
+	}
+	if cfg.Memory.Mining.MaxFileSizeKB == 0 {
+		cfg.Memory.Mining.MaxFileSizeKB = 512
+	}
+	if cfg.Memory.Mining.MaxFilesPerRun == 0 {
+		cfg.Memory.Mining.MaxFilesPerRun = 1000
+	}
+	if strings.TrimSpace(cfg.Memory.Mining.StatePath) == "" {
+		cfg.Memory.Mining.StatePath = filepath.Join(cfg.StateDir, "memory", "mining_state.json")
+	}
+	if strings.TrimSpace(cfg.Memory.MemPalace.MCPClientName) == "" {
+		cfg.Memory.MemPalace.MCPClientName = "mempalace"
+	}
+	if cfg.Memory.MemPalace.ManagedVenv {
+		if strings.TrimSpace(cfg.Memory.MemPalace.BootstrapPython) == "" {
+			if env := strings.TrimSpace(os.Getenv("ASSISTCLAW_MEMPALACE_BOOTSTRAP_PYTHON")); env != "" {
+				cfg.Memory.MemPalace.BootstrapPython = env
+			}
+		}
+		if strings.TrimSpace(cfg.Memory.MemPalace.BootstrapPython) == "" {
+			cfg.Memory.MemPalace.BootstrapPython = "python3"
+		}
+	}
+	if cfg.Memory.MemPalace.ManagedVenv && cfg.Memory.MemPalace.AutoStart {
+		cfg.Memory.MemPalace.PythonExecutable = mempalace.VenvInterpreter(mempalace.ManagedVenvRoot(cfg.StateDir))
+	} else if cfg.Memory.MemPalace.AutoStart {
+		if strings.TrimSpace(cfg.Memory.MemPalace.PythonExecutable) == "" {
+			if env := strings.TrimSpace(os.Getenv("ASSISTCLAW_MEMPALACE_PYTHON")); env != "" {
+				cfg.Memory.MemPalace.PythonExecutable = env
+			}
+		}
+		if strings.TrimSpace(cfg.Memory.MemPalace.PythonExecutable) == "" {
+			cfg.Memory.MemPalace.PythonExecutable = "python3"
+		}
 	}
 	if cfg.Agent.MaxIterations == 0 {
 		cfg.Agent.MaxIterations = 64
@@ -617,6 +734,16 @@ func applyDefaults(cfg *Config) {
 	if cfg.Tracing.SampleRatio <= 0 {
 		cfg.Tracing.SampleRatio = 0.01
 	}
+	if !cfg.Agent.Palace.Enabled &&
+		!cfg.Agent.Palace.ShadowOnly &&
+		!cfg.Agent.Palace.PromptRouting &&
+		!cfg.Agent.Palace.MemorySearchRouting &&
+		!cfg.Agent.Palace.ToolRouting &&
+		!cfg.Agent.Palace.LogDecisions &&
+		!cfg.Agent.Palace.FailOpen {
+		// Safe default for fresh configs while preserving explicit false in active setups.
+		cfg.Agent.Palace.FailOpen = true
+	}
 }
 
 // validate checks that required fields are present.
@@ -648,6 +775,46 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Channels.Outbound.BreakerCooldownS < 1 {
 		issues = append(issues, "channels.outbound.breaker_cooldown_s must be >= 1")
+	}
+	if cfg.Memory.SemanticBackend != "sqlite_vec" {
+		if strings.EqualFold(cfg.Memory.SemanticBackend, "mempalace") {
+			issues = append(issues, `memory.semantic_backend "mempalace" is invalid — MemPalace is the separate Python project; integrate it via mcp.clients or memory.mempalace (auto_start / managed_venv). Use semantic_backend: sqlite_vec.`)
+		} else {
+			issues = append(issues, "memory.semantic_backend must be sqlite_vec")
+		}
+	}
+	if cfg.Memory.MemPalace.InjectIntoMemorySearch && !cfg.Memory.MemPalace.Enabled {
+		issues = append(issues, "memory.mempalace.inject_into_memory_search requires memory.mempalace.enabled: true")
+	}
+	if cfg.Memory.MemPalace.ManagedVenv && !cfg.Memory.MemPalace.AutoStart {
+		issues = append(issues, "memory.mempalace.managed_venv requires memory.mempalace.auto_start: true")
+	}
+	if cfg.Memory.MemPalace.Enabled {
+		found := false
+		for _, c := range cfg.MCP.Clients {
+			if c.Name == cfg.Memory.MemPalace.MCPClientName {
+				found = true
+				break
+			}
+		}
+		if !found && !cfg.Memory.MemPalace.AutoStart {
+			issues = append(issues, fmt.Sprintf("memory.mempalace.enabled requires either mcp.clients with name %q or memory.mempalace.auto_start: true", cfg.Memory.MemPalace.MCPClientName))
+		}
+	}
+	if cfg.Memory.MemPalace.SearchLimit < 0 {
+		issues = append(issues, "memory.mempalace.search_limit must be >= 0")
+	}
+	if cfg.Memory.Mining.Mode != "incremental" && cfg.Memory.Mining.Mode != "full" {
+		issues = append(issues, "memory.mining.mode must be one of: incremental, full")
+	}
+	if cfg.Memory.Mining.ChunkSize < 64 {
+		issues = append(issues, "memory.mining.chunk_size must be >= 64")
+	}
+	if cfg.Memory.Mining.ChunkOverlap < 0 {
+		issues = append(issues, "memory.mining.chunk_overlap must be >= 0")
+	}
+	if cfg.Memory.Mining.MaxFilesPerRun < 1 {
+		issues = append(issues, "memory.mining.max_files_per_run must be >= 1")
 	}
 	if cfg.Tracing.SampleRatio < 0 || cfg.Tracing.SampleRatio > 1 {
 		issues = append(issues, "tracing.sample_ratio must be between 0 and 1")

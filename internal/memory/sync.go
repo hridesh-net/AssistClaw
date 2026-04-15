@@ -29,17 +29,11 @@ func (m *Manager) SyncFiles(ctx context.Context, registry *embeddings.Registry, 
 	}
 
 	// 3. Cleanup stale entries (documents whose source file is gone)
-	rows, err := m.Semantic.db.QueryContext(ctx, "SELECT DISTINCT source FROM documents")
+	sources, err := m.Semantic.ListSources(ctx)
 	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var source string
-			if err := rows.Scan(&source); err != nil {
-				continue
-			}
-			// Check if source file exists
+		for _, source := range sources {
 			absPath := filepath.Join(workspaceDir, source)
-			if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			if _, statErr := os.Stat(absPath); os.IsNotExist(statErr) {
 				fmt.Printf("[memory] cleaning up stale source: %s\n", source)
 				_ = m.Semantic.DeleteBySource(ctx, source)
 			}
@@ -57,8 +51,7 @@ func (m *Manager) syncFile(ctx context.Context, registry *embeddings.Registry, w
 	hash := fmt.Sprintf("%x", sha256.Sum256(content))
 
 	// Check if the file (source) already has this hash in the DB
-	var dbHash string
-	err = m.Semantic.db.QueryRowContext(ctx, "SELECT hash FROM documents WHERE source = ? LIMIT 1", relPath).Scan(&dbHash)
+	dbHash, err := m.Semantic.SourceHash(ctx, relPath)
 	if err == nil && dbHash == hash {
 		// No change, skip
 		return nil
@@ -72,7 +65,7 @@ func (m *Manager) syncFile(ctx context.Context, registry *embeddings.Registry, w
 	}
 
 	// Chunk the file
-	chunks := ChunkMarkdown(string(content), 512, 64)
+	chunks := ChunkMarkdown(string(content), m.chunkSize, m.chunkOverlap)
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -103,12 +96,18 @@ func (m *Manager) syncFile(ctx context.Context, registry *embeddings.Registry, w
 	}
 
 	// Index chunks
+	sourceType, palace, wing, room, tags := inferTaxonomy(relPath)
 	for i, c := range chunks {
 		doc := Document{
 			ID:        fmt.Sprintf("%s#L%d-%d", relPath, c.StartLine, c.EndLine),
 			Source:    relPath,
 			Content:   c.Content,
 			Hash:      hash, // Use the full file hash for all chunks
+			SourceType: sourceType,
+			Palace:    palace,
+			Wing:      wing,
+			Room:      room,
+			Tags:      tags,
 			Model:     resp.Model,
 			Embedding: resp.Embeddings[i],
 			CreatedAt: time.Now(),
@@ -144,4 +143,28 @@ func listMemoryFiles(workspaceDir string) ([]string, error) {
 	}
 
 	return files, nil
+}
+
+func inferTaxonomy(relPath string) (sourceType string, palace string, wing string, room string, tags []string) {
+	normalized := filepath.ToSlash(strings.TrimSpace(relPath))
+	if normalized == "" {
+		return "unknown", "", "", "", nil
+	}
+	parts := strings.Split(normalized, "/")
+	sourceType = "workspace_markdown"
+	palace = "workspace"
+	if len(parts) > 0 {
+		wing = parts[0]
+	}
+	if len(parts) > 1 {
+		room = parts[1]
+	}
+	tags = append(tags, "md")
+	if strings.EqualFold(filepath.Base(normalized), "MEMORY.md") {
+		tags = append(tags, "global-memory")
+	}
+	if wing == "memory" {
+		tags = append(tags, "memory-notes")
+	}
+	return sourceType, palace, wing, room, tags
 }

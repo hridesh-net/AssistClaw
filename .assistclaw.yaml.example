@@ -17,6 +17,15 @@ gateway:
 agent:
   max_iterations: 64
   system_prompt_ext: "" # Extra instructions appended to the global system prompt
+  # Optional AssistClaw-local retrieval shaping (NOT the MemPalace Python product).
+  palace:
+    enabled: false
+    shadow_only: true
+    prompt_routing: false
+    memory_search_routing: false
+    tool_routing: false
+    fail_open: true
+    log_decisions: false
 
 # Multi-model Routing
 routing:
@@ -29,6 +38,31 @@ routing:
 # Memory Configuration
 memory:
   working_token_budget: 100000
+  semantic_backend: "sqlite_vec"
+  # Real MemPalace (https://github.com/MemPalace/mempalace): Python + MCP.
+  # Either list it under mcp.clients below, or set auto_start: true so AssistClaw spawns python -m mempalace.mcp_server.
+  mempalace:
+    enabled: false
+    auto_start: false
+    # managed_venv: true   # optional: auto venv + pip install + mempalace init under state_dir/mempalace/ (needs auto_start)
+    # bootstrap_python: python3   # host python for venv create only; or ASSISTCLAW_MEMPALACE_BOOTSTRAP_PYTHON
+    # python_executable: /path/to/venv/bin/python   # optional; default python3 or ASSISTCLAW_MEMPALACE_PYTHON (ignored when managed_venv)
+    mcp_client_name: mempalace
+    inject_into_memory_search: false
+    search_limit: 0
+  mining:
+    enabled: false
+    mode: "incremental"
+    include:
+      - "MEMORY.md"
+      - "memory/*.md"
+    exclude:
+      - "memory/archive/*"
+    chunk_size: 512
+    chunk_overlap: 64
+    max_file_size_kb: 512
+    max_files_per_run: 1000
+    state_path: "~/.assistclaw/memory/mining_state.json"
 
 # Channel Messaging
 channels:
@@ -47,6 +81,17 @@ channels:
     bot_token: ""
     dm_mode: "pairing"
     require_mention: true
+
+# External MCP servers (MemPalace, filesystem, etc.)
+mcp:
+  server:
+    enabled: false
+  clients:
+    # Example: MemPalace MCP — pip install mempalace; use the python that has the package.
+    # - name: mempalace
+    #   transport: stdio
+    #   command: python
+    #   args: ["-m", "mempalace.mcp_server"]
 
 # Embedding Models (Priority defines fallback order)
 embeddings:

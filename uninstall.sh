@@ -8,6 +8,7 @@
 #   bash uninstall.sh --purge      # removes everything including config and memory
 #   bash uninstall.sh --keep-data  # same as default (explicit alias)
 #   bash uninstall.sh -y --purge   # non-interactive purge
+#   bash uninstall.sh --keep-mempalace  # keep $STATE_DIR/mempalace (managed Python venv + world)
 
 set -eo pipefail
 
@@ -15,6 +16,7 @@ INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 STATE_DIR="${STATE_DIR:-$HOME/.assistclaw}"
 PURGE=false
 AUTO_CONFIRM=false
+KEEP_MEMPALACE=false
 
 # ─────────────────────────────────────────────
 # Colors
@@ -37,6 +39,7 @@ for arg in "$@"; do
     --purge)     PURGE=true ;;
     --keep-data) PURGE=false ;;
     -y|--yes)    AUTO_CONFIRM=true ;;
+    --keep-mempalace) KEEP_MEMPALACE=true ;;
     --help|-h)
       echo ""
       echo "Usage: bash uninstall.sh [OPTIONS]"
@@ -44,6 +47,7 @@ for arg in "$@"; do
       echo "Options:"
       echo "  --purge      Also remove ~/.assistclaw (config, memory, skills, cron_jobs.json, security logs)"
       echo "  --keep-data  Keep user data (default behaviour)"
+      echo "  --keep-mempalace  Keep $STATE_DIR/mempalace (managed MemPalace venv + world)"
       echo "  -y, --yes    Auto-confirm deletion without prompting"
       echo "  --help       Show this help"
       echo ""
@@ -278,6 +282,20 @@ remove_completion() {
 }
 
 # ─────────────────────────────────────────────
+# Step 4b: Managed MemPalace (Python venv under state_dir — not the Go binary)
+# ─────────────────────────────────────────────
+remove_mempalace_managed() {
+  if $KEEP_MEMPALACE; then
+    return 0
+  fi
+  local mp="${STATE_DIR}/mempalace"
+  if [[ -d "$mp" ]]; then
+    rm -rf "$mp"
+    ok "Removed managed MemPalace directory: $mp"
+  fi
+}
+
+# ─────────────────────────────────────────────
 # Step 5: Remove user data (--purge only)
 # ─────────────────────────────────────────────
 remove_user_data() {
@@ -324,8 +342,13 @@ remove_completion
 if $PURGE; then
   remove_user_data
 else
+  remove_mempalace_managed
   echo ""
-  warn "Config and data at ${BOLD}$STATE_DIR${NC} were kept."
+  if $KEEP_MEMPALACE; then
+    warn "Config and data at ${BOLD}$STATE_DIR${NC} were kept (including ${BOLD}mempalace/${NC})."
+  else
+    warn "Config and data at ${BOLD}$STATE_DIR${NC} were kept (managed ${BOLD}mempalace/${NC} removed unless you used ${BOLD}--keep-mempalace${NC})."
+  fi
   warn "Remove everything:  ${BOLD}bash uninstall.sh --purge${NC}"
   warn "Remove Plano image: ${BOLD}docker rmi katanemo/plano${NC}"
 fi

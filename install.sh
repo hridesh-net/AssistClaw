@@ -15,6 +15,8 @@
 #   SKIP_VENV=1          Skip Python venv creation
 #   SKIP_SENSING=1       Skip optional C++ sensing build
 #   SKIP_SERVICE=1       Skip launchd/systemd login service registration (macOS/Linux)
+#   WITH_MEMPALACE=1     After install, run managed MemPalace bootstrap (venv + pip + mempalace init)
+#                        Requires system Python 3 with venv; uses ASSISTCLAW_MEMPALACE_BOOTSTRAP_PYTHON if set
 
 set -eo pipefail
 
@@ -287,6 +289,24 @@ setup_config() {
   mkdir -p "$STATE_DIR"/workspace/public
 }
 
+# MemPalace (Python) — not part of the Go binary; optional one-shot bootstrap via CLI.
+setup_mempalace() {
+  [[ "${WITH_MEMPALACE:-0}" == "1" ]] || return 0
+
+  local bin="$INSTALL_DIR/assistclaw"
+  if [[ ! -x "$bin" ]]; then
+    warn "WITH_MEMPALACE=1 but binary not executable at $bin — skipping MemPalace"
+    return 0
+  fi
+
+  log "WITH_MEMPALACE=1: bootstrapping MemPalace under $STATE_DIR/mempalace/ (may download PyPI packages)..."
+  if "$bin" --log-level info mempalace setup --state-dir "$STATE_DIR"; then
+    ok "MemPalace managed venv ready (enable in assistclaw.yaml: memory.mempalace.managed_venv + auto_start + enabled)"
+  else
+    warn "MemPalace bootstrap failed — install continues. Retry: WITH_MEMPALACE=1 bash install.sh or $bin mempalace setup --state-dir \"$STATE_DIR\""
+  fi
+}
+
 # ─────────────────────────────────────────────
 # PATH hint
 # ─────────────────────────────────────────────
@@ -377,7 +397,7 @@ install_login_service() {
 # Main
 # ─────────────────────────────────────────────
 usage() {
-  sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -401,6 +421,7 @@ main() {
   build_sensing
   setup_config
   verify
+  setup_mempalace
   install_login_service
 
   echo ""
@@ -415,6 +436,11 @@ main() {
   echo ""
   echo -e "  Config: ${BOLD}$STATE_DIR/assistclaw.yaml${NC}"
   echo -e "  Binary: ${BOLD}$INSTALL_DIR/assistclaw${NC}"
+  if [[ "${WITH_MEMPALACE:-0}" == "1" ]]; then
+    echo -e "  MemPalace: ${BOLD}bootstrapped under $STATE_DIR/mempalace/${NC} (merge printed YAML into assistclaw.yaml)"
+  else
+    echo -e "  MemPalace: ${BOLD}optional${NC} — ${BOLD}WITH_MEMPALACE=1 bash install.sh${NC} or ${BOLD}assistclaw mempalace setup --state-dir \"$STATE_DIR\"${NC}"
+  fi
   if [[ "${SKIP_SERVICE:-0}" != "1" ]] && [[ "$PLATFORM" == darwin-* || "$PLATFORM" == linux-* ]]; then
     echo -e "  Login service: ${BOLD}installed${NC} (auto-start after sign-in; ${BOLD}SKIP_SERVICE=1${NC} to skip next time)"
   fi

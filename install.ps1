@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Downloads the pre-built binary from GitHub Releases, creates %USERPROFILE%\.assistclaw,
-    and verifies the install.
+    and verifies the install. Optional -WithMemPalace runs managed MemPalace bootstrap (Python venv + pip).
 
 .PARAMETER Version
     Release tag (e.g. v3.10.4) or 'latest'.
@@ -17,11 +17,15 @@
 
 .EXAMPLE
     .\install.ps1 -Version v3.10.4
+
+.EXAMPLE
+    .\install.ps1 -WithMemPalace
 #>
 
 param(
     [string]$Version = $(if ($env:ASSISTCLAW_VERSION) { $env:ASSISTCLAW_VERSION } else { "latest" }),
-    [string]$InstallDir = $(if ($env:ASSISTCLAW_INSTALL_DIR) { $env:ASSISTCLAW_INSTALL_DIR } else { "" })
+    [string]$InstallDir = $(if ($env:ASSISTCLAW_INSTALL_DIR) { $env:ASSISTCLAW_INSTALL_DIR } else { "" }),
+    [switch]$WithMemPalace = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -110,6 +114,16 @@ foreach ($d in $subDirs) {
 }
 Write-Ok "Workspace ready"
 
+if ($WithMemPalace -or $env:WITH_MEMPALACE -eq "1") {
+    Write-Info "Bootstrapping MemPalace (managed venv under $ConfigDir\mempalace) — may download PyPI packages..."
+    & $DestPath --log-level info mempalace setup --state-dir $ConfigDir
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "MemPalace bootstrap finished (merge printed YAML into assistclaw.yaml)"
+    } else {
+        Write-WarnLine "MemPalace bootstrap failed (exit $LASTEXITCODE). Retry: & '$DestPath' mempalace setup --state-dir '$ConfigDir'"
+    }
+}
+
 Write-Info "Verifying..."
 try {
     $verOut = & $DestPath version 2>&1
@@ -125,6 +139,11 @@ Write-Host "    assistclaw onboard"
 Write-Host "    assistclaw agent --message `"Hello`""
 Write-Host ""
 Write-Host "  Config: $ConfigDir\assistclaw.yaml"
+if ($WithMemPalace -or $env:WITH_MEMPALACE -eq "1") {
+    Write-Host "  MemPalace: bootstrapped under $ConfigDir\mempalace\"
+} else {
+    Write-Host "  MemPalace (optional): .\install.ps1 -WithMemPalace  OR  & '$DestPath' mempalace setup --state-dir '$ConfigDir'"
+}
 Write-Host ""
 
 $pathDirs = $env:Path -split ';'

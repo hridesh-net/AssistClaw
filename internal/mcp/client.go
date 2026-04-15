@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -22,6 +23,10 @@ type ClientConfig struct {
 	// stdio fields
 	Command string   `yaml:"command"` // e.g. "npx @modelcontextprotocol/server-filesystem /tmp"
 	Args    []string `yaml:"args"`
+	// Dir, if set, is the working directory for the stdio child process.
+	Dir string `yaml:"dir"`
+	// Env is appended to the process environment (each entry KEY=value).
+	Env []string `yaml:"env"`
 	// HTTP fields
 	URL       string `yaml:"url"`
 	AuthToken string `yaml:"auth_token"`
@@ -87,6 +92,12 @@ func (c *Client) connectStdio(ctx context.Context) error {
 	}
 
 	c.cmd = exec.CommandContext(ctx, cmdName, cmdArgs...)
+	if strings.TrimSpace(c.cfg.Dir) != "" {
+		c.cmd.Dir = c.cfg.Dir
+	}
+	if len(c.cfg.Env) > 0 {
+		c.cmd.Env = append(os.Environ(), c.cfg.Env...)
+	}
 	stdin, err := c.cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("mcp client %q: stdin pipe: %w", c.cfg.Name, err)

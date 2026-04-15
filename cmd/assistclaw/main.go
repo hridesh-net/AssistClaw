@@ -38,7 +38,9 @@ import (
 	"github.com/assistclaw/assistclaw/internal/extensions"
 	"github.com/assistclaw/assistclaw/internal/gateway"
 	"github.com/assistclaw/assistclaw/internal/graph"
+	"github.com/assistclaw/assistclaw/internal/mcp"
 	"github.com/assistclaw/assistclaw/internal/memory"
+	"github.com/assistclaw/assistclaw/internal/mempalace"
 	obstracing "github.com/assistclaw/assistclaw/internal/observability/tracing"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/provider/anthropic"
@@ -58,7 +60,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.12" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.13" // Overridden by -ldflags "-X main.version=..." during build
 
 type reliableToolSender struct {
 	rs *chadapter.ReliableSender
@@ -191,6 +193,7 @@ func rootCmd() *cobra.Command {
 		providersCmd(flags),
 		embeddingsCmd(flags),
 		memoryCmd(flags),
+		mempalaceCmd(flags),
 		toolsCmd(flags),
 		extensionsCmd(flags),
 		gatewayCmd(flags),
@@ -513,6 +516,147 @@ func memoryCmd(gf *globalFlags) *cobra.Command {
 			return nil
 		},
 	})
+	mineCmd := &cobra.Command{Use: "mine", Short: "Mine/backfill taxonomy metadata for memory files"}
+	var mineJSON bool
+	var mineDryRun bool
+	var mineMode string
+	var mineLimit int
+	var mineYes bool
+	mineCmd.PersistentFlags().BoolVar(&mineJSON, "json", false, "Output JSON")
+	mineCmd.PersistentFlags().BoolVar(&mineDryRun, "dry-run", false, "Plan run without indexing writes")
+	mineCmd.PersistentFlags().StringVar(&mineMode, "mode", "", "Mining mode override: incremental|full")
+	mineCmd.PersistentFlags().IntVar(&mineLimit, "limit", 0, "Maximum files to process")
+
+	runMine := func(forceMode string) (*memory.MiningReport, error) {
+		ctx := context.Background()
+		log := buildLogger(gf.logLevel)
+		cfg, err := loadConfig(gf.configPath, log)
+		if err != nil {
+			return nil, err
+		}
+		embedReg := embeddings.NewRegistry()
+		registerEmbedders(ctx, cfg, embedReg, log)
+		memMgr, err := memory.NewManager(memory.ManagerConfig{
+			WorkingTokenBudget:  cfg.Memory.WorkingTokenBudget,
+			EpisodicDBPath:      cfg.Memory.EpisodicDBPath,
+			SemanticDBPath:      cfg.Memory.SemanticDBPath,
+			EmbeddingDimensions: 1536,
+			ChunkSize:           cfg.Memory.Mining.ChunkSize,
+			ChunkOverlap:        cfg.Memory.Mining.ChunkOverlap,
+		})
+		if err != nil {
+			return nil, err
+		}
+		defer memMgr.Close()
+		mode := cfg.Memory.Mining.Mode
+		if mineMode != "" {
+			mode = mineMode
+		}
+		if forceMode != "" {
+			mode = forceMode
+		}
+		maxFiles := cfg.Memory.Mining.MaxFilesPerRun
+		if mineLimit > 0 {
+			maxFiles = mineLimit
+		}
+		report, err := memMgr.Mine(ctx, embedReg, cfg.StateDir, memory.MiningOptions{
+			Mode:           mode,
+			Include:        cfg.Memory.Mining.Include,
+			Exclude:        cfg.Memory.Mining.Exclude,
+			MaxFilesPerRun: maxFiles,
+			MaxFileSizeKB:  cfg.Memory.Mining.MaxFileSizeKB,
+			StatePath:      cfg.Memory.Mining.StatePath,
+			DryRun:         mineDryRun,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &report, nil
+	}
+
+	mineCmd.AddCommand(&cobra.Command{
+		Use:   "run",
+		Short: "Run an incremental mining pass",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			report, err := runMine("")
+			if err != nil {
+				return err
+			}
+			if mineJSON {
+				data, _ := json.MarshalIndent(report, "", "  ")
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Printf("memory mine run complete: %s\n", report.PrettyString())
+			return nil
+		},
+	})
+	mineCmd.AddCommand(&cobra.Command{
+		Use:   "backfill",
+		Short: "Run a full backfill over all included files",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !mineYes {
+				return fmt.Errorf("backfill requires --yes")
+			}
+			report, err := runMine("full")
+			if err != nil {
+				return err
+			}
+			if mineJSON {
+				data, _ := json.MarshalIndent(report, "", "  ")
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Printf("memory mine backfill complete: %s\n", report.PrettyString())
+			return nil
+		},
+	})
+	mineCmd.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Show last mining run status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log := buildLogger(gf.logLevel)
+			cfg, err := loadConfig(gf.configPath, log)
+			if err != nil {
+				return err
+			}
+			report, err := memory.ReadMiningState(cfg.Memory.Mining.StatePath)
+			if err != nil {
+				return err
+			}
+			if mineJSON {
+				data, _ := json.MarshalIndent(report, "", "  ")
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Printf("memory mine status: %s\n", report.PrettyString())
+			return nil
+		},
+	})
+	mineCmd.AddCommand(&cobra.Command{
+		Use:   "validate",
+		Short: "Validate mining config and embedder readiness",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			log := buildLogger(gf.logLevel)
+			cfg, err := loadConfig(gf.configPath, log)
+			if err != nil {
+				return err
+			}
+			embedReg := embeddings.NewRegistry()
+			registerEmbedders(context.Background(), cfg, embedReg, log)
+			if _, ok := embedReg.Default(); !ok {
+				return fmt.Errorf("no embedding provider available for mining")
+			}
+			if mineJSON {
+				fmt.Println(`{"schema_version":1,"valid":true}`)
+				return nil
+			}
+			fmt.Println("memory mine validate: ok")
+			return nil
+		},
+	})
+	mineCmd.PersistentFlags().BoolVar(&mineYes, "yes", false, "Confirm destructive/full backfill operations")
+	cmd.AddCommand(mineCmd)
 	return cmd
 }
 
@@ -688,7 +832,7 @@ Extend behavior via skills, MCP, channels, or prompt_files as needed.`,
 			fmt.Println(prim.Render("\nVoice / browser / memory"))
 			fmt.Println(dim.Render("  voice: STT/TTS via internal/voice (yaml voice:)"))
 			fmt.Println(dim.Render("  browser: browser_navigate, browser_screenshot (chromedp)"))
-			fmt.Println(dim.Render("  memory: working + episodic.db + semantic (embeddings)"))
+			fmt.Println(dim.Render("  memory: working + episodic.db + semantic (embeddings); optional MemPalace via mcp / memory.mempalace (managed_venv automates pip + init)"))
 
 			fmt.Println(prim.Render("\nextensions.prompt_files (extra markdown prompt fragments)"))
 			if !cfg.Extensions.Enabled {
@@ -844,6 +988,86 @@ func versionCmd(gf *globalFlags) *cobra.Command {
 // Helpers
 // ─────────────────────────────────────────────
 
+// effectiveMCPClients returns cfg.MCP.Clients plus an optional synthetic MemPalace stdio client
+// when memory.mempalace.auto_start is true and no client with the same name is already defined.
+func effectiveMCPClients(cfg *config.Config) ([]config.MCPClientConfig, bool) {
+	out := append([]config.MCPClientConfig(nil), cfg.MCP.Clients...)
+	name := strings.TrimSpace(cfg.Memory.MemPalace.MCPClientName)
+	if name == "" {
+		name = "mempalace"
+	}
+	if !cfg.Memory.MemPalace.AutoStart {
+		return out, false
+	}
+	for _, c := range out {
+		if c.Name == name {
+			return out, false
+		}
+	}
+	py := strings.TrimSpace(cfg.Memory.MemPalace.PythonExecutable)
+	if py == "" {
+		py = "python3"
+	}
+	syn := config.MCPClientConfig{
+		Name:      name,
+		Transport: "stdio",
+		Command:   py,
+		Args:      []string{"-m", "mempalace.mcp_server"},
+	}
+	if cfg.Memory.MemPalace.ManagedVenv {
+		syn.Dir = mempalace.ManagedWorldDir(cfg.StateDir)
+	}
+	out = append(out, syn)
+	return out, true
+}
+
+// augmentActiveSkillsWithMCP appends skill names registered by external MCP (prefix "mcp:")
+// so they appear in the session skills header and skill_graph_index without requiring users
+// to list every server in agent.enabled_skills.
+func augmentActiveSkillsWithMCP(skillReg skills.Registry, active []string) []string {
+	seen := make(map[string]struct{}, len(active))
+	for _, n := range active {
+		if n == "" {
+			continue
+		}
+		seen[n] = struct{}{}
+	}
+	out := append([]string(nil), active...)
+	for _, s := range skillReg.List() {
+		name := s.Name
+		if !strings.HasPrefix(name, "mcp:") {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out
+}
+
+func mcpClientConfigsFromYAML(in []config.MCPClientConfig) []mcp.ClientConfig {
+	out := make([]mcp.ClientConfig, 0, len(in))
+	for _, c := range in {
+		tr := mcp.TransportStdio
+		if strings.EqualFold(strings.TrimSpace(c.Transport), "http") {
+			tr = mcp.TransportHTTP
+		}
+		out = append(out, mcp.ClientConfig{
+			Name:      c.Name,
+			Transport: tr,
+			Command:   c.Command,
+			Args:      c.Args,
+			Dir:       c.Dir,
+			Env:       c.Env,
+			URL:       c.URL,
+			AuthToken: c.AuthToken,
+		})
+	}
+	return out
+}
+
 func loadConfig(path string, log *zap.Logger) (*config.Config, error) {
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -915,6 +1139,8 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		EpisodicDBPath:      cfg.Memory.EpisodicDBPath,
 		SemanticDBPath:      cfg.Memory.SemanticDBPath,
 		EmbeddingDimensions: dims,
+		ChunkSize:           cfg.Memory.Mining.ChunkSize,
+		ChunkOverlap:        cfg.Memory.Mining.ChunkOverlap,
 	})
 	if err != nil {
 		return fmt.Errorf("memory init: %w", err)
@@ -974,7 +1200,6 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 			activeSkillNames = append(activeSkillNames, s.Name)
 		}
 	}
-	skillsCtx := skillReg.BuildContext(activeSkillNames)
 
 	// Build tool registry
 	toolReg := agent.NewToolRegistry()
@@ -987,8 +1212,50 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		}
 	}
 
+	if cfg.Memory.MemPalace.ManagedVenv && cfg.Memory.MemPalace.AutoStart {
+		log.Info("mempalace: ensuring managed venv (first run may download PyPI packages)")
+		if err := mempalace.Ensure(ctx, mempalace.EnsureOptions{
+			StateDir:        cfg.StateDir,
+			BootstrapPython: cfg.Memory.MemPalace.BootstrapPython,
+			Progress:        os.Stderr,
+			Log:             log,
+		}); err != nil {
+			return fmt.Errorf("mempalace managed venv: %w", err)
+		}
+	}
+
+	mcpClientList, mempalaceAuto := effectiveMCPClients(cfg)
+	if mempalaceAuto {
+		msg := "mcp: MemPalace auto-start (stdio child process)"
+		if cfg.Memory.MemPalace.ManagedVenv {
+			msg = "mcp: MemPalace auto-start (managed venv + stdio child)"
+		}
+		log.Info(msg,
+			zap.String("client", strings.TrimSpace(cfg.Memory.MemPalace.MCPClientName)),
+			zap.String("python", strings.TrimSpace(cfg.Memory.MemPalace.PythonExecutable)),
+		)
+	}
+	mcpCfgs := mcpClientConfigsFromYAML(mcpClientList)
+	var externalMCP []*mcp.Client
+	if len(mcpCfgs) > 0 {
+		externalMCP = mcp.RegisterExternalMCPTools(ctx, mcpCfgs, skillReg, toolReg, nil, log)
+	}
+	defer func() {
+		for i := len(externalMCP) - 1; i >= 0; i-- {
+			_ = externalMCP[i].Close()
+		}
+	}()
+
+	// Virtual MCP skills are registered after the initial activeSkillNames pass; include them so
+	// BuildContext, skill_graph_index, and read_skill_node see custom MCP servers alongside disk skills.
+	activeSkillNames = augmentActiveSkillsWithMCP(skillReg, activeSkillNames)
+	skillsCtx := skillReg.BuildContext(activeSkillNames)
+
 	memSearchFn := func(searchCtx context.Context, query string, limit int) ([]string, error) {
 		var out []string
+		router := memory.NewHeuristicPalaceRouter()
+		route := router.Route(query)
+		shouldRoute := cfg.Agent.Palace.Enabled && !cfg.Agent.Palace.ShadowOnly && cfg.Agent.Palace.MemorySearchRouting
 
 		// 1. Episodic Search (Full-Text)
 		msgs, err := memMgr.Episodic.Search(searchCtx, query, limit)
@@ -1002,10 +1269,23 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		if vec, err := embedReg.EmbedQuery(searchCtx, query); err == nil {
 			docs, err := memMgr.Semantic.SearchWithModel(searchCtx, vec, limit)
 			if err == nil {
+				if shouldRoute && !route.IsZero() {
+					filtered := make([]memory.Document, 0, len(docs))
+					for _, d := range docs {
+						if route.MatchesDocument(d) {
+							filtered = append(filtered, d)
+						}
+					}
+					if len(filtered) > 0 {
+						docs = filtered
+					} else if !cfg.Agent.Palace.FailOpen {
+						docs = nil
+					}
+				}
 				var docPaths []string
 				for _, d := range docs {
 					docPaths = append(docPaths, d.Source)
-					out = append(out, fmt.Sprintf("[semantic] [score:%.2f] [%s / %s] source=%s: %s", d.Score, d.Model, d.CreatedAt.Format("2006-01-02 15:04"), d.Source, d.Content))
+					out = append(out, fmt.Sprintf("[semantic] [score:%.2f] [%s / %s] source=%s taxonomy=%s/%s/%s: %s", d.Score, d.Model, d.CreatedAt.Format("2006-01-02 15:04"), d.Source, d.Palace, d.Wing, d.Room, d.Content))
 				}
 
 				// QueryWeaver Logic: Discover bridges between matched skill nodes
@@ -1014,6 +1294,36 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 						out = append(out, fmt.Sprintf("[semantic] [bridge] source=%s: %s", b.FilePath, b.Instructions))
 					}
 				}
+			}
+		}
+
+		if cfg.Memory.MemPalace.Enabled && cfg.Memory.MemPalace.InjectIntoMemorySearch {
+			clientName := strings.TrimSpace(cfg.Memory.MemPalace.MCPClientName)
+			if clientName == "" {
+				clientName = "mempalace"
+			}
+			toolName := "mcp:" + clientName + ":mempalace_search"
+			if t, ok := toolReg.Get(toolName); ok {
+				mpLimit := limit
+				if cfg.Memory.MemPalace.SearchLimit > 0 {
+					mpLimit = cfg.Memory.MemPalace.SearchLimit
+				}
+				input, err := json.Marshal(map[string]any{
+					"query": query,
+					"limit": mpLimit,
+				})
+				if err == nil {
+					if text, err := t.Execute(searchCtx, input); err != nil {
+						log.Debug("mempalace_search delegate failed", zap.String("tool", toolName), zap.Error(err))
+					} else if strings.TrimSpace(text) != "" {
+						out = append(out, "[mempalace] "+text)
+					}
+				}
+			} else {
+				log.Warn("memory.mempalace.inject_into_memory_search is true but MCP tool is missing",
+					zap.String("expected_tool", toolName),
+					zap.String("hint", "enable memory.mempalace.managed_venv + auto_start, or run: assistclaw mempalace setup"),
+				)
 			}
 		}
 
@@ -1084,6 +1394,15 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		GatewayPublicBaseURL:  cfg.PublicGatewayBaseURL(),
 		ExtensionPromptAppend: extPrompt,
 		StateDir:              cfg.StateDir,
+		Palace: agent.PalaceConfig{
+			Enabled:             cfg.Agent.Palace.Enabled,
+			ShadowOnly:          cfg.Agent.Palace.ShadowOnly,
+			PromptRouting:       cfg.Agent.Palace.PromptRouting,
+			MemorySearchRouting: cfg.Agent.Palace.MemorySearchRouting,
+			ToolRouting:         cfg.Agent.Palace.ToolRouting,
+			FailOpen:            cfg.Agent.Palace.FailOpen,
+			LogDecisions:        cfg.Agent.Palace.LogDecisions,
+		},
 	}, p, toolReg, memMgr, log, cfg.StateDir).WithCatalog(catalog).WithHardware(hw)
 
 	// ── Security: Guardrail + Audit Log ────────────────────────────────

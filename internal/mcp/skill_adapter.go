@@ -18,9 +18,12 @@ import (
 
 // RegisterExternalMCPTools connects to all configured external MCP servers,
 // discovers their tools, and registers them in:
-//  1. The agent's tool registry (so the agent can call them directly)
-//  2. The MCP server's handler map (so external clients can proxy through them)
-//  3. The skill registry as virtual skill nodes (so they appear in the Map of Content)
+//  1. The agent's tool registry (so the agent can call them directly as mcp:<server>:<tool>)
+//  2. The MCP server's handler map (so external clients can proxy through them), when mcpSrv is non-nil
+//  3. The skill registry as virtual skills named mcp:<server> (nodes + tool hints for read_skill_node)
+//
+// The CLI merges those virtual skills into the active session list after registration so
+// skill_graph_index and the skills header include custom MCP servers without listing each in YAML.
 func RegisterExternalMCPTools(
 	ctx context.Context,
 	configs []ClientConfig,
@@ -28,7 +31,8 @@ func RegisterExternalMCPTools(
 	toolReg *agent.ToolRegistry,
 	mcpSrv *Server,
 	log *zap.Logger,
-) {
+) []*Client {
+	var connected []*Client
 	for _, cfg := range configs {
 		cfg := cfg
 		client := NewClient(cfg, log)
@@ -54,6 +58,8 @@ func RegisterExternalMCPTools(
 			zap.String("server", cfg.Name),
 			zap.Int("tools", len(tools)),
 		)
+
+		connected = append(connected, client)
 
 		// Register each remote tool as an agent tool + MCP handler
 		for _, rt := range tools {
@@ -84,6 +90,7 @@ func RegisterExternalMCPTools(
 			registerMCPNodeHandlers(mcpSrv, cfg.Name, tools)
 		}
 	}
+	return connected
 }
 
 // buildVirtualSkill creates a synthetic Skill from a set of remote MCP tools.

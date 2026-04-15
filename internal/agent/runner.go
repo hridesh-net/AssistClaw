@@ -119,6 +119,17 @@ type Config struct {
 	ExtensionPromptAppend string
 	// StateDir is the AssistClaw state root (for owner-only policy path checks in the guardrail).
 	StateDir string
+	Palace   PalaceConfig
+}
+
+type PalaceConfig struct {
+	Enabled             bool
+	ShadowOnly          bool
+	PromptRouting       bool
+	MemorySearchRouting bool
+	ToolRouting         bool
+	FailOpen            bool
+	LogDecisions        bool
 }
 
 // Runner is the main agent execution loop.
@@ -144,6 +155,7 @@ type Runner struct {
 
 	// modelRegistry is optional; used for channel slash commands like /models.
 	modelRegistry *provider.Registry
+	palaceRouter   memory.PalaceRouter
 
 	commands map[string]func(ctx context.Context, replyFn channels.StreamingReplyFunc) error
 }
@@ -177,6 +189,7 @@ func NewRunner(
 		channelID:     cfg.ChannelID,
 		workspaceDir:  workspaceDir,
 		hardware:      &system.HardwareReport{},
+		palaceRouter:  memory.NewHeuristicPalaceRouter(),
 	}
 }
 
@@ -299,6 +312,7 @@ func (r *Runner) WithSession(sessionID string) *Runner {
 		channelID:     r.channelID,
 		workspaceDir:  r.workspaceDir,
 		modelRegistry: r.modelRegistry,
+		palaceRouter:  r.palaceRouter,
 	}
 }
 
@@ -664,6 +678,16 @@ func (r *Runner) convertMessages(msgs []memory.Message) []provider.Message {
 }
 
 func (r *Runner) buildRequestV3(ctx context.Context, query string) *provider.CompletionRequest {
+	if r.cfg.Palace.Enabled && r.cfg.Palace.LogDecisions && r.palaceRouter != nil {
+		route := r.palaceRouter.Route(query)
+		r.log.Debug("palace route decision",
+			zap.String("palace", route.Palace),
+			zap.String("wing", route.Wing),
+			zap.String("room", route.Room),
+			zap.Float64("confidence", route.Confidence),
+			zap.Bool("shadow_only", r.cfg.Palace.ShadowOnly),
+		)
+	}
 	tools := r.selectTools(query)
 	return &provider.CompletionRequest{
 		Model:        r.cfg.Model,
@@ -887,6 +911,25 @@ When the user asks for a **dashboard**, **status page**, or **live monitor**:
 		if err == nil {
 			lessons, err := r.memory.Semantic.SearchLessons(ctx, emb, 3)
 			if err == nil && len(lessons) > 0 {
+				if r.cfg.Palace.Enabled && !r.cfg.Palace.ShadowOnly && r.cfg.Palace.PromptRouting && r.palaceRouter != nil {
+					route := r.palaceRouter.Route(query)
+					if !route.IsZero() {
+						var filtered []memory.Lesson
+						for _, l := range lessons {
+							ll := strings.ToLower(l.Query + " " + l.Insights)
+							if (route.Wing != "" && strings.Contains(ll, strings.ToLower(route.Wing))) ||
+								(route.Room != "" && strings.Contains(ll, strings.ToLower(route.Room))) ||
+								(route.Palace != "" && strings.Contains(ll, strings.ToLower(route.Palace))) {
+								filtered = append(filtered, l)
+							}
+						}
+						if len(filtered) > 0 {
+							lessons = filtered
+						} else if !r.cfg.Palace.FailOpen {
+							lessons = nil
+						}
+					}
+				}
 				var sb strings.Builder
 				sb.WriteString("\n## Past Task Insights\n")
 				for _, l := range lessons {
