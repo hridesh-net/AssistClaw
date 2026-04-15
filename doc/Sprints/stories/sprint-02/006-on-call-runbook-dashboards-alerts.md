@@ -40,7 +40,7 @@ Write an **on-call runbook**: how to use dashboards, interpret metrics, common a
 ## Definition of Done
 
 - [ ] Reviewed by someone not on the core team (fresh eyes).
-- [ ] Linked from README or `doc/` index.
+- [x] Linked from README or `doc/` index — [README.md](../../../../README.md) and [runbooks index](../../../../doc/runbooks/README.md).
 
 ## Dependencies
 
@@ -48,7 +48,16 @@ Write an **on-call runbook**: how to use dashboards, interpret metrics, common a
 
 ## Implementation status
 
-- [x] Runbook: `doc/runbooks/on-call-dashboards-alerts.md` (links SLO doc, metrics, DLQ, logging).
+- [x] Runbook: [`doc/runbooks/on-call-dashboards-alerts.md`](../../../../doc/runbooks/on-call-dashboards-alerts.md) — scenarios (DLQ, reconnect storm, high latency, gateway down, **disk full**), step-by-step `assistclaw` + `curl` commands, alert→action table, ownership, quarterly drill template.
+- [x] Runbooks index: [`doc/runbooks/README.md`](../../../../doc/runbooks/README.md).
+
+## Acceptance criteria (verification)
+
+1. [x] Runbook covers high DLQ, reconnect storm, high latency, disk full on `state_dir`.
+2. [x] Each scenario includes concrete commands (`assistclaw`, `curl`, optional `du`/`df`/`tail`).
+3. [x] Alert rules listed with page vs ticket (plus recommended latency alert row).
+4. [x] Ownership table (channels vs core gateway).
+5. [x] Quarterly drill: template to record first drill outcome (`on-call-dashboards-alerts.md` § Quarterly drill).
 
 ## Risks
 

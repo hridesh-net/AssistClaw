@@ -399,6 +399,7 @@ channels:
 | [DLQ Runbook](doc/runbooks/dlq-inspection.md) | How to inspect and triage outbound delivery failures |
 | [Internal SLOs & error budgets](doc/observability/internal-slo-error-budgets.md) | Reliability targets, metrics mapping, error-budget policy (internal) |
 | [On-call runbook](doc/runbooks/on-call-dashboards-alerts.md) | Dashboards, alerts, triage paths (STORY-012) |
+| [Runbooks index](doc/runbooks/README.md) | All operational runbooks in one list |
 | [doc/](doc/) | Additional docs, assets, and guides |
 
 ---
