@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.16] - 2026-04-15
+### Fixed
+- **Release pipeline (darwin/windows) with local Gemma enabled:** Restored vendored libffi binary assets required by `github.com/jupiterrider/ffi` `go:embed` paths so release builds no longer fail with `no matching files found` for darwin targets.
+
 ## [v3.10.15] - 2026-04-15
 ### Changed
 - **Release binaries now include local Gemma engine by default:** CI/release and Makefile default build tags now include **`assistclaw_localgemma`** (with **`fts5`**) so end users do not need a custom rebuild just to enable `localgemma` / `agent.local_intel`.

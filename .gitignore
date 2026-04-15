@@ -4,6 +4,10 @@
 *.dll
 *.so
 *.dylib
+# Keep vendored libffi runtime blobs required by github.com/jupiterrider/ffi go:embed.
+!vendor/github.com/jupiterrider/ffi/assets/libffi/darwin_arm64/libffi.8.dylib
+!vendor/github.com/jupiterrider/ffi/assets/libffi/darwin_amd64/libffi.8.dylib
+!vendor/github.com/jupiterrider/ffi/assets/libffi/windows_amd64/libffi-8.dll
 bin/
 /assistclaw
 
