@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+
+## [v3.10.14] - 2026-04-14
+### Added
+- **Local Gemma 4 E2B (`internal/localintel`):** Optional in-process Gemma (llama.cpp via gollama.cpp) with build tags **`assistclaw_localgemma`** and optional **`assistclaw_embedlocalgemma`** for embedded GGUF; **`assistclaw localgemma`** CLI (tagged builds); materialized cache for embedded weights.
+- **Agent `local_intel`:** When **`agent.local_intel.enabled`** is true, a local advisory is merged into the cloud model system prompt each turn (before planning). Config in **`assistclaw.yaml`** under **`agent.local_intel`** (`gguf_path`, `max_tokens`, `system_prompt`, `cache_dir`).
+- **Onboarding:** Wizard step for on-device Gemma with post-save build hints; **`assistclaw doctor`** warns until GGUF path, env, or embed aligns with a Gemma-enabled binary.
+- **Makefile:** **`EXTRA_TAGS`** (comma-separated) appended to **`fts5`** for **`make build-go` / `install` / `test`** (e.g. **`make install EXTRA_TAGS=assistclaw_localgemma`**).
+
 ## [v3.10.12] - 2026-04-09
 ### Added
 - **Discord setup docs:** Added `doc/channels/discord-setup.md` with bot creation, intents, invite permissions, config examples, verification, and troubleshooting.

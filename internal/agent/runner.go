@@ -12,12 +12,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/assistclaw/assistclaw/internal/channels"
+	"github.com/assistclaw/assistclaw/internal/localintel"
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/observability/correlation"
 	"github.com/assistclaw/assistclaw/internal/observability/metrics"
@@ -120,6 +122,17 @@ type Config struct {
 	// StateDir is the AssistClaw state root (for owner-only policy path checks in the guardrail).
 	StateDir string
 	Palace   PalaceConfig
+	// LocalIntel runs optional on-device Gemma before the main model (see assistclaw.yaml agent.local_intel).
+	LocalIntel LocalIntelRunnerConfig
+}
+
+// LocalIntelRunnerConfig is the agent-local view of config.Agent.LocalIntel.
+type LocalIntelRunnerConfig struct {
+	Enabled      bool
+	GGUFPath     string
+	MaxTokens    int
+	SystemPrompt string
+	CacheDir     string
 }
 
 type PalaceConfig struct {
@@ -155,9 +168,15 @@ type Runner struct {
 
 	// modelRegistry is optional; used for channel slash commands like /models.
 	modelRegistry *provider.Registry
-	palaceRouter   memory.PalaceRouter
+	palaceRouter  memory.PalaceRouter
 
 	commands map[string]func(ctx context.Context, replyFn channels.StreamingReplyFunc) error
+
+	// localIntel* fields support optional Gemma pre-pass (same Runner = one opened engine).
+	localIntelOnce    sync.Once
+	localIntelEng     localintel.Engine
+	localIntelOpenErr error
+	localIntelScratch string // advisory text merged into buildSystemPrompt for the current Run/RunStream
 }
 
 // NewRunner creates a new agent runner.
@@ -375,9 +394,12 @@ func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error
 		r.log.Warn("episodic save failed", zap.Error(err))
 	}
 	enqueueSpan.End()
+	defer func() { r.localIntelScratch = "" }()
 
 	var totalUsage provider.TokenUsage
 	iterations := 0
+
+	r.prepareLocalIntelScratch(ctx, userMessage)
 
 	// V3: Planning Phase
 	plan := ""
@@ -948,6 +970,10 @@ When the user asks for a **dashboard**, **status page**, or **live monitor**:
 		parts = append(parts, strings.TrimSpace(r.cfg.ExtensionPromptAppend))
 	}
 
+	if strings.TrimSpace(r.localIntelScratch) != "" {
+		parts = append(parts, "## On-device advisory (local Gemma)\n"+strings.TrimSpace(r.localIntelScratch))
+	}
+
 	return strings.Join(parts, "\n\n")
 }
 
@@ -1061,10 +1087,13 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 		r.log.Warn("episodic save failed", zap.Error(err))
 	}
 	enqueueSpan.End()
+	defer func() { r.localIntelScratch = "" }()
 
 	var totalUsage provider.TokenUsage
 	var fullResponse strings.Builder
 	iterations := 0
+
+	r.prepareLocalIntelScratch(ctx, userMessage)
 
 	// V3: Planning Phase (kept in working memory for the model; not streamed to WhatsApp/Telegram/etc.)
 	plan := ""

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/slack"
 	"github.com/assistclaw/assistclaw/internal/channels/telegram"
 	"github.com/assistclaw/assistclaw/internal/config"
+	"github.com/assistclaw/assistclaw/internal/localintel"
 )
 
 // doctorCheck is one row of assistclaw doctor output (text or JSON).
@@ -110,7 +112,45 @@ func runDoctorChecks(ctx context.Context, cfg *config.Config, skipNetwork bool) 
 	}
 
 	checks = append(checks, checkWhatsAppSession(cfg))
+	checks = append(checks, checkLocalIntel(cfg))
 	return checks
+}
+
+func checkLocalIntel(cfg *config.Config) doctorCheck {
+	if !cfg.Agent.LocalIntel.Enabled {
+		return doctorCheck{
+			ID:       "agent.local_intel",
+			Severity: "skipped",
+			Message:  "agent.local_intel.enabled is false.",
+		}
+	}
+	var warnings []string
+	if !localintel.CompiledWithLocalGemma() {
+		warnings = append(warnings, "rebuild with in-process Gemma: make install EXTRA_TAGS=assistclaw_localgemma (or go build -tags fts5,assistclaw_localgemma)")
+	}
+	p := strings.TrimSpace(cfg.Agent.LocalIntel.GGUFPath)
+	if p == "" {
+		p = strings.TrimSpace(os.Getenv("ASSISTCLAW_LOCAL_GEMMA_GGUF"))
+	}
+	if p != "" {
+		if _, err := os.Stat(p); err != nil {
+			warnings = append(warnings, fmt.Sprintf("GGUF not readable at %q: %v", p, err))
+		}
+	} else if len(localintel.Gemma4E2BGGUF) == 0 {
+		warnings = append(warnings, "set agent.local_intel.gguf_path or ASSISTCLAW_LOCAL_GEMMA_GGUF, or build with assistclaw_embedlocalgemma and ship embedded weights")
+	}
+	if len(warnings) > 0 {
+		return doctorCheck{
+			ID:       "agent.local_intel",
+			Severity: "warn",
+			Message:  strings.Join(warnings, " | "),
+		}
+	}
+	return doctorCheck{
+		ID:       "agent.local_intel",
+		Severity: "ok",
+		Message:  "local_intel is enabled; GGUF/embed path looks consistent with this binary.",
+	}
 }
 
 func pingTelegram(ctx context.Context, cfg *config.Config) []doctorCheck {

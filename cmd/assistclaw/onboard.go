@@ -474,6 +474,8 @@ func runOnboarding(configPath string) (bool, error) {
 		planoEndpoint      string
 		planoFastModel     string
 		planoPowerfulModel string
+		localIntelEnabled  bool
+		localIntelGGUF     string
 	)
 
 	theme := huh.ThemeBase()
@@ -891,6 +893,9 @@ func runOnboarding(configPath string) (bool, error) {
 
 		// Pre-populate Skills
 		selectedSkills = existing.Agent.EnabledSkills
+
+		localIntelEnabled = existing.Agent.LocalIntel.Enabled
+		localIntelGGUF = existing.Agent.LocalIntel.GGUFPath
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
@@ -1129,6 +1134,28 @@ func runOnboarding(configPath string) (bool, error) {
 		if err := formEmbedDetail.Run(); err != nil {
 			return false, fmt.Errorf("onboarding interrupted")
 		}
+	}
+
+	fmt.Println()
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).
+		Render("  On-device Gemma (optional)"))
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).
+		Render("  A small Gemma 4 E2B model can run locally and attach a short advisory before your cloud model acts. Requires a GGUF file on disk (or embedded weights) and a binary built with the assistclaw_localgemma tag — see post-setup hints below.\n"))
+
+	formLocalIntel := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Enable on-device Gemma (agent.local_intel)?").
+				Description("Adds a local pre-pass for routing hints; the main LLM stays your cloud provider.").
+				Value(&localIntelEnabled),
+			huh.NewInput().
+				Title("Path to Gemma 4 E2B .gguf (optional)").
+				Description("Saved as agent.local_intel.gguf_path. Leave empty to use ASSISTCLAW_LOCAL_GEMMA_GGUF or an embedded-weights build later.").
+				Value(&localIntelGGUF),
+		),
+	).WithTheme(theme)
+	if err := formLocalIntel.Run(); err != nil {
+		return false, fmt.Errorf("onboarding interrupted")
 	}
 
 	// Phases 3-5: Gateway, Channels, Skills (simplified for brevity)
@@ -1472,6 +1499,14 @@ func runOnboarding(configPath string) (bool, error) {
 			sb.WriteString(fmt.Sprintf("    - \"%s\"\n", s))
 		}
 	}
+	if localIntelEnabled {
+		sb.WriteString("  local_intel:\n")
+		sb.WriteString("    enabled: true\n")
+		if g := strings.TrimSpace(localIntelGGUF); g != "" {
+			sb.WriteString(fmt.Sprintf("    gguf_path: %q\n", g))
+		}
+		sb.WriteString("    max_tokens: 256\n")
+	}
 	sb.WriteString("\n")
 
 	sb.WriteString("providers:\n")
@@ -1641,6 +1676,16 @@ func runOnboarding(configPath string) (bool, error) {
 	_ = os.WriteFile(configPath, []byte(tpl), 0o600)
 
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ Configuration saved!"))
+
+	if localIntelEnabled {
+		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+		fmt.Println()
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).Render("  Local Gemma — next steps"))
+		fmt.Println(dim.Render("  • Install a binary with in-process Gemma:  make install EXTRA_TAGS=assistclaw_localgemma"))
+		fmt.Println(dim.Render("  • Or:  go build -tags fts5,assistclaw_localgemma -o assistclaw ./cmd/assistclaw"))
+		fmt.Println(dim.Render("  • Put your GGUF on disk (or set ASSISTCLAW_LOCAL_GEMMA_GGUF) unless you use an embedded-weights build."))
+		fmt.Println(dim.Render("  • Verify:  assistclaw doctor   (warns until GGUF + binary line up)"))
+	}
 
 	// ── Auto-start on login (no prompt; idempotent on macOS/Linux) ────────────
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))

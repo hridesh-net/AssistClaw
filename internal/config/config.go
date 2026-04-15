@@ -406,6 +406,21 @@ type AgentConfig struct {
 	Reflection *bool `yaml:"reflection"`
 	// Palace is optional AssistClaw-local retrieval shaping (not the MemPalace product).
 	Palace PalaceConfig `yaml:"palace"`
+	// LocalIntel runs Gemma 4 E2B inside the process (when built with assistclaw_localgemma) and
+	// prepends a short advisory into the cloud model's system prompt for that turn.
+	LocalIntel LocalIntelConfig `yaml:"local_intel"`
+}
+
+// LocalIntelConfig enables optional on-device Gemma before the main (cloud) model sees the request.
+type LocalIntelConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// GGUFPath overrides ASSISTCLAW_LOCAL_GEMMA_GGUF when non-empty.
+	GGUFPath  string `yaml:"gguf_path"`
+	MaxTokens int    `yaml:"max_tokens"`
+	// SystemPrompt overrides the default advisory instructions when non-empty.
+	SystemPrompt string `yaml:"system_prompt"`
+	// CacheDir is where embedded GGUF bytes are materialized; default <state_dir>/localintel.
+	CacheDir string `yaml:"cache_dir"`
 }
 
 type PalaceConfig struct {

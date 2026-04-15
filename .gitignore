@@ -39,6 +39,9 @@ Thumbs.db
 assistclaw.yaml
 *.yaml.local
 
+# Optional Gemma 4 E2B GGUF for go:embed builds (-tags assistclaw_embedlocalgemma)
+internal/localintel/embedded/gemma-4-e2b-it.gguf
+
 # Local data / DBs / State
 *.db
 *.sqlite

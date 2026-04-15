@@ -9,8 +9,15 @@
 # ─────────────────────────────────────────────
 BINARY     := assistclaw
 GOCMD      := go
-GOBUILD    := CGO_ENABLED=1 $(GOCMD) build -tags fts5
-GOTEST     := CGO_ENABLED=1 $(GOCMD) test -tags fts5
+# Base tag fts5 (SQLite); append optional extras e.g. make install EXTRA_TAGS=assistclaw_localgemma
+EXTRA_TAGS ?=
+comma      := ,
+BUILD_TAGS := fts5
+ifneq ($(strip $(EXTRA_TAGS)),)
+  BUILD_TAGS := $(BUILD_TAGS)$(comma)$(EXTRA_TAGS)
+endif
+GOBUILD    := CGO_ENABLED=1 $(GOCMD) build -tags $(BUILD_TAGS)
+GOTEST     := CGO_ENABLED=1 $(GOCMD) test -tags $(BUILD_TAGS)
 GOVET      := $(GOCMD) vet
 GOLINT     := golangci-lint
 GOFMT      := gofmt
@@ -156,5 +163,7 @@ clean:
 ## help: Show this help message
 help:
 	@echo "$(BLUE)AssistClaw Build System$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Optional:$(NC) EXTRA_TAGS=assistclaw_localgemma for in-process Gemma (see assistclaw onboard / doctor)."
 	@echo ""
 	@grep -E '^## ' Makefile | sed 's/## //' | column -t -s ':'

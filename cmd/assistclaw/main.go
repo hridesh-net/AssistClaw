@@ -207,6 +207,7 @@ func rootCmd() *cobra.Command {
 		dlqCmd(flags),
 		doctorCmd(flags),
 		versionCmd(flags),
+		localgemmaCmd(flags),
 	)
 	return root
 }
@@ -1383,6 +1384,10 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	if cfg.Extensions.Enabled && len(cfg.Extensions.PromptFiles) > 0 {
 		extPrompt = extensions.PromptAppendix(cfg.StateDir, cfg.Extensions.PromptFiles)
 	}
+	localIntelCache := strings.TrimSpace(cfg.Agent.LocalIntel.CacheDir)
+	if localIntelCache == "" {
+		localIntelCache = filepath.Join(cfg.StateDir, "localintel")
+	}
 	runner := agent.NewRunner(agent.Config{
 		MaxIterations:         cfg.Agent.MaxIterations,
 		Model:                 modelInfo.ID,
@@ -1394,6 +1399,13 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		GatewayPublicBaseURL:  cfg.PublicGatewayBaseURL(),
 		ExtensionPromptAppend: extPrompt,
 		StateDir:              cfg.StateDir,
+		LocalIntel: agent.LocalIntelRunnerConfig{
+			Enabled:      cfg.Agent.LocalIntel.Enabled,
+			GGUFPath:     cfg.Agent.LocalIntel.GGUFPath,
+			MaxTokens:    cfg.Agent.LocalIntel.MaxTokens,
+			SystemPrompt: cfg.Agent.LocalIntel.SystemPrompt,
+			CacheDir:     localIntelCache,
+		},
 		Palace: agent.PalaceConfig{
 			Enabled:             cfg.Agent.Palace.Enabled,
 			ShadowOnly:          cfg.Agent.Palace.ShadowOnly,
