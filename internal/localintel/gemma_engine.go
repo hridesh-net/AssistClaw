@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/dianlight/gollama.cpp"
+	"github.com/jupiterrider/ffi"
 )
 
 var backendOnce sync.Once
@@ -29,6 +30,9 @@ type gemmaEngine struct {
 }
 
 func newGemmaEngine(path string) (*gemmaEngine, error) {
+	if !ffi.Available() {
+		return nil, fmt.Errorf("localintel: ffi unavailable: %w", ffi.InitError())
+	}
 	if err := backendStart(); err != nil {
 		return nil, err
 	}

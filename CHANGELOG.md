@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.18] - 2026-04-15
+### Fixed
+- **Cross-platform startup safety (all OS/arch):** `github.com/jupiterrider/ffi` initialization now fails open instead of panicking when dynamic loading is unavailable. AssistClaw commands continue to run, while local Gemma reports a clear unavailable error on unsupported environments.
+
 ## [v3.10.17] - 2026-04-15
 ### Fixed
 - **Linux ARM64 installer/runtime panic (`Dynamic loading not supported`):** release workflow no longer forces static linking for the `linux-arm64` binary when local Gemma is enabled, allowing `libffi` dynamic loading required by the in-process Gemma stack.
