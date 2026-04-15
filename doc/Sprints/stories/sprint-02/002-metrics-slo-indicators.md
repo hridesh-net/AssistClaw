@@ -39,7 +39,7 @@ Expose **Prometheus-compatible metrics** (or agreed format) for: outbound/inboun
 
 ## Definition of Done
 
-- [ ] Linked from internal SLO doc (STORY-011).
+- [x] Linked from internal SLO doc (STORY-011) — see `doc/observability/internal-slo-error-budgets.md`.
 - [ ] Reviewed for cardinality by observability owner.
 
 ## Dependencies

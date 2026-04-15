@@ -397,6 +397,8 @@ channels:
 | [Adapter Contributor Checklist](CONTRIBUTING.md#new-channel-adapter-checklist) | Merge checklist for new/updated channel adapters (Sprint-01 Stories 001-006) |
 | [Channel Capability Matrix](doc/channels/capability-registry.md) | Source-of-truth capability table for channel behavior |
 | [DLQ Runbook](doc/runbooks/dlq-inspection.md) | How to inspect and triage outbound delivery failures |
+| [Internal SLOs & error budgets](doc/observability/internal-slo-error-budgets.md) | Reliability targets, metrics mapping, error-budget policy (internal) |
+| [On-call runbook](doc/runbooks/on-call-dashboards-alerts.md) | Dashboards, alerts, triage paths (STORY-012) |
 | [doc/](doc/) | Additional docs, assets, and guides |
 
 ---

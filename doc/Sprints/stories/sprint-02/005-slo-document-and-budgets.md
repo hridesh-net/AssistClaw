@@ -31,16 +31,21 @@ Publish an **internal SLO document** defining targets for message delivery succe
 
 ## Acceptance criteria
 
-1. **Document** in `doc/` with version and owner.
-2. **At least 3 SLOs**: e.g. delivery success %, P95 latency, gateway uptime.
+1. **Document** in `doc/` with version and owner — `doc/observability/internal-slo-error-budgets.md`.
+2. **At least 3 SLOs**: delivery success %, P95 latency, gateway uptime.
 3. **Each SLO** maps to dashboard panels (STORY-008) or explicit gap if metric missing.
 4. **Error budget** policy written in one page.
-5. **Sign-off** from engineering lead.
+5. **Sign-off** from engineering lead (table in doc; fill when reviewed).
+
+## Implementation status
+
+- [x] Internal SLO + error budget document published.
+- [x] Linked from metrics runbook and on-call runbook.
 
 ## Definition of Done
 
 - [ ] Shared in team channel / wiki.
-- [ ] Linked from STORY-012 runbook.
+- [x] Linked from STORY-012 runbook (`doc/runbooks/on-call-dashboards-alerts.md`).
 
 ## Dependencies
 

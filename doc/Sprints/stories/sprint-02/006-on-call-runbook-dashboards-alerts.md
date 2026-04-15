@@ -46,6 +46,10 @@ Write an **on-call runbook**: how to use dashboards, interpret metrics, common a
 
 - STORY-007, STORY-008, STORY-011.
 
+## Implementation status
+
+- [x] Runbook: `doc/runbooks/on-call-dashboards-alerts.md` (links SLO doc, metrics, DLQ, logging).
+
 ## Risks
 
 - Stale commands; version the runbook with AssistClaw version.
