@@ -158,6 +158,22 @@ install_binary() {
 
 build_binary_from_source() {
   command -v go >/dev/null 2>&1 || err "Go 1.24+ not found. Install Go or use a release download (unset FORCE_BUILD)."
+  local build_root="$REPO_ROOT"
+  local tmp_src=""
+  if [[ ! -f "$build_root/cmd/assistclaw/main.go" ]]; then
+    command -v git >/dev/null 2>&1 || err "git is required for source fallback when installer is run via curl|bash"
+    tmp_src="$(mktemp -d "${TMPDIR:-/tmp}/assistclaw-src.XXXXXX")"
+    local ref="${ASSISTCLAW_VERSION}"
+    if [[ -z "$ref" || "$ref" == "latest" ]]; then
+      ref="main"
+    fi
+    log "Source fallback: cloning ${REPO_OWNER_REPO}@${ref}..."
+    if ! git clone --depth 1 --branch "$ref" "https://github.com/${REPO_OWNER_REPO}.git" "$tmp_src" >/dev/null 2>&1; then
+      warn "Failed to clone ref $ref, falling back to main"
+      git clone --depth 1 --branch "main" "https://github.com/${REPO_OWNER_REPO}.git" "$tmp_src" >/dev/null 2>&1 || err "unable to clone source repo for fallback build"
+    fi
+    build_root="$tmp_src"
+  fi
   local go_version
   go_version="$(go version | awk '{print $3}' | tr -d 'go')"
   log "Building with go $go_version..."
@@ -171,9 +187,12 @@ build_binary_from_source() {
   fi
   local tmp_build
   tmp_build="$(mktemp "${TMPDIR:-/tmp}/assistclaw-build.XXXXXX")"
-  (cd "$REPO_ROOT" && go build -mod=vendor -tags fts5 -ldflags "-s -w ${ver_ldflags}" -o "$tmp_build" ./cmd/assistclaw)
+  (cd "$build_root" && go build -mod=vendor -tags fts5 -ldflags "-s -w ${ver_ldflags}" -o "$tmp_build" ./cmd/assistclaw)
   install -m 0755 "$tmp_build" "$INSTALL_DIR/assistclaw"
   rm -f "$tmp_build"
+  if [[ -n "$tmp_src" ]]; then
+    rm -rf "$tmp_src"
+  fi
   ok "Binary compiled and installed: $INSTALL_DIR/assistclaw"
   copy_skills_dir
 }
