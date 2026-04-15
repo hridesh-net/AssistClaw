@@ -75,3 +75,18 @@ func TestBootstrapGGUF_SHA256OK(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBootstrapGGUF_BearerToken(t *testing.T) {
+	t.Setenv("ASSISTCLAW_LOCAL_GEMMA_GGUF_TOKEN", "abc123")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer abc123" {
+			t.Fatalf("auth header: got %q", got)
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+	_, err := BootstrapGGUF(context.Background(), BootstrapOptions{StateDir: t.TempDir(), URL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

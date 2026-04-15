@@ -20,6 +20,7 @@
 #   WITH_GEMMA=1         Download Gemma-compatible GGUF and print local_intel snippet via
 #                        'assistclaw local-intel setup --state-dir'. Override source via
 #                        ASSISTCLAW_LOCAL_GEMMA_GGUF_URL (and optional ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256).
+#                        Optional auth token: ASSISTCLAW_LOCAL_GEMMA_GGUF_TOKEN.
 
 set -eo pipefail
 

@@ -38,7 +38,7 @@ func localIntelSetupCmd(gf *globalFlags, stateDir *string) *cobra.Command {
 		Long: `Downloads a Gemma-compatible GGUF into a managed path and prints a config snippet.
 
 Default output path: <state_dir>/models/gemma-4-e2b-it.gguf
-Default URL: internal localintel.DefaultGGUFURL (override with --url or ASSISTCLAW_LOCAL_GEMMA_GGUF_URL).
+Default URL: AssistClaw release asset (localintel.DefaultGGUFURL); override with --url or ASSISTCLAW_LOCAL_GEMMA_GGUF_URL.
 Optional integrity check: --sha256 or ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := mempalaceLoadCfg(gf, *stateDir)
@@ -91,7 +91,7 @@ Optional integrity check: --sha256 or ASSISTCLAW_LOCAL_GEMMA_GGUF_SHA256.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "GGUF URL (default: ASSISTCLAW_LOCAL_GEMMA_GGUF_URL or built-in default)")
+	cmd.Flags().StringVar(&url, "url", "", "GGUF URL (default: ASSISTCLAW_LOCAL_GEMMA_GGUF_URL or AssistClaw release asset)")
 	cmd.Flags().StringVar(&ggufPath, "gguf-path", "", "Destination GGUF path (default: <state_dir>/models/gemma-4-e2b-it.gguf)")
 	cmd.Flags().StringVar(&sha256, "sha256", "", "Optional SHA-256 hex digest to verify download")
 	cmd.Flags().BoolVar(&force, "force", false, "Force re-download even if destination file exists")

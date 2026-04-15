@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # Source URL for GGUF seed file used to publish first-party asset on each release.
+  # Set repository variable GEMMA_GGUF_SOURCE_URL (or job env) to enable.
+  GEMMA_GGUF_SOURCE_URL: ${{ vars.GEMMA_GGUF_SOURCE_URL }}
+
 jobs:
   build:
     name: Build ${{ matrix.target }}
@@ -111,11 +116,19 @@ jobs:
         with:
           path: bin-archives
           merge-multiple: true
+
+      - name: Download Gemma GGUF asset (first-party)
+        if: ${{ env.GEMMA_GGUF_SOURCE_URL != '' }}
+        run: |
+          mkdir -p dist
+          echo "Fetching GGUF from: ${GEMMA_GGUF_SOURCE_URL}"
+          curl -fL --retry 3 --retry-delay 2 --retry-all-errors \
+            -o dist/gemma-4-e2b-it.gguf "${GEMMA_GGUF_SOURCE_URL}"
+          sha256sum dist/gemma-4-e2b-it.gguf | awk '{print $1}' > dist/gemma-4-e2b-it.gguf.sha256
           
       - name: Create Release Notes
         id: release_notes
         run: |
-          mkdir -p dist
           cp bin-archives/* dist/ || true
           echo "## AssistClaw ${GITHUB_REF_NAME}" > release_notes.md
           if echo "${GITHUB_REF_NAME}" | grep -q '-'; then
@@ -125,6 +138,15 @@ jobs:
           fi
           echo "" >> release_notes.md
           echo "Automated binaries below." >> release_notes.md
+          echo "" >> release_notes.md
+          echo "Included assets:" >> release_notes.md
+          echo "- assistclaw binaries for supported targets" >> release_notes.md
+          if [ -f dist/gemma-4-e2b-it.gguf ]; then
+            echo "- gemma-4-e2b-it.gguf (for local-intel setup default URL)" >> release_notes.md
+            echo "- gemma-4-e2b-it.gguf.sha256" >> release_notes.md
+          else
+            echo "- gemma-4-e2b-it.gguf (not attached: set GEMMA_GGUF_SOURCE_URL variable to enable)" >> release_notes.md
+          fi
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

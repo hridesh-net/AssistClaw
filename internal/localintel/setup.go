@@ -13,8 +13,8 @@ import (
 )
 
 // DefaultGGUFURL is the default model download used by `assistclaw local-intel setup`
-// when no explicit URL/env override is provided.
-const DefaultGGUFURL = "https://huggingface.co/bartowski/google_gemma-2-2b-it-GGUF/resolve/main/google_gemma-2-2b-it-Q4_K_M.gguf"
+// when no explicit URL/env override is provided. It points to AssistClaw's own release assets.
+const DefaultGGUFURL = "https://github.com/hridesh-net/AssistClaw/releases/latest/download/gemma-4-e2b-it.gguf"
 
 // DefaultGGUFPath returns the managed filesystem path used for downloaded GGUF weights.
 func DefaultGGUFPath(stateDir string) string {
@@ -80,6 +80,9 @@ func BootstrapGGUF(ctx context.Context, opt BootstrapOptions) (BootstrapResult, 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return BootstrapResult{}, fmt.Errorf("localintel bootstrap: request: %w", err)
+	}
+	if tok := strings.TrimSpace(os.Getenv("ASSISTCLAW_LOCAL_GEMMA_GGUF_TOKEN")); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
