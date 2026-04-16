@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [v3.10.22] - 2026-04-16
+## [v3.10.26] - 2026-04-16
 
 ### Added
 - **`assistclaw doctor` (Sprint 03):** config validation via `LoadForDoctor` with structured issues, deprecated-key warnings, exit codes 0/1/2; LLM provider `HealthCheck` batch (45s) unless `--skip-network`; Telegram/Discord/Slack token checks plus one `Ping` each (`--channel-timeout`); webhooks, WhatsApp session, local intel checks; runbooks `doc/runbooks/doctor-config-validation.md` and `doctor-json-schema.md`.
