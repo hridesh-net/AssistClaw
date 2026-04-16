@@ -16,6 +16,7 @@ import (
 	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 	"github.com/assistclaw/assistclaw/internal/config"
+	"github.com/assistclaw/assistclaw/internal/localintel"
 	"github.com/assistclaw/assistclaw/internal/provider/bedrock"
 	"github.com/assistclaw/assistclaw/internal/skills"
 	"github.com/charmbracelet/huh"
@@ -1140,13 +1141,13 @@ func runOnboarding(configPath string) (bool, error) {
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).
 		Render("  On-device Gemma (optional)"))
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).
-		Render("  A small Gemma 4 E2B model can run locally and attach a short advisory before your cloud model acts. Requires a GGUF file on disk (or embedded weights). Official release binaries include local Gemma support by default.\n"))
+		Render("  A small Gemma 4 E2B model can run locally and attach a short advisory before your cloud model acts. Onboard will automatically use a packaged models/*.gguf first, then your release asset if needed. Official release binaries include local Gemma support by default.\n"))
 
 	formLocalIntel := huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Enable on-device Gemma (agent.local_intel)?").
-				Description("Adds a local pre-pass for routing hints; the main LLM stays your cloud provider.").
+				Description("Adds a local pre-pass for routing hints; the main LLM stays your cloud provider. Onboard will auto-provision the GGUF.").
 				Value(&localIntelEnabled),
 			huh.NewInput().
 				Title("Path to Gemma 4 E2B .gguf (optional)").
@@ -1156,6 +1157,33 @@ func runOnboarding(configPath string) (bool, error) {
 	).WithTheme(theme)
 	if err := formLocalIntel.Run(); err != nil {
 		return false, fmt.Errorf("onboarding interrupted")
+	}
+	if localIntelEnabled && strings.TrimSpace(localIntelGGUF) == "" {
+		stateDir := filepath.Dir(configPath)
+		dst := localintel.DefaultGGUFPath(stateDir)
+		fmt.Println()
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).
+			Render("  Preparing Local Gemma model"))
+		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).
+			Render("  Using packaged models/*.gguf if present; otherwise downloading from AssistClaw release assets."))
+		if src, ok := discoverBundledGGUF(dst); ok {
+			if err := copyFileAtomic(src, dst); err != nil {
+				return false, fmt.Errorf("local Gemma setup failed: copy bundled model: %w", err)
+			}
+			localIntelGGUF = dst
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("  ✔ Local Gemma prepared from packaged model"))
+		} else {
+			res, err := localintel.BootstrapGGUF(context.Background(), localintel.BootstrapOptions{
+				StateDir: stateDir,
+				GGUFPath: dst,
+				Progress: os.Stderr,
+			})
+			if err != nil {
+				return false, fmt.Errorf("local Gemma setup failed: %w", err)
+			}
+			localIntelGGUF = res.Path
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("  ✔ Local Gemma downloaded and prepared"))
+		}
 	}
 
 	// Phases 3-5: Gateway, Channels, Skills (simplified for brevity)
@@ -1681,10 +1709,15 @@ func runOnboarding(configPath string) (bool, error) {
 		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 		fmt.Println()
 		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).Render("  Local Gemma — next steps"))
-		fmt.Println(dim.Render("  • Install a binary with in-process Gemma:  make install EXTRA_TAGS=assistclaw_localgemma"))
-		fmt.Println(dim.Render("  • Or:  go build -tags fts5,assistclaw_localgemma -o assistclaw ./cmd/assistclaw"))
-		fmt.Println(dim.Render("  • Put your GGUF on disk (or set ASSISTCLAW_LOCAL_GEMMA_GGUF), unless you use an embedded-weights build."))
-		fmt.Println(dim.Render("  • Verify:  assistclaw doctor   (warns until GGUF + binary line up)"))
+		if g := strings.TrimSpace(localIntelGGUF); g != "" {
+			fmt.Println(dim.Render("  • GGUF ready at: " + g))
+		}
+		fmt.Println(dim.Render("  • Verify:  assistclaw doctor"))
+		if !localintel.CompiledWithLocalGemma() {
+			fmt.Println(dim.Render("  • This binary lacks in-process Gemma support; install a release binary with local Gemma enabled."))
+			fmt.Println(dim.Render("  • Dev fallback: make install EXTRA_TAGS=assistclaw_localgemma"))
+			fmt.Println(dim.Render("  • Or: go build -tags fts5,assistclaw_localgemma -o assistclaw ./cmd/assistclaw"))
+		}
 	}
 
 	// ── Auto-start on login (no prompt; idempotent on macOS/Linux) ────────────

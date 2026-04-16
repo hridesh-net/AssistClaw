@@ -150,9 +150,7 @@ install_binary() {
     copy_skills_dir
   else
     rm -f "$tmp_bin"
-    warn "Failed to download pre-built binary from $download_url"
-    warn "Falling back to compiling from source..."
-    build_binary_from_source
+    err "Failed to download pre-built binary from $download_url. This installer is binary-first; retry later, pin ASSISTCLAW_VERSION to a release with assets, or set FORCE_BUILD=1 if you explicitly want a source build."
   fi
 }
 
