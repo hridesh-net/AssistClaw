@@ -1173,6 +1173,8 @@ func runOnboarding(configPath string) (bool, error) {
 			localIntelGGUF = dst
 			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("  ✔ Local Gemma prepared from packaged model"))
 		} else {
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).
+				Render("  Downloading GGUF with progress..."))
 			res, err := localintel.BootstrapGGUF(context.Background(), localintel.BootstrapOptions{
 				StateDir: stateDir,
 				GGUFPath: dst,

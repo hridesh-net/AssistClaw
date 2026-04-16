@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // DefaultGGUFURL is the default model download used by `assistclaw local-intel setup`
@@ -101,10 +102,15 @@ func BootstrapGGUF(ctx context.Context, opt BootstrapOptions) (BootstrapResult, 
 
 	hasher := sha256.New()
 	src := io.TeeReader(resp.Body, hasher)
+	var progress *downloadProgress
 	if opt.Progress != nil {
-		src = io.TeeReader(src, opt.Progress)
+		progress = newDownloadProgress(opt.Progress, resp.ContentLength)
+		src = io.TeeReader(src, progress)
 	}
 	n, copyErr := io.Copy(out, src)
+	if progress != nil {
+		progress.finish()
+	}
 	closeErr := out.Close()
 	if copyErr != nil {
 		_ = os.Remove(tmp)
@@ -126,4 +132,91 @@ func BootstrapGGUF(ctx context.Context, opt BootstrapOptions) (BootstrapResult, 
 		return BootstrapResult{}, fmt.Errorf("localintel bootstrap: move into place: %w", err)
 	}
 	return BootstrapResult{Path: dst, Downloaded: true, Bytes: n}, nil
+}
+
+type downloadProgress struct {
+	w           io.Writer
+	total       int64
+	downloaded  int64
+	startedAt   time.Time
+	lastPrinted time.Time
+}
+
+func newDownloadProgress(w io.Writer, total int64) *downloadProgress {
+	now := time.Now()
+	return &downloadProgress{
+		w:           w,
+		total:       total,
+		startedAt:   now,
+		lastPrinted: now,
+	}
+}
+
+func (p *downloadProgress) Write(b []byte) (int, error) {
+	n := len(b)
+	p.downloaded += int64(n)
+	now := time.Now()
+	if now.Sub(p.lastPrinted) >= 500*time.Millisecond {
+		p.print(false)
+		p.lastPrinted = now
+	}
+	return n, nil
+}
+
+func (p *downloadProgress) finish() {
+	p.print(true)
+}
+
+func (p *downloadProgress) print(done bool) {
+	secs := time.Since(p.startedAt).Seconds()
+	speed := 0.0
+	if secs > 0 {
+		speed = float64(p.downloaded) / (1024 * 1024) / secs
+	}
+	if p.total > 0 {
+		pct := (float64(p.downloaded) / float64(p.total)) * 100
+		if pct > 100 {
+			pct = 100
+		}
+		bar := renderProgressBar(pct, 28)
+		_, _ = fmt.Fprintf(
+			p.w,
+			"\rlocal-intel setup: downloading GGUF... [%s] %6.2f%% (%6.1f/%6.1f MB) @ %.1f MB/s",
+			bar,
+			pct,
+			float64(p.downloaded)/(1024*1024),
+			float64(p.total)/(1024*1024),
+			speed,
+		)
+	} else {
+		_, _ = fmt.Fprintf(
+			p.w,
+			"\rlocal-intel setup: downloading GGUF... %6.1f MB @ %.1f MB/s",
+			float64(p.downloaded)/(1024*1024),
+			speed,
+		)
+	}
+	if done {
+		_, _ = fmt.Fprint(p.w, "\n")
+	}
+}
+
+func renderProgressBar(percent float64, width int) string {
+	if width <= 0 {
+		width = 20
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	filled := int((percent / 100.0) * float64(width))
+	if filled > width {
+		filled = width
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	return strings.Repeat("#", filled) + strings.Repeat("-", width-filled)
 }
