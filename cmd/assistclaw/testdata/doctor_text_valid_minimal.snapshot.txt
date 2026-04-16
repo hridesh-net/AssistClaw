@@ -1,0 +1,12 @@
+[skipped] agent.local_intel
+  agent.local_intel.enabled is false.
+[skipped] channel.whatsapp
+  Not configured (legacy channel; no adapter Ping).
+[skipped] channels.network
+  Channel API checks skipped (--skip-network).
+[ok] config.validate
+  <<CONFIG_PATH>>: parsed and validated
+[skipped] provider.health
+  LLM provider API checks skipped (--skip-network).
+[skipped] webhooks.gateway
+  webhooks.enabled is false (no incoming webhook routes).

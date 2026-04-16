@@ -1,0 +1,10 @@
+state_dir: "/tmp/assistclaw-doctor-test"
+routing:
+  default: "ollama/llama3.2"
+providers:
+  ollama:
+    base_url: "http://127.0.0.1:11434"
+    default_model: "llama3.2"
+gateway:
+  host: "127.0.0.1"
+  port: 18790

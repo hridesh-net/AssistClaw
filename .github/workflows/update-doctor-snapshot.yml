@@ -1,0 +1,26 @@
+# Regenerate cmd/assistclaw/testdata/doctor_text_valid_minimal.snapshot.txt when doctor text output changes.
+# Run manually, commit the diff locally (this workflow does not push).
+name: update-doctor-snapshot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate snapshot
+        run: UPDATE_SNAPSHOTS=1 go test ./cmd/assistclaw/ -run TestDoctorTextSnapshot_ValidMinimalSkipNetwork -count=1
+
+      - name: Show diff (commit locally if intended)
+        run: git diff -- cmd/assistclaw/testdata/doctor_text_valid_minimal.snapshot.txt || true

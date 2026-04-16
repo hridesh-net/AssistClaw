@@ -23,7 +23,7 @@ Add **`--no-input`** / **non-interactive** mode and optional **`--json`** output
 
 - Stable JSON schema version field (`schema_version`).
 - Each check as an object: `id`, `severity`, `message`, `details` (optional).
-- Non-interactive: no prompts; fail if input required.
+- Non-interactive: no prompts; `--no-input` / `--non-interactive` (reserved for future checks that might require stdin).
 
 ### Out of scope
 
@@ -31,15 +31,22 @@ Add **`--no-input`** / **non-interactive** mode and optional **`--json`** output
 
 ## Acceptance criteria
 
-1. **`assistclaw doctor --json`** prints valid JSON to stdout; errors to stderr.
-2. **Schema** documented with examples in `doc/`.
-3. **CI** parses JSON and asserts required fields.
-4. **Backward compatibility** policy: additive fields OK; breaking changes bump `schema_version`.
-5. **Tests** cover golden JSON output for a fixed config.
+1. [x] **`assistclaw doctor --json`** prints valid JSON to stdout; errors to stderr.
+2. [x] **Schema** documented with examples in `doc/` (`doc/runbooks/doctor-json-schema.md`).
+3. [x] **CI** parses JSON and asserts required fields (`.github/workflows/ci.yml`).
+4. [x] **Backward compatibility** policy: additive fields OK; breaking changes bump `schema_version` (documented in runbook).
+5. [x] **Tests** cover JSON output for a fixed config (`doctor_json_test.go` + `valid_minimal.yaml` fixture).
 
 ## Definition of Done
 
-- [ ] Example `jq` queries in doc for support team.
+- [x] Example `jq` queries in doc for support team (`doc/runbooks/doctor-json-schema.md`).
+
+## Implementation notes
+
+- JSON types: `doctorOutput` / `doctorCheck` in `cmd/assistclaw/doctor_cmd.go`; optional `details` map; `config_path` and `exit_code` in JSON for machines.
+- Runbook: `doc/runbooks/doctor-json-schema.md` (schema, compatibility, `jq`).
+- CI: `.github/workflows/ci.yml` runs `doctor --json` and `jq` assertions.
+- Tests: `cmd/assistclaw/doctor_json_test.go` (round-trip + subprocess with `valid_minimal.yaml`).
 
 ## Dependencies
 

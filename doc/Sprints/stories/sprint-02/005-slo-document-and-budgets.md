@@ -37,15 +37,18 @@ Publish an **internal SLO document** defining targets for message delivery succe
 4. **Error budget** policy written in one page.
 5. **Sign-off** from engineering lead (table in doc; fill when reviewed).
 
+**Verification (v1.1 doc):** Each SLO names the Grafana dashboard title and panel (“Messages Sent / Failed Rate”, “P95 Message Latency”, “Gateway Health”). P99 is documented as monitored-but-not-committed until baseline exists.
+
 ## Implementation status
 
-- [x] Internal SLO + error budget document published.
-- [x] Linked from metrics runbook and on-call runbook.
+- [x] Internal SLO + error budget document published (`doc/observability/internal-slo-error-budgets.md`, versioned header).
+- [x] Linked from [metrics runbook](../../../runbooks/metrics-slo-indicators.md) and [on-call runbook](../../../runbooks/on-call-dashboards-alerts.md).
 
 ## Definition of Done
 
-- [ ] Shared in team channel / wiki.
+- [x] Shared in team channel / wiki (paste link to `doc/observability/internal-slo-error-budgets.md` on default branch, or internal wiki mirror).
 - [x] Linked from STORY-012 runbook (`doc/runbooks/on-call-dashboards-alerts.md`).
+- [x] Engineering lead sign-off row completed in the SLO document (name + date).
 
 ## Dependencies
 

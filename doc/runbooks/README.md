@@ -5,6 +5,7 @@ Operational guides for AssistClaw. Start here during incidents, then open the sp
 | Runbook | Use when |
 |---------|----------|
 | [On-call: dashboards, alerts, triage](on-call-dashboards-alerts.md) | **First stop** — triage paths, CLI/curl commands, severities (STORY-012) |
+| [`assistclaw doctor` — config validation](doctor-config-validation.md) | YAML/schema validation, exit codes, deprecated keys (STORY-013) |
 | [Metrics and SLO indicators](metrics-slo-indicators.md) | Metric names, `/metrics` scrape, alert YAML examples |
 | [Internal SLOs & error budgets](../observability/internal-slo-error-budgets.md) | Targets, budgets, monthly review |
 | [DLQ inspection](dlq-inspection.md) | Outbound failures, DLQ file format, replay notes |

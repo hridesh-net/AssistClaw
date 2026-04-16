@@ -28,6 +28,7 @@ type Store struct {
 	dlqDepth               map[string]float64
 	messageLatency         map[string]*latencyHistogram
 	gatewayUp              float64
+	preflightFailuresTotal uint64
 }
 
 func NewStore() *Store {
@@ -105,6 +106,13 @@ func (s *Store) SetGatewayUp(up bool) {
 	s.gatewayUp = 0
 }
 
+// IncPreflightFailures increments when CLI preflight (doctor subset) fails before start.
+func (s *Store) IncPreflightFailures() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.preflightFailuresTotal++
+}
+
 func (s *Store) RenderPrometheus() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -138,6 +146,10 @@ func (s *Store) RenderPrometheus() string {
 	b.WriteString("# HELP gateway_health Gateway health indicator (1=up,0=down).\n")
 	b.WriteString("# TYPE gateway_health gauge\n")
 	fmt.Fprintf(&b, "gateway_health %g\n", s.gatewayUp)
+
+	b.WriteString("# HELP preflight_failures_total Total preflight failures before daemon/gateway start.\n")
+	b.WriteString("# TYPE preflight_failures_total counter\n")
+	fmt.Fprintf(&b, "preflight_failures_total %d\n", s.preflightFailuresTotal)
 
 	b.WriteString("# HELP message_latency_seconds Outbound message latency in seconds.\n")
 	b.WriteString("# TYPE message_latency_seconds histogram\n")
@@ -211,6 +223,7 @@ func (s *Store) ResetForTests() {
 	s.dlqDepth = make(map[string]float64)
 	s.messageLatency = make(map[string]*latencyHistogram)
 	s.gatewayUp = 0
+	s.preflightFailuresTotal = 0
 }
 
 var (

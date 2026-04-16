@@ -39,7 +39,16 @@ For each **enabled channel** (Telegram, Discord, Slack, WhatsApp), implement **n
 
 ## Definition of Done
 
-- [ ] Table in doc: channel vs what is verified.
+- [x] Table in doc: channel vs what is verified (`doc/runbooks/doctor-config-validation.md`).
+
+## Implementation status
+
+- [x] Token format pre-checks (Telegram / Discord / Slack) before adapter init; one API call per channel (`Ping`) with `--channel-timeout` (default 15s each).
+- [x] Actionable hints for common HTTP/auth failures (`formatChannelPingError`); errors sanitized (`sanitizeDoctorMessage`).
+- [x] `webhooks.gateway` skipped check when webhooks enabled (documents gateway / public URL; no default HTTP probe).
+- [x] WhatsApp: clarified OK message — session file only; no cloud token validation in doctor.
+- [x] Tests: `cmd/assistclaw/doctor_channel_test.go` (no network).
+- [x] Doc table + performance / timeout notes; overall doctor context 120s.
 
 ## Dependencies
 

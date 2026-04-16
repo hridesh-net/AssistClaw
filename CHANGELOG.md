@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.21] - 2026-04-16
+
+### Added
+- **`assistclaw doctor` (Sprint 03):** config validation via `LoadForDoctor` with structured issues, deprecated-key warnings, exit codes 0/1/2; LLM provider `HealthCheck` batch (45s) unless `--skip-network`; Telegram/Discord/Slack token checks plus one `Ping` each (`--channel-timeout`); webhooks, WhatsApp session, local intel checks; runbooks `doc/runbooks/doctor-config-validation.md` and `doctor-json-schema.md`.
+- **`assistclaw doctor --json`:** `schema_version`, `config_path`, `exit_code`, checks with optional `details`; `--no-input` / `--non-interactive`; CI `jq` validation.
+- **Preflight before start:** `assistclaw start` / `restart`, `gateway start` / `serve` run fast doctor subset by default; `--skip-preflight`, `--preflight-full`; `preflight_failures_total` metric.
+- **Fresh-install CI:** `scripts/ci-fresh-install.sh` on `ubuntu-latest` and `macos-latest`; `update-doctor-snapshot` workflow (`workflow_dispatch`).
+- **`SKIP_NODE=1` and `ASSISTCLAW_INSTALL_GO_TAGS`** for `install.sh` (CI fresh-install uses `fts5,assistclaw_localgemma`).
+- **Doctor text golden snapshot** (`cmd/assistclaw/testdata/…`) and snapshot test; **TTFM** methodology in `doc/runbooks/ttfm-measurement.md`.
+
+### Changed
+- **`assistclaw doctor` (text mode):** lines sorted by check **`id`** for stable output and snapshots.
+
 ## [v3.10.18] - 2026-04-15
 ### Fixed
 - **Cross-platform startup safety (all OS/arch):** `github.com/jupiterrider/ffi` initialization now fails open instead of panicking when dynamic loading is unavailable. AssistClaw commands continue to run, while local Gemma reports a clear unavailable error on unsupported environments.

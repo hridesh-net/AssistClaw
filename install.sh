@@ -12,7 +12,9 @@
 #   INSTALL_DIR          Binary destination (default: /usr/local/bin or ~/.local/bin if not writable)
 #   STATE_DIR            Config/state root (default: ~/.assistclaw)
 #   FORCE_BUILD=1        Build from source instead of downloading release
+#   ASSISTCLAW_INSTALL_GO_TAGS  Go build tags for source build (default: fts5). CI sets fts5,assistclaw_localgemma
 #   SKIP_VENV=1          Skip Python venv creation
+#   SKIP_NODE=1          Skip Node/pnpm/TypeScript install (CI fresh-install smoke)
 #   SKIP_SENSING=1       Skip optional C++ sensing build
 #   SKIP_SERVICE=1       Skip launchd/systemd login service registration (macOS/Linux)
 #   WITH_MEMPALACE=1     After install, run managed MemPalace bootstrap (venv + pip + mempalace init)
@@ -185,7 +187,8 @@ build_binary_from_source() {
   fi
   local tmp_build
   tmp_build="$(mktemp "${TMPDIR:-/tmp}/assistclaw-build.XXXXXX")"
-  (cd "$build_root" && go build -mod=vendor -tags fts5 -ldflags "-s -w ${ver_ldflags}" -o "$tmp_build" ./cmd/assistclaw)
+  local go_tags="${ASSISTCLAW_INSTALL_GO_TAGS:-fts5}"
+  (cd "$build_root" && CGO_ENABLED="${CGO_ENABLED:-1}" go build -mod=vendor -tags "$go_tags" -ldflags "-s -w ${ver_ldflags}" -o "$tmp_build" ./cmd/assistclaw)
   install -m 0755 "$tmp_build" "$INSTALL_DIR/assistclaw"
   rm -f "$tmp_build"
   if [[ -n "$tmp_src" ]]; then
@@ -217,6 +220,11 @@ copy_skills_dir() {
 # Node.js + pnpm (optional TS layer)
 # ─────────────────────────────────────────────
 setup_node() {
+  [[ "${SKIP_NODE:-0}" == "1" ]] && {
+    log "SKIP_NODE=1 — skipping Node.js / pnpm / TypeScript install."
+    return 0
+  }
+
   if [[ ! -f "$REPO_ROOT/package.json" ]]; then
     return
   fi

@@ -2,8 +2,8 @@
 
 | Field | Value |
 |-------|--------|
-| **Version** | 1.0 |
-| **Last updated** | 2026-04-14 |
+| **Version** | 1.1 |
+| **Last updated** | 2026-04-16 |
 | **Owner** | AssistClaw engineering lead |
 | **Audience** | Internal engineering / ops (not customer SLA) |
 
@@ -30,21 +30,22 @@ Define measurable reliability targets for AssistClaw in production-like deployme
 - **Good events:** `messages_sent_total` increments (success path).
 - **Valid requests:** `messages_sent_total + messages_failed_total` (attempts).
 - **SLI:** `sum(increase(messages_sent_total[30d])) / sum(increase((messages_sent_total + messages_failed_total)[30d]))`.
-- **Dashboard:** Panel family “Send success / failure” in `grafana-sprint-02-channel-golden-signals.json` (or equivalent using the same metric names).
+- **Dashboard (STORY-008):** Grafana dashboard `AssistClaw Channel Golden Signals (Sprint-02)` — panel **“Messages Sent / Failed Rate”** (`doc/observability/grafana-sprint-02-channel-golden-signals.json`).
 - **Gap:** If per-channel SLO is required, duplicate panels filtered by `channel` label; single-job scrape must still use low-cardinality labels only.
 
 ### SLO 2 — Outbound send latency (P95)
 
 - **Target:** **P95** of `message_latency_seconds` bucket **≤ 10s** over 30d for outbound sends (excluding cold starts / first message after idle — document exclusions in incident notes if needed).
 - **SLI:** Prometheus histogram `histogram_quantile(0.95, sum(rate(message_latency_seconds_bucket[5m])) by (le, channel))` aggregated over the window (implementation-specific recording rules recommended).
-- **Dashboard:** Histogram / latency panel in `grafana-sprint-02-channel-golden-signals.json`.
+- **Dashboard (STORY-008):** Same dashboard — panel **“P95 Message Latency”**.
+- **P99 (not an SLO yet):** Track `histogram_quantile(0.99, …)` in Grafana for regression visibility; no committed target until we have a baseline from production-like traffic. **Gap:** add a dedicated P99 panel or recording rule when burn patterns justify a fourth SLO.
 - **Gap:** If gateway and worker are split processes, ensure scrape covers the component that observes latency; otherwise SLO is “gateway-observed latency” only.
 
 ### SLO 3 — Gateway availability
 
 - **Target:** **99.5%** monthly uptime of the HTTP gateway process from the perspective of the metrics endpoint (or health check equivalent).
 - **SLI:** Fraction of 1-minute intervals in which `gateway_health == 1` (or successful `GET /metrics` with 200) over the month.
-- **Dashboard:** Health / up panel using `gateway_health` or blackbox check in Grafana.
+- **Dashboard (STORY-008):** Same dashboard — panel **“Gateway Health”** (supplement with external blackbox or uptime checks if your deployment exposes the gateway behind TLS or a reverse proxy).
 - **Gap:** `gateway_health` reflects in-process state; use synthetic probes for TLS / external routing if those layers are in scope for your deployment.
 
 ## Alerting thresholds (leading indicators)
@@ -69,9 +70,11 @@ These are **not** SLOs themselves; they warn before budget exhaustion. Align wit
 
 ## Sign-off
 
+Complete after review (names and dates are required for STORY-011 “Definition of Done” on the sprint story).
+
 | Role | Name | Date |
 |------|------|------|
-| Engineering lead | *pending* | |
+| Engineering lead | *pending — fill on review* | |
 
 ---
 

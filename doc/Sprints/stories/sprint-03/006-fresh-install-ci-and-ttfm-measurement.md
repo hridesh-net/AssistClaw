@@ -31,15 +31,20 @@ Add **scripted fresh install** tests (Linux + macOS) and **golden output** snaps
 
 ## Acceptance criteria
 
-1. **CI job** runs on PR or nightly; failure blocks release branch if configured.
-2. **Golden files** updated via intentional `UPDATE_SNAPSHOTS=1` workflow.
-3. **TTFM** baseline documented with date and hardware profile.
-4. **Flake policy**: retries with root-cause ticket if flaky.
-5. **README** links to TTFM expectations.
+1. [x] **CI job** runs on PR (and can be extended with `schedule`); `fresh-install` job in `.github/workflows/ci.yml` on Linux + macOS.
+2. [x] **Golden files** updated via `UPDATE_SNAPSHOTS=1 go test …` or `.github/workflows/update-doctor-snapshot.yml` (`workflow_dispatch`).
+3. [x] **TTFM** baseline table and hardware profile in `doc/runbooks/ttfm-measurement.md` (as of 2026-04-16).
+4. [x] **Flake policy** documented in same runbook (retry once, then ticket).
+5. [x] **README** links to TTFM runbook.
 
 ## Definition of Done
 
-- [ ] First successful CI run logged in CHANGELOG or internal release notes.
+- [x] First successful CI run noted under **Unreleased** in `CHANGELOG.md` (fresh-install + snapshot + TTFM runbook).
+
+## Implementation notes
+
+- `scripts/ci-fresh-install.sh`, `install.sh` (`SKIP_NODE`, `ASSISTCLAW_INSTALL_GO_TAGS`), sorted doctor text, `cmd/assistclaw/doctor_text_snapshot_test.go` + `testdata/doctor_text_valid_minimal.snapshot.txt`.
+- Windows: not in fresh-install matrix; documented in TTFM runbook.
 
 ## Dependencies
 

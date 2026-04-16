@@ -209,7 +209,7 @@ Interactive wizard — picks your LLM provider, configures channels, sets up Pla
 # Interactive REPL
 assistclaw agent
 
-# Background daemon
+# Background daemon (runs fast preflight first: same checks as `assistclaw doctor --skip-network`)
 assistclaw start --daemon
 
 # Single message
@@ -222,6 +222,10 @@ assistclaw auto "Monitor disk space and summarize weekly"
 assistclaw cron list
 assistclaw cron add "@hourly" "Quick health check of this machine"
 ```
+
+**Preflight before start:** `assistclaw start`, `assistclaw restart`, `assistclaw gateway start`, and `assistclaw gateway serve` run a **fast local check** (config validation + non-network doctor checks) before binding the gateway. Failures exit non-zero so the process does not listen on a broken config. Use **`--preflight-full`** to run the same network probes as full `assistclaw doctor` (LLM + channel APIs). Use **`--skip-preflight`** only if you accept the risk (a single warning is printed).
+
+**Fresh install CI and TTFM:** CI runs **`scripts/ci-fresh-install.sh`** on **Linux and macOS** (source `install.sh` + `doctor` on a minimal config). Doctor **text** lines are **sorted by check id** for stable golden snapshots; refresh with **`UPDATE_SNAPSHOTS=1 go test ./cmd/assistclaw/ -run TestDoctorTextSnapshot_ValidMinimalSkipNetwork -count=1`** or the **`update-doctor-snapshot`** workflow. For **time-to-first-message** definitions, baselines, and flake policy, see [doc/runbooks/ttfm-measurement.md](doc/runbooks/ttfm-measurement.md).
 
 ---
 
@@ -300,7 +304,7 @@ channels:
 | `assistclaw onboard` | Interactive setup wizard |
 | `assistclaw agent` | Start REPL session |
 | `assistclaw agent --message "..."` | Single-shot message |
-| `assistclaw start --daemon` | Launch as background service |
+| `assistclaw start --daemon` | Launch as background service (preflight runs first; see `--skip-preflight` / `--preflight-full`) |
 | `assistclaw stop` | Stop background service |
 | `assistclaw status` | Show PID, uptime, connected channels |
 | `assistclaw restart` | Restart service |

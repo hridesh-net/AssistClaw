@@ -60,7 +60,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.20" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.21" // Overridden by -ldflags "-X main.version=..." during build
 
 type reliableToolSender struct {
 	rs *chadapter.ReliableSender
@@ -268,17 +268,19 @@ func agentCmd(gf *globalFlags) *cobra.Command {
 
 func startCmd(gf *globalFlags) *cobra.Command {
 	var daemon bool
+	var skipPreflight, preflightFull bool
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start AssistClaw in background mode",
+		Long: `Starts AssistClaw with the gateway and messaging channels.
+
+By default, runs a fast preflight (same checks as assistclaw doctor --skip-network) before binding ports. Use --preflight-full to probe LLM and channel APIs. Use --skip-preflight only if you trust this environment.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if daemon {
-				return Detach("start")
-			}
-			return runAgent(gf, gf.configPath, "", "", "", true, false, false)
+			return execStart(gf, daemon, skipPreflight, preflightFull, cmd)
 		},
 	}
 	cmd.Flags().BoolVarP(&daemon, "daemon", "d", false, "Run detached in the background")
+	registerPreflightFlags(cmd, &skipPreflight, &preflightFull)
 	return cmd
 }
 
@@ -381,15 +383,18 @@ func statusCmd(gf *globalFlags) *cobra.Command {
 }
 
 func restartCmd(gf *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	var skipPreflight, preflightFull bool
+	cmd := &cobra.Command{
 		Use:   "restart",
 		Short: "Restart the background AssistClaw process",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = stopCmd(gf).RunE(cmd, args)
 			time.Sleep(1 * time.Second)
-			return startCmd(gf).RunE(cmd, args)
+			return execStart(gf, false, skipPreflight, preflightFull, cmd)
 		},
 	}
+	registerPreflightFlags(cmd, &skipPreflight, &preflightFull)
+	return cmd
 }
 
 // ─────────────────────────────────────────────
@@ -862,6 +867,7 @@ Extend behavior via skills, MCP, channels, or prompt_files as needed.`,
 // ─────────────────────────────────────────────
 
 func gatewayCmd(gf *globalFlags) *cobra.Command {
+	var skipPreflight, preflightFull bool
 	cmd := &cobra.Command{
 		Use:   "gateway",
 		Short: "Manage the AssistClaw Gateway and Web UI",
@@ -872,14 +878,24 @@ Subcommands:
   stop     Stop the running background daemon
   restart  Restart the background daemon
   serve    Run the gateway in the foreground (blocks terminal)
-  status   Show daemon status (alias of 'assistclaw status')`,
+  status   Show daemon status (alias of 'assistclaw status')
+
+By default, start and serve run a fast preflight (doctor subset, --skip-network) before binding. Use --preflight-full for full network checks.`,
 	}
+	registerGatewayPreflightFlags(cmd, &skipPreflight, &preflightFull)
 
 	// gateway start — alias of 'assistclaw start --daemon'
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start",
 		Short: "Start AssistClaw daemon in background (web UI + agent + channels)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			log := buildLogger(gf.logLevel)
+			defer log.Sync() //nolint:errcheck
+			pctx, cancel := context.WithTimeout(context.Background(), preflightDefaultTimeout)
+			defer cancel()
+			if err := runPreflight(pctx, gf, preflightOpts{Skip: skipPreflight, Full: preflightFull}, log, cmd.ErrOrStderr()); err != nil {
+				return err
+			}
 			return Detach("start")
 		},
 	})
@@ -912,6 +928,12 @@ Subcommands:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log := buildLogger(gf.logLevel)
 			defer log.Sync() //nolint:errcheck
+
+			pctx, cancel := context.WithTimeout(context.Background(), preflightDefaultTimeout)
+			defer cancel()
+			if err := runPreflight(pctx, gf, preflightOpts{Skip: skipPreflight, Full: preflightFull}, log, cmd.ErrOrStderr()); err != nil {
+				return err
+			}
 
 			cfg, err := loadConfig(gf.configPath, log)
 			if err != nil {

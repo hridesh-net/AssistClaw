@@ -37,9 +37,17 @@ Add **network checks** to doctor: for each configured LLM provider, perform a li
 4. **Doc** explains corporate proxy requirements if any.
 5. **Exit code** aligns with STORY-013 policy.
 
+## Implementation status
+
+- [x] `assistclaw doctor` calls `registerProviders` + [`Registry.CheckAll`](../../../../internal/provider/registry.go) (`HealthCheck` per provider) with a **45s** timeout, unless `--skip-network` (same as channel skips).
+- [x] Check IDs: `provider.<name>`; messages use `sanitizeDoctorMessage` (`sk-…`, `Bearer …`); hints for 401/403/timeout/DNS-style errors.
+- [x] Tests: `cmd/assistclaw/doctor_sanitize_test.go` (no live keys).
+- [x] Doc: [doctor-config-validation.md](../../../runbooks/doctor-config-validation.md) — LLM section, proxy env vars, troubleshooting “API works but doctor fails”, exit code row updated.
+- [x] CI unchanged: `doctor --skip-network` avoids provider calls in CI.
+
 ## Definition of Done
 
-- [ ] Runbook entry: “API works but doctor fails” troubleshooting.
+- [x] Runbook entry: “API works but doctor fails” troubleshooting (in `doc/runbooks/doctor-config-validation.md`).
 
 ## Dependencies
 

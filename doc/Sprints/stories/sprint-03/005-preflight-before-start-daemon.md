@@ -31,15 +31,15 @@ Run **`doctor` checks** (or a fast subset) automatically before starting the dae
 
 ## Acceptance criteria
 
-1. **Default** path runs preflight; documented behavior.
-2. **Exit code** non-zero on failure; no partial listen on invalid config.
-3. **`--skip-preflight`** logs a single WARNING with security note.
-4. **Tests** for both success and failure paths.
-5. **Doc** updated in Quick Start.
+1. [x] **Default** path runs preflight; documented behavior (README + command help).
+2. [x] **Exit code** non-zero on failure; no partial listen on invalid config (preflight runs before `Detach` / `runAgent` / `gateway serve` load).
+3. [x] **`--skip-preflight`** logs a single WARNING with security note (stderr).
+4. [x] **Tests** for both success and failure paths (`cmd/assistclaw/preflight_test.go`).
+5. [x] **Doc** updated in Quick Start (README Run section).
 
 ## Definition of Done
 
-- [ ] Metrics: `preflight_failures_total` (optional Sprint 2 alignment).
+- [x] Metrics: `preflight_failures_total` (`internal/observability/metrics`; incremented on preflight failure).
 
 ## Dependencies
 

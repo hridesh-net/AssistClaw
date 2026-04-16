@@ -1714,7 +1714,7 @@ func runOnboarding(configPath string) (bool, error) {
 		if g := strings.TrimSpace(localIntelGGUF); g != "" {
 			fmt.Println(dim.Render("  • GGUF ready at: " + g))
 		}
-		fmt.Println(dim.Render("  • Verify:  assistclaw doctor"))
+		fmt.Println(dim.Render("  • Verify:  assistclaw doctor   (see doc/runbooks/doctor-config-validation.md)"))
 		if !localintel.CompiledWithLocalGemma() {
 			fmt.Println(dim.Render("  • This binary lacks in-process Gemma support; install a release binary with local Gemma enabled."))
 			fmt.Println(dim.Render("  • Dev fallback: make install EXTRA_TAGS=assistclaw_localgemma"))
@@ -1812,7 +1812,7 @@ func buildChannelSetupGuideLines(selectedChannels []string, gwHost string, gwPor
 	}
 
 	out = append(out,
-		"[All channels] Use `assistclaw doctor --fix` to validate channel tokens and config.",
+		"[All channels] Run `assistclaw doctor` to validate config and channel tokens (doc/runbooks/doctor-config-validation.md).",
 		"[Docs] Telegram setup: doc/channels/telegram-setup.md",
 		"[Docs] Discord setup: doc/channels/discord-setup.md",
 		fmt.Sprintf("[Web UI] http://%s:%d", gwHost, gwPort),
