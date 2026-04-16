@@ -140,6 +140,7 @@ type downloadProgress struct {
 	downloaded  int64
 	startedAt   time.Time
 	lastPrinted time.Time
+	lastWidth   int
 }
 
 func newDownloadProgress(w io.Writer, total int64) *downloadProgress {
@@ -178,27 +179,35 @@ func (p *downloadProgress) print(done bool) {
 		if pct > 100 {
 			pct = 100
 		}
-		bar := renderProgressBar(pct, 28)
-		_, _ = fmt.Fprintf(
-			p.w,
-			"\rlocal-intel setup: downloading GGUF... [%s] %6.2f%% (%6.1f/%6.1f MB) @ %.1f MB/s",
-			bar,
+		line := fmt.Sprintf(
+			"GGUF [%s] %3.0f%% %.0f/%.0fMB %.1fMB/s",
+			renderProgressBar(pct, 16),
 			pct,
 			float64(p.downloaded)/(1024*1024),
 			float64(p.total)/(1024*1024),
 			speed,
 		)
+		p.writeLine(line)
 	} else {
-		_, _ = fmt.Fprintf(
-			p.w,
-			"\rlocal-intel setup: downloading GGUF... %6.1f MB @ %.1f MB/s",
+		line := fmt.Sprintf(
+			"GGUF %.0fMB %.1fMB/s",
 			float64(p.downloaded)/(1024*1024),
 			speed,
 		)
+		p.writeLine(line)
 	}
 	if done {
 		_, _ = fmt.Fprint(p.w, "\n")
 	}
+}
+
+func (p *downloadProgress) writeLine(line string) {
+	padding := ""
+	if extra := p.lastWidth - len(line); extra > 0 {
+		padding = strings.Repeat(" ", extra)
+	}
+	_, _ = fmt.Fprintf(p.w, "\r%s%s", line, padding)
+	p.lastWidth = len(line)
 }
 
 func renderProgressBar(percent float64, width int) string {
