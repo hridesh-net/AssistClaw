@@ -1,0 +1,12 @@
+# Gemma 4 E2B-IT (Q4_K_M) GGUF — download mirrors
+
+GitHub Releases cannot attach this file: the REST API enforces a maximum
+asset size of 2147483648 bytes (2 GiB). The default Q4_K_M GGUF is ~3 GiB.
+
+`assistclaw onboard` / `assistclaw local-intel setup` use the same public
+mirrors (no GitHub login):
+
+  https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf
+  https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf
+
+Override with ASSISTCLAW_LOCAL_GEMMA_GGUF_URL or ASSISTCLAW_LOCAL_GEMMA_GGUF.

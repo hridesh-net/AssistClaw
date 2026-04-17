@@ -10,11 +10,6 @@ on:
 permissions:
   contents: write
 
-env:
-  # Optional override for CI fetch before uploading gemma-4-e2b-it.gguf. When unset,
-  # the release job uses the same public Hugging Face URL as OpsIntelligence localintel.
-  GEMMA_GGUF_SOURCE_URL: ${{ vars.GEMMA_GGUF_SOURCE_URL }}
-
 jobs:
   build:
     name: Build ${{ matrix.target }}
@@ -117,40 +112,13 @@ jobs:
           path: bin-archives
           merge-multiple: true
 
-      - name: Download Gemma GGUF asset (first-party)
-        env:
-          GEMMA_SKIP: ${{ vars.GEMMA_GGUF_SKIP }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${GEMMA_SKIP}" == "1" || "${GEMMA_SKIP}" == "true" ]]; then
-            echo "Skipping Gemma GGUF (GEMMA_GGUF_SKIP is set)."
-            exit 0
-          fi
-          DEFAULT_URL='https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf'
-          SRC="${GEMMA_GGUF_SOURCE_URL:-}"
-          if [[ -z "${SRC}" ]]; then
-            SRC="${DEFAULT_URL}"
-          fi
-          mkdir -p dist
-          out="dist/gemma-4-e2b-it.gguf"
-          echo "Fetching GGUF from: ${SRC}"
-          curl -fL --retry 5 --retry-delay 5 --retry-all-errors \
-            -A "AssistClaw-release-ci (+https://github.com/hridesh-net/AssistClaw)" \
-            -o "${out}" "${SRC}"
-          sz=$(stat -c%s "${out}" 2>/dev/null || stat -f%z "${out}")
-          if [[ "${sz}" -lt 104857600 ]]; then
-            echo "::error::Downloaded file is only ${sz} bytes (expected hundreds of MB+)."
-            exit 1
-          fi
-          sha256sum "${out}" | awk '{print $1}' > dist/gemma-4-e2b-it.gguf.sha256
-          echo "Gemma GGUF OK: ${sz} bytes."
-
+      # GitHub caps release assets at 2 GiB; Gemma Q4_K_M GGUF is ~3 GiB — ship manifest only.
       - name: Create Release Notes
         id: release_notes
         run: |
           mkdir -p dist
           cp bin-archives/* dist/ || true
+          cp release/gemma-4-e2b-it-MIRROR_MANIFEST.txt dist/
           echo "## AssistClaw ${GITHUB_REF_NAME}" > release_notes.md
           if echo "${GITHUB_REF_NAME}" | grep -q '-'; then
             echo "**Pre-release (beta / RC).** Not marked stable; expect changes before the final release." >> release_notes.md
@@ -162,30 +130,7 @@ jobs:
           echo "" >> release_notes.md
           echo "Included assets:" >> release_notes.md
           echo "- assistclaw binaries for supported targets" >> release_notes.md
-          if [ -f dist/gemma-4-e2b-it.gguf ]; then
-            echo "- gemma-4-e2b-it.gguf (for local-intel setup default URL)" >> release_notes.md
-            echo "- gemma-4-e2b-it.gguf.sha256" >> release_notes.md
-          else
-            echo "- gemma-4-e2b-it.gguf (not attached: download step failed or GEMMA_GGUF_SKIP set)" >> release_notes.md
-          fi
-
-      - name: Verify Gemma attached for release
-        if: ${{ vars.GEMMA_GGUF_SKIP != 'true' && vars.GEMMA_GGUF_SKIP != '1' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          f="dist/gemma-4-e2b-it.gguf"
-          if [[ ! -f "${f}" ]]; then
-            echo "::error::${f} missing — set GEMMA_GGUF_SKIP=true only if you intentionally ship without Gemma."
-            ls -la dist/ || true
-            exit 1
-          fi
-          sz=$(stat -c%s "${f}" 2>/dev/null || stat -f%z "${f}")
-          if [[ "${sz}" -lt 104857600 ]]; then
-            echo "::error::${f} too small (${sz} b)."
-            exit 1
-          fi
-          test -f dist/gemma-4-e2b-it.gguf.sha256
+          echo "- gemma-4-e2b-it-MIRROR_MANIFEST.txt (GGUF URLs — GitHub asset limit 2 GiB)" >> release_notes.md
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
