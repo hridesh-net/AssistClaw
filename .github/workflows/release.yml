@@ -91,8 +91,8 @@ jobs:
           CXX: zig c++ -target aarch64-linux-musl
         run: |
           mkdir -p dist
-          # Keep dynamic linking for libffi/purego so local Gemma runtime can dlopen on ARM64.
-          go build -mod=vendor -tags fts5,assistclaw_localgemma -ldflags "-X main.version=${{ github.ref_name }} -s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
+          # Same as OpsIntelligence: musl static + libffi/purego panics at init with assistclaw_localgemma.
+          go build -mod=vendor -tags fts5 -ldflags "-X main.version=${{ github.ref_name }} -s -w" -o dist/assistclaw-${{ matrix.target }}${{ matrix.ext }} ./cmd/assistclaw
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
