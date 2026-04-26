@@ -7,37 +7,40 @@ import (
 
 var capabilityRegistry = map[string]ChannelCapabilities{
 	"telegram": {
-		Threading:        true,
-		Attachments:      true,
-		DirectMessages:   true,
-		GroupMessages:    true,
-		Mentions:         true,
-		Voice:            false,
-		Reactions:        true,
-		Edits:            true,
-		MaxMessageLength: 4096,
+		Threading:          true,
+		Attachments:        true,
+		DirectMessages:     true,
+		GroupMessages:      true,
+		Mentions:           true,
+		Voice:              false,
+		Reactions:          true,
+		Edits:              true,
+		MaxMessageLength:   4096,
+		InteractiveButtons: true,
 	},
 	"discord": {
-		Threading:        true,
-		Attachments:      true,
-		DirectMessages:   true,
-		GroupMessages:    true,
-		Mentions:         true,
-		Voice:            true,
-		Reactions:        true,
-		Edits:            true,
-		MaxMessageLength: 2000,
+		Threading:          true,
+		Attachments:        true,
+		DirectMessages:     true,
+		GroupMessages:      true,
+		Mentions:           true,
+		Voice:              true,
+		Reactions:          true,
+		Edits:              true,
+		MaxMessageLength:   2000,
+		InteractiveButtons: true,
 	},
 	"slack": {
-		Threading:        true,
-		Attachments:      true,
-		DirectMessages:   true,
-		GroupMessages:    true,
-		Mentions:         true,
-		Voice:            false,
-		Reactions:        true,
-		Edits:            true,
-		MaxMessageLength: 40000,
+		Threading:          true,
+		Attachments:        true,
+		DirectMessages:     true,
+		GroupMessages:      true,
+		Mentions:           true,
+		Voice:              false,
+		Reactions:          true,
+		Edits:              true,
+		MaxMessageLength:   40000,
+		InteractiveButtons: true,
 	},
 	"whatsapp": {
 		Threading:        false,
@@ -72,4 +75,11 @@ func RegisterCapabilities(channelType string, caps ChannelCapabilities) {
 	capabilityRegistryMu.Lock()
 	capabilityRegistry[channelType] = caps
 	capabilityRegistryMu.Unlock()
+}
+
+// BuiltinCaps returns capabilities for channelType from the global registry.
+// Built-in [Identity] implementations should delegate [Identity.Capabilities] here
+// so the matrix is defined only in capability_registry.go (DRY).
+func BuiltinCaps(channelType string) (ChannelCapabilities, bool) {
+	return CapabilitiesFor(channelType)
 }

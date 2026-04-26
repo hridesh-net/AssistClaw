@@ -61,6 +61,8 @@ func New(cfg Config, fallback provider.Provider) *Provider {
 // Name returns "plano".
 func (p *Provider) Name() string { return ProviderName }
 
+func (p *Provider) Caps() provider.ProviderCaps { return p.inner.Caps() }
+
 // HealthCheck verifies Plano is reachable.
 func (p *Provider) HealthCheck(ctx context.Context) error {
 	return p.ValidateModel(ctx, "")

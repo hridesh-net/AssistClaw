@@ -63,17 +63,11 @@ func (c *Channel) AdapterVersion() int {
 }
 
 func (c *Channel) Capabilities() adapter.ChannelCapabilities {
-	return adapter.ChannelCapabilities{
-		Threading:        true,
-		Attachments:      true,
-		DirectMessages:   true,
-		GroupMessages:    true,
-		Mentions:         true,
-		Voice:            false,
-		Reactions:        true,
-		Edits:            true,
-		MaxMessageLength: 40000,
+	caps, ok := adapter.BuiltinCaps(c.Name())
+	if !ok {
+		panic("internal/channels/adapter: missing capability_registry entry for " + c.Name())
 	}
+	return caps
 }
 
 // WithReliableOutbound wires shared adapter reliability for Slack reply sends.
@@ -103,7 +97,14 @@ func (c *Channel) Send(ctx context.Context, msg adapter.OutboundMessage) (*adapt
 	if body == "" {
 		return nil, adapter.NewChannelError(adapter.ErrorKindPermanent, "slack: empty outbound body", nil)
 	}
-	opts := []slack.MsgOption{slack.MsgOptionText(body, false)}
+	caps, _ := adapter.BuiltinCaps(c.Name())
+	var opts []slack.MsgOption
+	if caps.InteractiveButtons && len(msg.InlineKeyboard) > 0 {
+		blocks := slackBlocksFromMail(body, msg.InlineKeyboard)
+		opts = append(opts, slack.MsgOptionBlocks(blocks.BlockSet...))
+	} else {
+		opts = append(opts, slack.MsgOptionText(body, false))
+	}
 	if threadTS != "" {
 		opts = append(opts, slack.MsgOptionTS(threadTS))
 	}
@@ -158,6 +159,77 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 				return
 			case evt := <-c.client.Events:
 				switch evt.Type {
+				case socketmode.EventTypeInteractive:
+					c.client.Ack(*evt.Request)
+					cb, ok := evt.Data.(slack.InteractionCallback)
+					if !ok || cb.Type != slack.InteractionTypeBlockActions {
+						continue
+					}
+					for _, act := range cb.ActionCallback.BlockActions {
+						if act == nil || !strings.HasPrefix(act.ActionID, "assistclaw_mail_") {
+							continue
+						}
+						val := strings.TrimSpace(act.Value)
+						if val == "" {
+							continue
+						}
+						chID := cb.Channel.ID
+						if chID == "" {
+							continue
+						}
+						threadTS := strings.TrimSpace(cb.Container.ThreadTs)
+						if threadTS == "" {
+							threadTS = strings.TrimSpace(cb.Message.ThreadTimestamp)
+						}
+						sessionID := fmt.Sprintf("slack:%s", chID)
+						if threadTS != "" {
+							sessionID = fmt.Sprintf("slack:%s:%s", chID, threadTS)
+						}
+						user := cb.User.ID
+						if c.dmMode == "disabled" {
+							continue
+						}
+						if c.dmMode == "allowlist" {
+							allowed := false
+							for _, allowedNum := range c.allowFrom {
+								if user == allowedNum {
+									allowed = true
+									break
+								}
+							}
+							if !allowed {
+								log.Printf("Slack: blocked interactive action from unauthorized user: %s", user)
+								continue
+							}
+						}
+						inEv := adapter.InboundEvent{
+							ID:         act.ActionTs,
+							ChannelID:  c.Name(),
+							SessionID:  sessionID,
+							OccurredAt: slackTime(act.ActionTs),
+							Sender: adapter.SenderRef{
+								ID: user,
+							},
+							Recipient: adapter.RecipientRef{
+								ID:   chID,
+								Kind: "channel",
+							},
+							Text: val,
+							Parts: []provider.ContentPart{{
+								Type: provider.ContentTypeText,
+								Text: val,
+							}},
+							Metadata: map[string]string{
+								channels.MetaSlackChannelID: chID,
+								channels.MetaSlackThreadTS:  threadTS,
+							},
+						}
+						go func(inEv adapter.InboundEvent) {
+							if err := h(ctx, inEv); err != nil {
+								log.Printf("Slack: inbound handler error: %v", err)
+							}
+						}(inEv)
+					}
 				case socketmode.EventTypeEventsAPI:
 					eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 					if !ok {
@@ -307,6 +379,72 @@ func (c *Channel) Stop() error {
 		close(c.stopCh)
 	})
 	return nil
+}
+
+func truncateMailRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	n := 0
+	for i := range s {
+		if n >= maxRunes {
+			return strings.TrimSpace(s[:i]) + "…"
+		}
+		n++
+	}
+	return s
+}
+
+func sanitizeSlackBlockID(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+		if b.Len() >= 200 {
+			break
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return "actions"
+	}
+	return out
+}
+
+func slackBlocksFromMail(body string, kb [][]adapter.InlineKeyboardButton) slack.Blocks {
+	tb := truncateMailRunes(body, 2900)
+	header := slack.NewSectionBlock(slack.NewTextBlockObject(slack.PlainTextType, tb, false, false), nil, nil)
+	var rows []slack.Block
+	for ri, row := range kb {
+		if len(row) == 0 {
+			continue
+		}
+		var elems []slack.BlockElement
+		for bi, b := range row {
+			label := truncateMailRunes(strings.TrimSpace(b.Label), 75)
+			if label == "" {
+				label = "…"
+			}
+			aid := fmt.Sprintf("assistclaw_mail_%d_%d", ri, bi)
+			val := strings.TrimSpace(b.CallbackData)
+			elems = append(elems, slack.NewButtonBlockElement(aid, val, slack.NewTextBlockObject(slack.PlainTextType, label, false, false)))
+		}
+		if len(elems) == 0 {
+			continue
+		}
+		bid := fmt.Sprintf("assistclaw_mail_%d_%s", ri, sanitizeSlackBlockID(row[0].CallbackData))
+		rows = append(rows, slack.NewActionBlock(bid, elems...))
+	}
+	if len(rows) == 0 {
+		return slack.Blocks{BlockSet: []slack.Block{header}}
+	}
+	out := []slack.Block{header}
+	out = append(out, rows...)
+	return slack.Blocks{BlockSet: out}
 }
 
 // slackTime parses Slack ts strings like "1234567890.123456" to UTC.

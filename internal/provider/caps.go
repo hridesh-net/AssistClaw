@@ -1,7 +1,7 @@
 package provider
 
 // ProviderCaps describes capability constraints for a specific LLM provider.
-// Used by the Catalog to decide how many and which tools to send per request.
+// Used by the catalog to decide how many and which tools to send per request.
 type ProviderCaps struct {
 	// MaxTools is the practical limit on simultaneous tool definitions (0 = no limit).
 	MaxTools int
@@ -16,52 +16,66 @@ type ProviderCaps struct {
 	SupportsToolResult bool
 }
 
-// CapsFor returns the known capability profile for a named provider.
-// The providerName should be the lowercase ID used in assistclaw.yaml (e.g. "anthropic", "bedrock").
-func CapsFor(providerName string) ProviderCaps {
-	switch providerName {
-	case "anthropic", "claude":
-		return ProviderCaps{
-			MaxTools:           0,
-			RequiresAllTools:   false,
-			NativeToolUse:      true,
-			SupportsToolResult: true,
-		}
-	case "openai", "gpt":
-		return ProviderCaps{
-			MaxTools:           128,
-			RequiresAllTools:   false,
-			NativeToolUse:      true,
-			SupportsToolResult: true,
-		}
-	case "bedrock", "aws":
-		return ProviderCaps{
-			MaxTools:           0,
-			RequiresAllTools:   true, // Bedrock needs full schema upfront
-			NativeToolUse:      true,
-			SupportsToolResult: true,
-		}
-	case "gemini", "vertex", "google":
-		return ProviderCaps{
-			MaxTools:           0,
-			RequiresAllTools:   false,
-			NativeToolUse:      true,
-			SupportsToolResult: true,
-		}
-	case "ollama", "local":
-		return ProviderCaps{
-			MaxTools:           10, // local models struggle with too many tools
-			RequiresAllTools:   false,
-			NativeToolUse:      false, // treat as text-based unless proven otherwise
-			SupportsToolResult: true,
-		}
-	default:
-		// Conservative default: send a capped set, use text fallback
-		return ProviderCaps{
-			MaxTools:           12,
-			RequiresAllTools:   false,
-			NativeToolUse:      true,
-			SupportsToolResult: true,
-		}
+// Preset capability profiles for [Provider.Caps]. Central definitions avoid a
+// string-based switch and let each backend own its policy via the interface.
+
+// CapsAnthropic is the profile for Anthropic Messages API providers.
+func CapsAnthropic() ProviderCaps {
+	return ProviderCaps{
+		MaxTools:           0,
+		RequiresAllTools:   false,
+		NativeToolUse:      true,
+		SupportsToolResult: true,
+	}
+}
+
+// CapsOpenAI is the profile for OpenAI Chat Completions (non-Azure).
+func CapsOpenAI() ProviderCaps {
+	return ProviderCaps{
+		MaxTools:           128,
+		RequiresAllTools:   false,
+		NativeToolUse:      true,
+		SupportsToolResult: true,
+	}
+}
+
+// CapsBedrock is the profile for AWS Bedrock (full tool schema upfront).
+func CapsBedrock() ProviderCaps {
+	return ProviderCaps{
+		MaxTools:           0,
+		RequiresAllTools:   true,
+		NativeToolUse:      true,
+		SupportsToolResult: true,
+	}
+}
+
+// CapsGemini is the profile for Google Gemini / Vertex AI.
+func CapsGemini() ProviderCaps {
+	return ProviderCaps{
+		MaxTools:           0,
+		RequiresAllTools:   false,
+		NativeToolUse:      true,
+		SupportsToolResult: true,
+	}
+}
+
+// CapsOllama is the profile for local Ollama (conservative tool count, text-style tools).
+func CapsOllama() ProviderCaps {
+	return ProviderCaps{
+		MaxTools:           10,
+		RequiresAllTools:   false,
+		NativeToolUse:      false,
+		SupportsToolResult: true,
+	}
+}
+
+// CapsOpenAICompatDefault is the conservative default for OpenAI-compatible HTTP backends
+// (Groq, Mistral, vLLM, OpenRouter, etc.) when no stricter profile applies.
+func CapsOpenAICompatDefault() ProviderCaps {
+	return ProviderCaps{
+		MaxTools:           12,
+		RequiresAllTools:   false,
+		NativeToolUse:      true,
+		SupportsToolResult: true,
 	}
 }

@@ -27,11 +27,13 @@ import (
 	"github.com/assistclaw/assistclaw/internal/agent"
 	"github.com/assistclaw/assistclaw/internal/automation"
 	"github.com/assistclaw/assistclaw/internal/autotool"
+	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/assistclaw/assistclaw/internal/channels/discord"
 	"github.com/assistclaw/assistclaw/internal/channels/slack"
 	"github.com/assistclaw/assistclaw/internal/channels/telegram"
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 	"github.com/assistclaw/assistclaw/internal/config"
+	"github.com/assistclaw/assistclaw/internal/email"
 	"github.com/assistclaw/assistclaw/internal/cron"
 	"github.com/assistclaw/assistclaw/internal/embeddings"
 	embedproviders "github.com/assistclaw/assistclaw/internal/embeddings/providers"
@@ -60,7 +62,7 @@ import (
 	_ "github.com/assistclaw/assistclaw/internal/webui" // ensure embed FS is included
 )
 
-var version = "v3.10.26" // Overridden by -ldflags "-X main.version=..." during build
+var version = "v3.10.27" // Overridden by -ldflags "-X main.version=..." during build
 
 type reliableToolSender struct {
 	rs *chadapter.ReliableSender
@@ -207,6 +209,7 @@ func rootCmd() *cobra.Command {
 		cronCmd(flags),
 		dlqCmd(flags),
 		doctorCmd(flags),
+		emailCmd(flags),
 		versionCmd(flags),
 		localgemmaCmd(flags),
 	)
@@ -1577,7 +1580,14 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	}
 
 	// Start Messaging Channels
+	msgHandler := channels.MessageHandler(runner.HandleChannelMessage)
+	var emailSvc *email.Service
+	var tgCh *telegram.Channel
+	var dcCh *discord.Channel
+	var slCh *slack.Channel
+	var waCh *whatsapp.Channel
 	activeChannels := 0
+	reliableOutbound := map[string]*chadapter.ReliableSender{}
 	reliabilityCfg := chadapter.ReliabilityConfig{
 		Retry: chadapter.RetryPolicy{
 			MaxAttempts:   cfg.Channels.Outbound.MaxAttempts,
@@ -1605,10 +1615,11 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		if err == nil {
 			tgRS := chadapter.NewReliableSender("telegram", tg, reliabilityCfg)
 			tg.WithReliableOutbound(tgRS)
-			go tg.Start(ctx, runner.HandleChannelMessage)
+			reliableOutbound["telegram"] = tgRS
 			channelSenders["telegram"] = reliableToolSender{
 				rs: tgRS,
 			}
+			tgCh = tg
 			log.Info("Telegram channel active")
 			activeChannels++
 		}
@@ -1628,10 +1639,11 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		if err == nil {
 			dcRS := chadapter.NewReliableSender("discord", dc, reliabilityCfg)
 			dc.WithReliableOutbound(dcRS)
-			go dc.Start(ctx, runner.HandleChannelMessage)
+			reliableOutbound["discord"] = dcRS
 			channelSenders["discord"] = reliableToolSender{
 				rs: dcRS,
 			}
+			dcCh = dc
 			log.Info("Discord channel active")
 			activeChannels++
 		}
@@ -1641,10 +1653,11 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 		if err == nil {
 			slRS := chadapter.NewReliableSender("slack", sl, reliabilityCfg)
 			sl.WithReliableOutbound(slRS)
-			go sl.Start(ctx, runner.HandleChannelMessage)
+			reliableOutbound["slack"] = slRS
 			channelSenders["slack"] = reliableToolSender{
 				rs: slRS,
 			}
+			slCh = sl
 			log.Info("Slack channel active")
 			activeChannels++
 		}
@@ -1652,10 +1665,44 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	if cfg.Channels.WhatsApp != nil {
 		wa, err := whatsapp.New(filepath.Join(cfg.StateDir, "whatsapp.db"), cfg.Channels.WhatsApp.SessionID, cfg.Channels.WhatsApp.DMMode, cfg.Channels.WhatsApp.AllowFrom, gf.logLevel, voiceClient)
 		if err == nil {
-			go wa.Start(ctx, runner.HandleChannelMessage)
+			waCh = wa
 			log.Info("WhatsApp channel active")
 			activeChannels++
 		}
+	}
+
+	if cfg.Email.Enabled {
+		emailStore, err := email.OpenStore(cfg.StateDir)
+		if err != nil {
+			return fmt.Errorf("email store: %w", err)
+		}
+		defer emailStore.Close()
+		emailModel := cfg.Email.Model
+		if emailModel == "" {
+			emailModel = modelInfo.ID
+		}
+		emailSvc, err = email.NewService(cfg, emailStore, p, emailModel, channelSenders, reliableOutbound, log)
+		if err != nil {
+			return fmt.Errorf("email service: %w", err)
+		}
+		if emailSvc != nil {
+			msgHandler = emailSvc.WrapHandler(msgHandler)
+			go emailSvc.Run(ctx)
+			log.Info("email assistant started")
+		}
+	}
+
+	if tgCh != nil {
+		go tgCh.Start(ctx, msgHandler)
+	}
+	if dcCh != nil {
+		go dcCh.Start(ctx, msgHandler)
+	}
+	if slCh != nil {
+		go slCh.Start(ctx, msgHandler)
+	}
+	if waCh != nil {
+		go waCh.Start(ctx, msgHandler)
 	}
 
 	// Heartbeats: periodic synthetic turns on a dedicated session (no chat spam).

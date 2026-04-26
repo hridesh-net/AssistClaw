@@ -61,15 +61,22 @@ type InboundEvent struct {
 
 // ChannelCapabilities describes what an integration supports. Used by runners and UI (see STORY-003 registry).
 type ChannelCapabilities struct {
-	Threading        bool
-	Attachments      bool
-	DirectMessages   bool
-	GroupMessages    bool
-	Mentions         bool
-	Voice            bool
-	Reactions        bool
-	Edits            bool
-	MaxMessageLength int // 0 means unknown / no fixed limit
+	Threading          bool
+	Attachments        bool
+	DirectMessages     bool
+	GroupMessages      bool
+	Mentions           bool
+	Voice              bool
+	Reactions          bool
+	Edits              bool
+	MaxMessageLength   int // 0 means unknown / no fixed limit
+	InteractiveButtons bool // inline keyboard / block actions (channel-specific)
+}
+
+// InlineKeyboardButton is one pressable control on outbound messages (e.g. Telegram).
+type InlineKeyboardButton struct {
+	Label        string
+	CallbackData string // opaque to adapter; routed back on press as synthetic text when supported
 }
 
 // OutboundMessage is a request to send content to a channel. IdempotencyKey is used by reliability layers (STORY-002).
@@ -80,6 +87,8 @@ type OutboundMessage struct {
 	Parts          []provider.ContentPart
 	ThreadRef      *ThreadRef
 	ReplyToID      string // optional provider message id to reply to
+	// InlineKeyboard optional rows of callback buttons (Telegram). Ignored by channels without InteractiveButtons.
+	InlineKeyboard [][]InlineKeyboardButton
 }
 
 // DeliveryReceipt confirms an outbound send. ProviderMessageID is the remote id when available.

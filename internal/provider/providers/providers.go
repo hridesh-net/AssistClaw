@@ -4,6 +4,8 @@
 package providers
 
 import (
+	"sync"
+
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/provider/anthropic"
 	"github.com/assistclaw/assistclaw/internal/provider/ollama"
@@ -121,171 +123,267 @@ type XAIConfig struct {
 	DefaultModel string `yaml:"default_model"`
 }
 
-// Build creates all configured providers and registers them in the registry.
+// ConfigBuilder materializes zero or more [provider.Provider] values from YAML config.
+type ConfigBuilder func(*Config) []provider.Provider
+
+// providerConfigBuilders is the ordered wiring list for first-party backends.
+var providerConfigBuilders = []ConfigBuilder{
+	appendOpenAI,
+	appendAzureOpenAI,
+	appendAnthropic,
+	appendOllama,
+	appendVLLM,
+	appendLMStudio,
+	appendGroq,
+	appendMistral,
+	appendTogether,
+	appendOpenRouter,
+	appendNVIDIA,
+	appendCohere,
+	appendHuggingFace,
+	appendDeepSeek,
+	appendPerplexity,
+	appendXAI,
+}
+
+var (
+	extraBuildersMu sync.Mutex
+	extraBuilders   []ConfigBuilder
+)
+
+// RegisterConfigBuilder registers an extra builder, e.g. from init() in an
+// out-of-tree module. Extra builders run after [providerConfigBuilders], in
+// registration order.
+func RegisterConfigBuilder(b ConfigBuilder) {
+	if b == nil {
+		return
+	}
+	extraBuildersMu.Lock()
+	extraBuilders = append(extraBuilders, b)
+	extraBuildersMu.Unlock()
+}
+
+func appendOpenAI(cfg *Config) []provider.Provider {
+	if cfg.OpenAI == nil {
+		return nil
+	}
+	return []provider.Provider{openai.New(openai.Config{
+		APIKey:       cfg.OpenAI.APIKey,
+		BaseURL:      cfg.OpenAI.BaseURL,
+		OrgID:        cfg.OpenAI.OrgID,
+		DefaultModel: orDefault(cfg.OpenAI.DefaultModel, "gpt-4o-mini"),
+	})}
+}
+
+func appendAzureOpenAI(cfg *Config) []provider.Provider {
+	if cfg.AzureOpenAI == nil {
+		return nil
+	}
+	return []provider.Provider{openai.New(openai.Config{
+		APIKey:       cfg.AzureOpenAI.APIKey,
+		BaseURL:      cfg.AzureOpenAI.BaseURL,
+		IsAzure:      true,
+		APIVersion:   orDefault(cfg.AzureOpenAI.APIVersion, "2024-10-21"),
+		DefaultModel: cfg.AzureOpenAI.DefaultModel,
+	})}
+}
+
+func appendAnthropic(cfg *Config) []provider.Provider {
+	if cfg.Anthropic == nil {
+		return nil
+	}
+	return []provider.Provider{anthropic.New(anthropic.Config{
+		APIKey:       cfg.Anthropic.APIKey,
+		BaseURL:      cfg.Anthropic.BaseURL,
+		DefaultModel: orDefault(cfg.Anthropic.DefaultModel, "claude-haiku-3-5"),
+		BetaFeatures: cfg.Anthropic.BetaFeatures,
+	})}
+}
+
+func appendOllama(cfg *Config) []provider.Provider {
+	if cfg.Ollama == nil {
+		return nil
+	}
+	return []provider.Provider{ollama.New(ollama.Config{
+		BaseURL:      cfg.Ollama.BaseURL,
+		DefaultModel: cfg.Ollama.DefaultModel,
+	})}
+}
+
+func appendVLLM(cfg *Config) []provider.Provider {
+	if cfg.VLLM == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:           "vllm",
+		BaseURL:        orDefault(cfg.VLLM.BaseURL, "http://localhost:8000"),
+		APIKey:         cfg.VLLM.APIKey,
+		DefaultModel:   cfg.VLLM.DefaultModel,
+		DiscoverModels: true,
+	})}
+}
+
+func appendLMStudio(cfg *Config) []provider.Provider {
+	if cfg.LMStudio == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:           "lmstudio",
+		BaseURL:        orDefault(cfg.LMStudio.BaseURL, "http://localhost:1234"),
+		DefaultModel:   cfg.LMStudio.DefaultModel,
+		DiscoverModels: true,
+	})}
+}
+
+func appendGroq(cfg *Config) []provider.Provider {
+	if cfg.Groq == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:         "groq",
+		BaseURL:      "https://api.groq.com/openai/v1",
+		APIKey:       cfg.Groq.APIKey,
+		DefaultModel: orDefault(cfg.Groq.DefaultModel, "llama-3.3-70b-versatile"),
+		StaticModels: groqModels(),
+	})}
+}
+
+func appendMistral(cfg *Config) []provider.Provider {
+	if cfg.Mistral == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:         "mistral",
+		BaseURL:      "https://api.mistral.ai",
+		APIKey:       cfg.Mistral.APIKey,
+		DefaultModel: orDefault(cfg.Mistral.DefaultModel, "mistral-small-latest"),
+		StaticModels: mistralModels(),
+	})}
+}
+
+func appendTogether(cfg *Config) []provider.Provider {
+	if cfg.Together == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:           "together",
+		BaseURL:        "https://api.together.xyz",
+		APIKey:         cfg.Together.APIKey,
+		DefaultModel:   cfg.Together.DefaultModel,
+		DiscoverModels: true,
+	})}
+}
+
+func appendOpenRouter(cfg *Config) []provider.Provider {
+	if cfg.OpenRouter == nil {
+		return nil
+	}
+	extraHeaders := map[string]string{
+		"HTTP-Referer": cfg.OpenRouter.SiteURL,
+		"X-Title":      cfg.OpenRouter.SiteName,
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:           "openrouter",
+		BaseURL:        "https://openrouter.ai/api",
+		APIKey:         cfg.OpenRouter.APIKey,
+		DefaultModel:   cfg.OpenRouter.DefaultModel,
+		ExtraHeaders:   extraHeaders,
+		DiscoverModels: true,
+	})}
+}
+
+func appendNVIDIA(cfg *Config) []provider.Provider {
+	if cfg.NVIDIA == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:         "nvidia",
+		BaseURL:      "https://integrate.api.nvidia.com",
+		APIKey:       cfg.NVIDIA.APIKey,
+		DefaultModel: orDefault(cfg.NVIDIA.DefaultModel, "nvidia/llama-3.1-nemotron-70b-instruct"),
+		StaticModels: nvidiaModels(),
+	})}
+}
+
+func appendCohere(cfg *Config) []provider.Provider {
+	if cfg.Cohere == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:         "cohere",
+		BaseURL:      "https://api.cohere.com",
+		APIKey:       cfg.Cohere.APIKey,
+		DefaultModel: orDefault(cfg.Cohere.DefaultModel, "command-r-plus-08-2024"),
+		StaticModels: cohereModels(),
+	})}
+}
+
+func appendHuggingFace(cfg *Config) []provider.Provider {
+	if cfg.HuggingFace == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:           "huggingface",
+		BaseURL:        orDefault(cfg.HuggingFace.BaseURL, "https://api-inference.huggingface.co"),
+		APIKey:         cfg.HuggingFace.APIKey,
+		DefaultModel:   cfg.HuggingFace.DefaultModel,
+		DiscoverModels: false,
+	})}
+}
+
+func appendDeepSeek(cfg *Config) []provider.Provider {
+	if cfg.DeepSeek == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:           "deepseek",
+		BaseURL:        "https://api.deepseek.com",
+		APIKey:         cfg.DeepSeek.APIKey,
+		DefaultModel:   orDefault(cfg.DeepSeek.DefaultModel, "deepseek-chat"),
+		DiscoverModels: true,
+	})}
+}
+
+func appendPerplexity(cfg *Config) []provider.Provider {
+	if cfg.Perplexity == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:         "perplexity",
+		BaseURL:      "https://api.perplexity.ai",
+		APIKey:       cfg.Perplexity.APIKey,
+		DefaultModel: orDefault(cfg.Perplexity.DefaultModel, "sonar-reasoning-pro"),
+		StaticModels: perplexityModels(),
+	})}
+}
+
+func appendXAI(cfg *Config) []provider.Provider {
+	if cfg.XAI == nil {
+		return nil
+	}
+	return []provider.Provider{openaicompat.New(openaicompat.Config{
+		Name:         "xai",
+		BaseURL:      "https://api.x.ai/v1",
+		APIKey:       cfg.XAI.APIKey,
+		DefaultModel: orDefault(cfg.XAI.DefaultModel, "grok-3"),
+		StaticModels: xaiModels(),
+	})}
+}
+
+// Build creates all configured providers. Extend first-party wiring via
+// [providerConfigBuilders], or out-of-tree via [RegisterConfigBuilder].
 func Build(cfg *Config) []provider.Provider {
-	var providers []provider.Provider
-
-	if cfg.OpenAI != nil {
-		providers = append(providers, openai.New(openai.Config{
-			APIKey:       cfg.OpenAI.APIKey,
-			BaseURL:      cfg.OpenAI.BaseURL,
-			OrgID:        cfg.OpenAI.OrgID,
-			DefaultModel: orDefault(cfg.OpenAI.DefaultModel, "gpt-4o-mini"),
-		}))
+	var out []provider.Provider
+	for _, b := range providerConfigBuilders {
+		out = append(out, b(cfg)...)
 	}
-
-	if cfg.AzureOpenAI != nil {
-		providers = append(providers, openai.New(openai.Config{
-			APIKey:       cfg.AzureOpenAI.APIKey,
-			BaseURL:      cfg.AzureOpenAI.BaseURL,
-			IsAzure:      true,
-			APIVersion:   orDefault(cfg.AzureOpenAI.APIVersion, "2024-10-21"),
-			DefaultModel: cfg.AzureOpenAI.DefaultModel,
-		}))
+	extraBuildersMu.Lock()
+	ext := append([]ConfigBuilder(nil), extraBuilders...)
+	extraBuildersMu.Unlock()
+	for _, b := range ext {
+		out = append(out, b(cfg)...)
 	}
-
-	if cfg.Anthropic != nil {
-		providers = append(providers, anthropic.New(anthropic.Config{
-			APIKey:       cfg.Anthropic.APIKey,
-			BaseURL:      cfg.Anthropic.BaseURL,
-			DefaultModel: orDefault(cfg.Anthropic.DefaultModel, "claude-haiku-3-5"),
-			BetaFeatures: cfg.Anthropic.BetaFeatures,
-		}))
-	}
-
-	if cfg.Ollama != nil {
-		providers = append(providers, ollama.New(ollama.Config{
-			BaseURL:      cfg.Ollama.BaseURL,
-			DefaultModel: cfg.Ollama.DefaultModel,
-		}))
-	}
-
-	if cfg.VLLM != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:           "vllm",
-			BaseURL:        orDefault(cfg.VLLM.BaseURL, "http://localhost:8000"),
-			APIKey:         cfg.VLLM.APIKey,
-			DefaultModel:   cfg.VLLM.DefaultModel,
-			DiscoverModels: true,
-		}))
-	}
-
-	if cfg.LMStudio != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:           "lmstudio",
-			BaseURL:        orDefault(cfg.LMStudio.BaseURL, "http://localhost:1234"),
-			DefaultModel:   cfg.LMStudio.DefaultModel,
-			DiscoverModels: true,
-		}))
-	}
-
-	if cfg.Groq != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:         "groq",
-			BaseURL:      "https://api.groq.com/openai/v1",
-			APIKey:       cfg.Groq.APIKey,
-			DefaultModel: orDefault(cfg.Groq.DefaultModel, "llama-3.3-70b-versatile"),
-			StaticModels: groqModels(),
-		}))
-	}
-
-	if cfg.Mistral != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:         "mistral",
-			BaseURL:      "https://api.mistral.ai",
-			APIKey:       cfg.Mistral.APIKey,
-			DefaultModel: orDefault(cfg.Mistral.DefaultModel, "mistral-small-latest"),
-			StaticModels: mistralModels(),
-		}))
-	}
-
-	if cfg.Together != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:           "together",
-			BaseURL:        "https://api.together.xyz",
-			APIKey:         cfg.Together.APIKey,
-			DefaultModel:   cfg.Together.DefaultModel,
-			DiscoverModels: true,
-		}))
-	}
-
-	if cfg.OpenRouter != nil {
-		extraHeaders := map[string]string{
-			"HTTP-Referer": cfg.OpenRouter.SiteURL,
-			"X-Title":      cfg.OpenRouter.SiteName,
-		}
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:           "openrouter",
-			BaseURL:        "https://openrouter.ai/api",
-			APIKey:         cfg.OpenRouter.APIKey,
-			DefaultModel:   cfg.OpenRouter.DefaultModel,
-			ExtraHeaders:   extraHeaders,
-			DiscoverModels: true,
-		}))
-	}
-
-	if cfg.NVIDIA != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:         "nvidia",
-			BaseURL:      "https://integrate.api.nvidia.com",
-			APIKey:       cfg.NVIDIA.APIKey,
-			DefaultModel: orDefault(cfg.NVIDIA.DefaultModel, "nvidia/llama-3.1-nemotron-70b-instruct"),
-			StaticModels: nvidiaModels(),
-		}))
-	}
-
-	if cfg.Cohere != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:         "cohere",
-			BaseURL:      "https://api.cohere.com",
-			APIKey:       cfg.Cohere.APIKey,
-			DefaultModel: orDefault(cfg.Cohere.DefaultModel, "command-r-plus-08-2024"),
-			StaticModels: cohereModels(),
-		}))
-	}
-
-	if cfg.HuggingFace != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:           "huggingface",
-			BaseURL:        orDefault(cfg.HuggingFace.BaseURL, "https://api-inference.huggingface.co"),
-			APIKey:         cfg.HuggingFace.APIKey,
-			DefaultModel:   cfg.HuggingFace.DefaultModel,
-			DiscoverModels: false,
-		}))
-	}
-
-	if cfg.DeepSeek != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:           "deepseek",
-			BaseURL:        "https://api.deepseek.com",
-			APIKey:         cfg.DeepSeek.APIKey,
-			DefaultModel:   orDefault(cfg.DeepSeek.DefaultModel, "deepseek-chat"),
-			DiscoverModels: true,
-		}))
-	}
-
-	if cfg.Perplexity != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:         "perplexity",
-			BaseURL:      "https://api.perplexity.ai",
-			APIKey:       cfg.Perplexity.APIKey,
-			DefaultModel: orDefault(cfg.Perplexity.DefaultModel, "sonar-reasoning-pro"),
-			StaticModels: perplexityModels(),
-		}))
-	}
-
-	if cfg.XAI != nil {
-		providers = append(providers, openaicompat.New(openaicompat.Config{
-			Name:         "xai",
-			BaseURL:      "https://api.x.ai/v1",
-			APIKey:       cfg.XAI.APIKey,
-			DefaultModel: orDefault(cfg.XAI.DefaultModel, "grok-3"),
-
-			StaticModels: xaiModels(),
-		}))
-	}
-
-	return providers
+	return out
 }
 
 func orDefault(v, def string) string {

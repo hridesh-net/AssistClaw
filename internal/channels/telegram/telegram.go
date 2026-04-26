@@ -69,17 +69,11 @@ func (c *Channel) AdapterVersion() int {
 
 // Capabilities implements [adapter.Identity].
 func (c *Channel) Capabilities() adapter.ChannelCapabilities {
-	return adapter.ChannelCapabilities{
-		Threading:        true,
-		Attachments:      true,
-		DirectMessages:   true,
-		GroupMessages:    true,
-		Mentions:         true,
-		Voice:            false,
-		Reactions:        true,
-		Edits:            true,
-		MaxMessageLength: 4096,
+	caps, ok := adapter.BuiltinCaps(c.Name())
+	if !ok {
+		panic("internal/channels/adapter: missing capability_registry entry for " + c.Name())
 	}
+	return caps
 }
 
 // Ping implements [adapter.Health] (Bot API GetMe).
@@ -112,6 +106,7 @@ func (c *Channel) Send(ctx context.Context, msg adapter.OutboundMessage) (*adapt
 		return nil, adapter.NewChannelError(adapter.ErrorKindPermanent, "telegram: empty outbound body", nil)
 	}
 	var sent tgbotapi.Message
+	caps, _ := adapter.BuiltinCaps(c.Name())
 	for i, part := range splitTelegramMessage(body) {
 		m := tgbotapi.NewMessage(target.ChatID, part)
 		if i == 0 {
@@ -123,6 +118,25 @@ func (c *Channel) Send(ctx context.Context, msg adapter.OutboundMessage) (*adapt
 			if msg.ThreadRef != nil && msg.ThreadRef.ParentMessageID != "" && m.ReplyToMessageID == 0 {
 				if replyID, convErr := strconv.Atoi(msg.ThreadRef.ParentMessageID); convErr == nil {
 					m.ReplyToMessageID = replyID
+				}
+			}
+			if caps.InteractiveButtons && len(msg.InlineKeyboard) > 0 {
+				var rows [][]tgbotapi.InlineKeyboardButton
+				for _, row := range msg.InlineKeyboard {
+					var r []tgbotapi.InlineKeyboardButton
+					for _, b := range row {
+						cb := strings.TrimSpace(b.CallbackData)
+						if cb == "" || len(cb) > 64 {
+							continue
+						}
+						r = append(r, tgbotapi.NewInlineKeyboardButtonData(b.Label, cb))
+					}
+					if len(r) > 0 {
+						rows = append(rows, r)
+					}
+				}
+				if len(rows) > 0 {
+					m.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
 				}
 			}
 		}
@@ -205,6 +219,57 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 			case <-c.stopCh:
 				return
 			case update := <-updates:
+				if update.CallbackQuery != nil && update.CallbackQuery.Message != nil {
+					cq := update.CallbackQuery
+					if !c.shouldAcceptCallbackQuery(cq) {
+						continue
+					}
+					if _, err := c.bot.Request(tgbotapi.NewCallback(cq.ID, "")); err != nil {
+						log.Printf("Telegram: callback ack: %v", err)
+					}
+					data := strings.TrimSpace(cq.Data)
+					if data == "" {
+						continue
+					}
+					chatID := cq.Message.Chat.ID
+					sessionID := fmt.Sprintf("tg:%d", chatID)
+					senderID := fmt.Sprintf("%d", cq.From.ID)
+					username := cq.From.UserName
+					kind := "dm"
+					if cq.Message.Chat.Type == "group" || cq.Message.Chat.Type == "supergroup" {
+						kind = "group"
+					}
+					ev := adapter.InboundEvent{
+						ID:         cq.ID,
+						ChannelID:  c.Name(),
+						SessionID:  sessionID,
+						OccurredAt: time.Now().UTC(),
+						Sender: adapter.SenderRef{
+							ID:          senderID,
+							DisplayName: strings.TrimSpace(cq.From.FirstName + " " + cq.From.LastName),
+							Username:    username,
+						},
+						Recipient: adapter.RecipientRef{
+							ID:   fmt.Sprintf("%d", chatID),
+							Kind: kind,
+						},
+						Text: data,
+						Parts: []provider.ContentPart{{
+							Type: provider.ContentTypeText,
+							Text: data,
+						}},
+						Metadata: map[string]string{
+							channels.MetaTelegramChatID:    strconv.FormatInt(chatID, 10),
+							channels.MetaTelegramMessageID: strconv.Itoa(cq.Message.MessageID),
+						},
+					}
+					go func(ev adapter.InboundEvent) {
+						if err := h(ctx, ev); err != nil {
+							log.Printf("Telegram: inbound handler error: %v", err)
+						}
+					}(ev)
+					continue
+				}
 				if update.Message == nil || update.Message.Text == "" {
 					continue
 				}
@@ -371,6 +436,31 @@ func splitTelegramMessage(s string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+func (c *Channel) shouldAcceptCallbackQuery(cq *tgbotapi.CallbackQuery) bool {
+	if cq == nil || cq.Message == nil || cq.Message.Chat == nil || cq.From == nil {
+		return false
+	}
+	if c.dmMode == "disabled" {
+		return false
+	}
+	if c.dmMode == "allowlist" {
+		senderID := fmt.Sprintf("%d", cq.From.ID)
+		username := cq.From.UserName
+		allowed := false
+		for _, allowedNum := range c.allowFrom {
+			if senderID == allowedNum || (username != "" && username == strings.TrimPrefix(allowedNum, "@")) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			log.Printf("Telegram: blocked callback from unauthorized sender: %s (@%s)", senderID, username)
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Channel) shouldAcceptMessage(m *tgbotapi.Message) bool {

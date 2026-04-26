@@ -51,6 +51,8 @@ func New(cfg Config) *Provider {
 
 func (p *Provider) Name() string { return providerName }
 
+func (p *Provider) Caps() provider.ProviderCaps { return provider.CapsAnthropic() }
+
 func (p *Provider) HealthCheck(ctx context.Context) error {
 	return p.ValidateModel(ctx, p.cfg.DefaultModel)
 }

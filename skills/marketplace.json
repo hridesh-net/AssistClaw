@@ -54,6 +54,34 @@
             ]
         },
         {
+            "name": "bee",
+            "description": "Query and control a Bee wearable (bee.computer) — conversations, facts, todos, journals, daily briefs, and real-time event streams",
+            "emoji": "🐝",
+            "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/bee",
+            "tags": [
+                "wearable",
+                "lifelog",
+                "memory",
+                "productivity"
+            ]
+        },
+        {
+            "name": "bee-mcp",
+            "description": "Connect AssistClaw to a Bee wearable via BeeMCP (MCP server) without bee CLI/proxy",
+            "emoji": "🐝",
+            "bundled": true,
+            "repo": "hridesh-net/AssistClaw",
+            "path": "skills/bee-mcp",
+            "tags": [
+                "wearable",
+                "mcp",
+                "lifelog",
+                "memory"
+            ]
+        },
+        {
             "name": "blogwatcher",
             "description": "Monitor blogs and RSS/Atom feeds for updates",
             "emoji": "📰",

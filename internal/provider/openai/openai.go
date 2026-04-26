@@ -68,6 +68,13 @@ func (p *Provider) Name() string {
 	return providerName
 }
 
+func (p *Provider) Caps() provider.ProviderCaps {
+	if p.cfg.IsAzure {
+		return provider.CapsOpenAICompatDefault()
+	}
+	return provider.CapsOpenAI()
+}
+
 // HealthCheck verifies the API key and endpoint are reachable.
 func (p *Provider) HealthCheck(ctx context.Context) error {
 	return p.ValidateModel(ctx, p.cfg.DefaultModel)

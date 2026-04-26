@@ -133,6 +133,10 @@ func (r *ReliableSender) Send(ctx context.Context, msg OutboundMessage) (*Delive
 			msg.ThreadRef = nil
 			msg.ReplyToID = ""
 		}
+		if !caps.InteractiveButtons && len(msg.InlineKeyboard) > 0 {
+			log.Printf("channels/outbound[%s]: stripping inline keyboard (InteractiveButtons=false)", r.channelName)
+			msg.InlineKeyboard = nil
+		}
 	}
 	if allowed := r.beforeAttempt(); !allowed {
 		err := NewChannelError(ErrorKindRetryable, "circuit breaker open", nil)

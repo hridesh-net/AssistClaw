@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/assistclaw/assistclaw/internal/mempalace"
 	"gopkg.in/yaml.v3"
@@ -63,6 +64,9 @@ type Config struct {
 
 	// Gmail configures Gmail Pub/Sub watcher settings.
 	Gmail GmailConfig `yaml:"gmail"`
+
+	// Email configures the autonomous email assistant (IMAP/Gmail/Graph).
+	Email EmailConfig `yaml:"email"`
 
 	// Voice configures internal STT/TTS and continuous conversation.
 	Voice VoiceConfig `yaml:"voice"`
@@ -130,6 +134,86 @@ type GmailConfig struct {
 	Label        string `yaml:"label"`         // e.g. "INBOX"
 	SkipWatcher  bool   `yaml:"skip_watcher"`  // If true, AssistClaw won't manage the gogcli daemon
 	PushEndpoint string `yaml:"push_endpoint"` // Public URL for Pub/Sub push (if not using Tailscale)
+}
+
+// EmailConfig configures the autonomous email assistant (summaries + draft replies with approval).
+type EmailConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// Model overrides routing.default for email LLM calls when non-empty.
+	Model string `yaml:"model"`
+	// Notify is the default channel + session for draft notifications and approvals.
+	Notify EmailNotifyConfig `yaml:"notify"`
+	// MaxDraftsPerHour limits LLM-driven drafts per account (0 = default 30).
+	MaxDraftsPerHour int `yaml:"max_drafts_per_hour"`
+	// PollInterval is the fallback poll period for gmail/graph when push is unavailable (default 60s).
+	PollInterval string `yaml:"poll_interval"`
+	// Accounts lists mailboxes to watch.
+	Accounts []EmailAccountConfig `yaml:"accounts"`
+}
+
+// EmailNotifyConfig selects where mail notifications are delivered.
+type EmailNotifyConfig struct {
+	Channel   string `yaml:"channel"`    // telegram | discord | slack
+	SessionID string `yaml:"session_id"` // e.g. tg:123 — required for outbound sends
+}
+
+// EmailAccountConfig is one watched mailbox.
+type EmailAccountConfig struct {
+	Name    string `yaml:"name"`
+	Backend string `yaml:"backend"` // imap | gmail | graph
+	IMAP    *EmailIMAPConfig       `yaml:"imap"`
+	SMTP    *EmailSMTPConfig       `yaml:"smtp"`
+	Gmail   *EmailGmailAPIConfig  `yaml:"gmail"`
+	Graph   *EmailGraphAPIConfig  `yaml:"graph"`
+	// Notify overrides root email.notify for this account when set.
+	Notify *EmailNotifyConfig `yaml:"notify"`
+	Rules  []EmailRuleConfig  `yaml:"rules"`
+}
+
+// EmailIMAPConfig is used when backend: imap.
+type EmailIMAPConfig struct {
+	Host     string `yaml:"host"`      // e.g. imap.gmail.com:993
+	Username string `yaml:"username"`
+	Password string `yaml:"password"` // app password; prefer ${ENV}
+	Mailbox  string `yaml:"mailbox"` // default INBOX
+	UseTLS   *bool  `yaml:"use_tls"` // default true for :993
+}
+
+// EmailSMTPConfig is used for sending approved replies when backend: imap.
+type EmailSMTPConfig struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"` // default 587
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	StartTLS bool   `yaml:"starttls"` // default true for 587
+}
+
+// EmailGmailAPIConfig is used when backend: gmail (OAuth token file from assistclaw email login).
+type EmailGmailAPIConfig struct {
+	TokenFile string `yaml:"token_file"` // path under state_dir or absolute
+}
+
+// EmailGraphAPIConfig is used when backend: graph (OAuth token file).
+type EmailGraphAPIConfig struct {
+	TokenFile string `yaml:"token_file"`
+}
+
+// EmailRuleConfig filters which messages trigger the assistant.
+type EmailRuleConfig struct {
+	Match  EmailRuleMatch `yaml:"match"`
+	Action string         `yaml:"action"` // auto | notify_only | ignore
+}
+
+// EmailRuleMatch is evaluated in order; first match wins.
+type EmailRuleMatch struct {
+	From        string `yaml:"from"`         // exact address
+	FromDomain  string `yaml:"from_domain"`  // suffix match @domain
+	FromRegex   string `yaml:"from_regex"`
+	Subject     string `yaml:"subject"` // regex on subject
+	HeaderName  string `yaml:"header_name"`
+	HeaderRegex string `yaml:"header_regex"`
+	GmailLabel  string `yaml:"gmail_label"` // contains this label id or name
+	GraphCat    string `yaml:"graph_category"`
 }
 
 // VoiceConfig configures internal voice processing (STT/TTS).
@@ -762,6 +846,12 @@ func applyDefaults(cfg *Config) {
 		// Safe default for fresh configs while preserving explicit false in active setups.
 		cfg.Agent.Palace.FailOpen = true
 	}
+	if cfg.Email.Enabled && cfg.Email.MaxDraftsPerHour == 0 {
+		cfg.Email.MaxDraftsPerHour = 30
+	}
+	if cfg.Email.Enabled && strings.TrimSpace(cfg.Email.PollInterval) == "" {
+		cfg.Email.PollInterval = "60s"
+	}
 }
 
 // validate checks that required fields are present.
@@ -836,6 +926,55 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Tracing.SampleRatio < 0 || cfg.Tracing.SampleRatio > 1 {
 		issues = append(issues, "tracing.sample_ratio must be between 0 and 1")
+	}
+
+	if cfg.Email.Enabled {
+		if strings.TrimSpace(cfg.Email.Notify.Channel) == "" {
+			issues = append(issues, "email.enabled requires email.notify.channel (telegram, discord, or slack)")
+		}
+		if strings.TrimSpace(cfg.Email.Notify.SessionID) == "" {
+			issues = append(issues, "email.enabled requires email.notify.session_id for outbound notifications")
+		}
+		if len(cfg.Email.Accounts) == 0 {
+			issues = append(issues, "email.enabled requires at least one email.accounts entry")
+		}
+		for i, a := range cfg.Email.Accounts {
+			if strings.TrimSpace(a.Name) == "" {
+				issues = append(issues, fmt.Sprintf("email.accounts[%d].name is required", i))
+			}
+			b := strings.ToLower(strings.TrimSpace(a.Backend))
+			switch b {
+			case "imap":
+				if a.IMAP == nil || strings.TrimSpace(a.IMAP.Host) == "" {
+					issues = append(issues, fmt.Sprintf("email.accounts[%q]: imap backend requires email.accounts[].imap.host", a.Name))
+				}
+				if a.SMTP == nil || strings.TrimSpace(a.SMTP.Host) == "" {
+					issues = append(issues, fmt.Sprintf("email.accounts[%q]: imap backend requires email.accounts[].smtp.host for approved replies", a.Name))
+				}
+			case "gmail":
+				if a.Gmail == nil || strings.TrimSpace(a.Gmail.TokenFile) == "" {
+					issues = append(issues, fmt.Sprintf("email.accounts[%q]: gmail backend requires email.accounts[].gmail.token_file (run: assistclaw email login)", a.Name))
+				}
+			case "graph":
+				if a.Graph == nil || strings.TrimSpace(a.Graph.TokenFile) == "" {
+					issues = append(issues, fmt.Sprintf("email.accounts[%q]: graph backend requires email.accounts[].graph.token_file (run: assistclaw email login)", a.Name))
+				}
+			default:
+				issues = append(issues, fmt.Sprintf("email.accounts[%q]: backend must be imap, gmail, or graph", a.Name))
+			}
+			for j, r := range a.Rules {
+				act := strings.ToLower(strings.TrimSpace(r.Action))
+				if act != "auto" && act != "notify_only" && act != "ignore" {
+					issues = append(issues, fmt.Sprintf("email.accounts[%q].rules[%d].action must be auto, notify_only, or ignore", a.Name, j))
+				}
+			}
+		}
+		if cfg.Email.MaxDraftsPerHour < 1 {
+			issues = append(issues, "email.max_drafts_per_hour must be >= 1 when email is enabled")
+		}
+		if _, err := time.ParseDuration(cfg.Email.PollInterval); err != nil {
+			issues = append(issues, fmt.Sprintf("email.poll_interval: %v", err))
+		}
 	}
 
 	if len(issues) > 0 {

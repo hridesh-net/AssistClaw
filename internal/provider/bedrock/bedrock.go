@@ -72,6 +72,8 @@ func New(cfg Config) (*Provider, error) {
 
 func (p *Provider) Name() string { return providerName }
 
+func (p *Provider) Caps() provider.ProviderCaps { return provider.CapsBedrock() }
+
 func (p *Provider) HealthCheck(ctx context.Context) error {
 	return p.ValidateModel(ctx, p.cfg.DefaultModel)
 }

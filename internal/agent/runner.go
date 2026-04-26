@@ -724,7 +724,7 @@ func (r *Runner) buildRequestV3(ctx context.Context, query string) *provider.Com
 func (r *Runner) selectTools(query string) []provider.ToolDef {
 	var target []provider.ToolDef
 	if r.catalog != nil {
-		caps := provider.CapsFor(r.cfg.ProviderName)
+		caps := r.provider.Caps()
 		// Decay inertia from last turn before computing new selection
 		r.catalog.DecayInertia()
 		target = r.catalog.SelectForRequest(query, caps)

@@ -221,6 +221,7 @@ func runDoctorChecks(ctx context.Context, cfg *config.Config, skipNetwork bool, 
 	checks = append(checks, checkWebhooks(cfg))
 	checks = append(checks, checkWhatsAppSession(cfg))
 	checks = append(checks, checkLocalIntel(cfg))
+	checks = append(checks, checkEmailAssistant(cfg)...)
 	return checks
 }
 

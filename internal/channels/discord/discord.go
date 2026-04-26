@@ -73,17 +73,11 @@ func (c *Channel) AdapterVersion() int {
 }
 
 func (c *Channel) Capabilities() adapter.ChannelCapabilities {
-	return adapter.ChannelCapabilities{
-		Threading:        true,
-		Attachments:      true,
-		DirectMessages:   true,
-		GroupMessages:    true,
-		Mentions:         true,
-		Voice:            true,
-		Reactions:        true,
-		Edits:            true,
-		MaxMessageLength: 2000,
+	caps, ok := adapter.BuiltinCaps(c.Name())
+	if !ok {
+		panic("internal/channels/adapter: missing capability_registry entry for " + c.Name())
 	}
+	return caps
 }
 
 // Ping verifies the bot token via GET /users/@me.
@@ -115,7 +109,47 @@ func (c *Channel) Send(ctx context.Context, msg adapter.OutboundMessage) (*adapt
 	if body == "" {
 		return nil, adapter.NewChannelError(adapter.ErrorKindPermanent, "discord: empty outbound body", nil)
 	}
-	sent, err := c.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{Content: body})
+	caps, _ := adapter.BuiltinCaps(c.Name())
+	send := &discordgo.MessageSend{Content: body}
+	if caps.InteractiveButtons && len(msg.InlineKeyboard) > 0 {
+		for _, row := range msg.InlineKeyboard {
+			if len(row) == 0 {
+				continue
+			}
+			ar := &discordgo.ActionsRow{}
+			for _, b := range row {
+				style := discordgo.PrimaryButton
+				low := strings.ToLower(strings.TrimSpace(b.CallbackData))
+				switch {
+				case strings.HasPrefix(low, "approve"):
+					style = discordgo.SuccessButton
+				case strings.HasPrefix(low, "reject"):
+					style = discordgo.DangerButton
+				}
+				cid := strings.TrimSpace(b.CallbackData)
+				if len(cid) > 100 {
+					cid = cid[:100]
+				}
+				lbl := strings.TrimSpace(b.Label)
+				if lbl == "" {
+					lbl = "…"
+				}
+				lbl = truncateDiscordRunes(lbl, 78)
+				ar.Components = append(ar.Components, &discordgo.Button{
+					Label:    lbl,
+					Style:    style,
+					CustomID: cid,
+				})
+			}
+			if len(ar.Components) > 0 {
+				send.Components = append(send.Components, ar)
+			}
+		}
+		if len(send.Components) == 0 {
+			send.Components = nil
+		}
+	}
+	sent, err := c.session.ChannelMessageSendComplex(channelID, send)
 	if err != nil {
 		return nil, adapter.NewChannelError(adapter.ErrorKindRetryable, "discord send", err)
 	}
@@ -316,6 +350,86 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 		}()
 	})
 
+	c.session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i == nil || i.Interaction == nil || i.Type != discordgo.InteractionMessageComponent {
+			return
+		}
+		data := i.MessageComponentData()
+		cb := strings.TrimSpace(data.CustomID)
+		if cb == "" {
+			return
+		}
+		low := strings.ToLower(cb)
+		if !strings.HasPrefix(low, "approve ") && !strings.HasPrefix(low, "reject ") {
+			return
+		}
+		uid := ""
+		if i.Member != nil && i.Member.User != nil {
+			uid = i.Member.User.ID
+		} else if i.User != nil {
+			uid = i.User.ID
+		}
+		if uid == "" {
+			return
+		}
+		if c.dmMode == "disabled" {
+			return
+		}
+		if c.dmMode == "allowlist" {
+			allowed := false
+			for _, allowedNum := range c.allowFrom {
+				if uid == allowedNum {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				log.Printf("Discord: blocked component interaction from unauthorized sender: %s", uid)
+				return
+			}
+		}
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "\u200b",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		}); err != nil {
+			log.Printf("Discord: interaction respond: %v", err)
+			return
+		}
+		sessionID := fmt.Sprintf("discord:%s:%s", i.GuildID, i.ChannelID)
+		ev := adapter.InboundEvent{
+			ID:         i.ID,
+			ChannelID:  c.Name(),
+			SessionID:  sessionID,
+			OccurredAt: time.Now().UTC(),
+			Sender: adapter.SenderRef{
+				ID:          uid,
+				DisplayName: "",
+				Username:    "",
+			},
+			Recipient: adapter.RecipientRef{
+				ID:   i.ChannelID,
+				Kind: "channel",
+			},
+			Text: cb,
+			Parts: []provider.ContentPart{{
+				Type: provider.ContentTypeText,
+				Text: cb,
+			}},
+			Metadata: map[string]string{
+				channels.MetaDiscordChannelID: i.ChannelID,
+				channels.MetaDiscordGuildID:   i.GuildID,
+			},
+		}
+		go func(ev adapter.InboundEvent) {
+			if err := h(ctx, ev); err != nil {
+				log.Printf("Discord: inbound handler error: %v", err)
+			}
+		}(ev)
+	})
+
 	err := c.session.Open()
 	if err != nil {
 		return fmt.Errorf("error opening discord connection: %w", err)
@@ -390,6 +504,20 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 		}()
 		return nil
 	}
+}
+
+func truncateDiscordRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	n := 0
+	for i := range s {
+		if n >= maxRunes {
+			return strings.TrimSpace(s[:i])
+		}
+		n++
+	}
+	return s
 }
 
 func splitDiscordMessage(s string) []string {

@@ -254,6 +254,9 @@ type Provider interface {
 
 	// ValidateModel verifies if a model ID is valid for this provider.
 	ValidateModel(ctx context.Context, modelID string) error
+
+	// Caps returns tool-calling constraints for this backend (used for catalog sizing).
+	Caps() ProviderCaps
 }
 
 // StreamingProvider optionally indicates the provider supports streaming in
