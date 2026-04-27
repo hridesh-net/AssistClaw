@@ -136,6 +136,15 @@ Works as **both** an MCP server (expose your agent to Claude Desktop / Cursor) a
 | REST + WebSocket | Self-hosted gateway |
 | Web UI | Built-in |
 
+### 📧 Autonomous Email Assistant *(v3.10+)*
+
+Watch one or more mailboxes (IMAP/SMTP, Gmail API, Microsoft Graph), summarize new mail, draft a reply, and post to a **configured chat channel**. Replies send **only after explicit approval**; **mailbox deletion is not supported** by design.
+
+- **Setup wizard:** `assistclaw email setup` — writes `email:` into `assistclaw.yaml` and can run Gmail/Graph OAuth in the same flow.
+- **Notify session:** use `--notify-session` (e.g. `tg:123`) or **`--from-channel telegram`** to pick the latest matching session from episodic history (send at least one message on that channel first).
+- **OAuth:** `assistclaw email login-gmail --account <name>` / `assistclaw email login-graph --account <name>` (requires client env vars; see command help).
+- **Ops:** `assistclaw email pending`, `approve|reject|edit`, `status`, `doctor`.
+
 ### 🦾 Hardware Sensing
 C++ bridge for Camera (OpenCV) and Audio (PortAudio) — runs natively on Raspberry Pi 5.
 
@@ -185,6 +194,8 @@ Default install path is **`%USERPROFILE%\.local\bin`** (add that folder to your 
 git clone https://github.com/hridesh-net/AssistClaw.git
 cd AssistClaw && make build
 ```
+
+GitHub **release assets** are built with `-tags fts5` (SQLite full-text search for episodic memory). If you need extra build tags (for example optional local-model integrations), compile from source with the tags your environment supports.
 
 **Uninstall:**
 ```bash
@@ -290,6 +301,27 @@ channels:
     bot_token: "..."
   discord:
     bot_token: "..."
+
+# ─── Autonomous email (optional) ────────────────────────────
+# Prefer: assistclaw email setup
+email:
+  enabled: true
+  notify:
+    channel: telegram
+    session_id: "tg:123456789"
+  accounts:
+    - name: personal
+      backend: imap
+      imap:
+        host: imap.example.com:993
+        username: "you@example.com"
+        password: "${IMAP_APP_PASSWORD}"
+      smtp:
+        host: smtp.example.com
+        port: 587
+        username: "you@example.com"
+        password: "${SMTP_PASSWORD}"
+        starttls: true
 ```
 
 ---
@@ -311,6 +343,21 @@ channels:
 | `assistclaw auto "<goal>"` | Autonomous loop until `finish_task` |
 | `assistclaw gateway` | Gateway / web UI commands (see `--help`) |
 | `assistclaw cron list` / `add` / `remove` | Persistent scheduled prompts |
+
+</details>
+
+<details>
+<summary><strong>Email</strong></summary>
+
+| Command | What it does |
+|---------|-------------|
+| `assistclaw email setup` | Guided wizard: enable email, set notify channel/session, add an account; optional `--from-channel` to auto-pick session |
+| `assistclaw email login-gmail --account NAME` | Gmail OAuth; writes token under state dir |
+| `assistclaw email login-graph --account NAME` | Microsoft Graph OAuth |
+| `assistclaw email pending` | List pending draft approval tokens |
+| `assistclaw email approve TOKEN` / `reject` / `edit TOKEN ...` | Approve send, reject, or replace draft body |
+| `assistclaw email status` | Show `email.enabled` and notify settings |
+| `assistclaw email doctor` | Email-focused checks (config + token paths) |
 
 </details>
 
