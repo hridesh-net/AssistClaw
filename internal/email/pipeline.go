@@ -8,6 +8,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/adapter"
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/provider"
+	"go.uber.org/zap"
 )
 
 func formatMailPost(msg *StoredMessage, summary, draftBody, token string) string {
@@ -95,7 +96,19 @@ func (s *Service) ProcessNewMail(ctx context.Context, acc config.EmailAccountCon
 	}
 	_ = s.store.AppendAudit(ctx, "draft_created", token, acc.Name)
 	body := formatMailPost(&StoredMessage{AccountName: acc.Name, FromAddr: m.From, Subject: m.Subject}, summary, draft, token)
-	return s.publishForAccount(ctx, acc, body, token)
+	if err := s.publishForAccount(ctx, acc, body, token); err != nil {
+		return err
+	}
+	n := s.notify
+	if acc.Notify != nil && strings.TrimSpace(acc.Notify.Channel) != "" && strings.TrimSpace(acc.Notify.SessionID) != "" {
+		n = *acc.Notify
+	}
+	s.log.Info("email draft posted",
+		zap.String("account", acc.Name),
+		zap.String("notify_channel", strings.ToLower(strings.TrimSpace(n.Channel))),
+		zap.String("subject", m.Subject),
+	)
+	return nil
 }
 
 func mailApprovalKeyboard(token string) [][]adapter.InlineKeyboardButton {

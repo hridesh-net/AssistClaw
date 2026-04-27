@@ -99,15 +99,36 @@ func (b *imapBackend) poll(ctx context.Context, onNew func(context.Context, Ref)
 	if mbox == "" {
 		mbox = "INBOX"
 	}
-	if _, err := c.Select(mbox, nil).Wait(); err != nil {
+	sel, err := c.Select(mbox, nil).Wait()
+	if err != nil {
 		return err
 	}
 	last, err := b.store.GetLastIMAPUID(b.acc.Name)
 	if err != nil {
 		return err
 	}
-	// Unread messages: not \Seen (IMAP4rev2 / common servers).
-	crit := &imap.SearchCriteria{NotFlag: []imap.Flag{imap.FlagSeen}}
+	// First sync: advance the UID cursor to the server's UIDNEXT-1 so we only
+	// process mail that arrives after AssistClaw is running. Searching only
+	// \Unseen misses messages another client (or the host) marks \Seen before we poll.
+	if last == 0 && sel != nil && sel.UIDNext > 0 {
+		next := uint32(sel.UIDNext)
+		if next > 1 {
+			baseline := next - 1
+			if err := b.store.SetLastIMAPUID(b.acc.Name, baseline); err != nil {
+				return err
+			}
+			last = baseline
+		}
+	}
+	var crit *imap.SearchCriteria
+	// Without UIDNEXT we cannot safely use 1:* (would replay the whole mailbox).
+	if last == 0 && (sel == nil || sel.UIDNext == 0) {
+		crit = &imap.SearchCriteria{NotFlag: []imap.Flag{imap.FlagSeen}}
+	} else {
+		var uidSet imap.UIDSet
+		uidSet.AddRange(imap.UID(last+1), 0) // (last+1):*
+		crit = &imap.SearchCriteria{UID: []imap.UIDSet{uidSet}}
+	}
 	data, err := c.UIDSearch(crit, nil).Wait()
 	if err != nil {
 		return err
