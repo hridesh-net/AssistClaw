@@ -1,20 +1,25 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/email"
+	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"gopkg.in/yaml.v3"
 )
 
 func emailCmd(gf *globalFlags) *cobra.Command {
@@ -24,6 +29,7 @@ func emailCmd(gf *globalFlags) *cobra.Command {
 	}
 	root.AddCommand(emailLoginGmailCmd(gf))
 	root.AddCommand(emailLoginGraphCmd(gf))
+	root.AddCommand(emailSetupCmd(gf))
 	root.AddCommand(emailAccountsCmd(gf))
 	root.AddCommand(emailRulesCmd(gf))
 	root.AddCommand(emailPendingCmd(gf))
@@ -105,6 +111,115 @@ func emailDoctorCmd(gf *globalFlags) *cobra.Command {
 			return nil
 		},
 	}
+	return cmd
+}
+
+type emailSetupOptions struct {
+	Account        string
+	Backend        string
+	NotifyChannel  string
+	NotifySession  string
+	FromChannel    string
+	IMAPHost       string
+	IMAPUser       string
+	IMAPPass       string
+	SMTPHost       string
+	SMTPPort       int
+	SMTPUser       string
+	SMTPPass       string
+	NonInteractive bool
+	RunLogin       bool
+}
+
+func emailSetupCmd(gf *globalFlags) *cobra.Command {
+	opts := &emailSetupOptions{
+		SMTPPort: 587,
+		RunLogin: true,
+	}
+	cmd := &cobra.Command{
+		Use:   "setup",
+		Short: "Interactive email setup wizard (writes config + optional OAuth login)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !opts.NonInteractive {
+				if err := promptEmailSetup(opts); err != nil {
+					return err
+				}
+			}
+			if strings.TrimSpace(opts.Account) == "" {
+				return fmt.Errorf("account name is required")
+			}
+			backend := strings.ToLower(strings.TrimSpace(opts.Backend))
+			if backend != "imap" && backend != "gmail" && backend != "graph" {
+				return fmt.Errorf("backend must be one of: imap, gmail, graph")
+			}
+			cfgPath := gf.configPath
+			if cfgPath == "" {
+				cfgPath = config.DefaultConfigPath()
+			}
+			cfg, err := loadOrInitConfigForSetup(cfgPath)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(opts.NotifySession) == "" && strings.TrimSpace(opts.FromChannel) != "" {
+				fromCh := strings.ToLower(strings.TrimSpace(opts.FromChannel))
+				if strings.TrimSpace(opts.NotifyChannel) == "" {
+					opts.NotifyChannel = fromCh
+				}
+				if !strings.EqualFold(opts.NotifyChannel, fromCh) {
+					return fmt.Errorf("--notify-channel and --from-channel must match when both are set")
+				}
+				autoSession, err := detectNotifySessionFromHistory(cfg, fromCh)
+				if err != nil {
+					return fmt.Errorf("auto-detect notify session for %q: %w", fromCh, err)
+				}
+				opts.NotifySession = autoSession
+				fmt.Printf("Detected notify session from recent history: %s\n", autoSession)
+			}
+			if strings.TrimSpace(opts.NotifyChannel) == "" || strings.TrimSpace(opts.NotifySession) == "" {
+				return fmt.Errorf("notify channel and session are required")
+			}
+			acc, err := accountConfigFromSetup(opts)
+			if err != nil {
+				return err
+			}
+			cfg.Email.Enabled = true
+			cfg.Email.Notify = config.EmailNotifyConfig{
+				Channel:   strings.ToLower(strings.TrimSpace(opts.NotifyChannel)),
+				SessionID: strings.TrimSpace(opts.NotifySession),
+			}
+			cfg.Email.Accounts = upsertEmailAccount(cfg.Email.Accounts, acc)
+			if err := writeConfigForSetup(cfgPath, cfg); err != nil {
+				return err
+			}
+			fmt.Printf("Updated email config in %s (account=%s backend=%s)\n", cfgPath, acc.Name, acc.Backend)
+			if !opts.RunLogin {
+				fmt.Println("Skipped OAuth login. Run `assistclaw email login-gmail --account ...` or `assistclaw email login-graph --account ...` later if needed.")
+				return nil
+			}
+			switch backend {
+			case "gmail":
+				return runEmailOAuthLoginGmail(gf, acc.Name)
+			case "graph":
+				return runEmailOAuthLoginGraph(gf, acc.Name)
+			default:
+				return nil
+			}
+		},
+	}
+	cmd.Flags().StringVar(&opts.Account, "account", "", "email account name")
+	cmd.Flags().StringVar(&opts.Backend, "backend", "", "backend: imap | gmail | graph")
+	cmd.Flags().StringVar(&opts.NotifyChannel, "notify-channel", "", "channel to publish drafts: telegram | slack | discord")
+	cmd.Flags().StringVar(&opts.NotifySession, "notify-session", "", "session id for notify channel (e.g. tg:123)")
+	cmd.Flags().StringVar(&opts.FromChannel, "from-channel", "", "auto-detect notify session from recent chat history for this channel (telegram|slack|discord)")
+	cmd.Flags().StringVar(&opts.IMAPHost, "imap-host", "", "IMAP host:port (required for imap backend)")
+	cmd.Flags().StringVar(&opts.IMAPUser, "imap-user", "", "IMAP username")
+	cmd.Flags().StringVar(&opts.IMAPPass, "imap-pass", "", "IMAP password or app password")
+	cmd.Flags().StringVar(&opts.SMTPHost, "smtp-host", "", "SMTP host")
+	cmd.Flags().IntVar(&opts.SMTPPort, "smtp-port", 587, "SMTP port")
+	cmd.Flags().StringVar(&opts.SMTPUser, "smtp-user", "", "SMTP username")
+	cmd.Flags().StringVar(&opts.SMTPPass, "smtp-pass", "", "SMTP password")
+	cmd.Flags().BoolVar(&opts.NonInteractive, "non-interactive", false, "require all values from flags; disable prompts")
+	cmd.Flags().BoolVar(&opts.RunLogin, "run-login", true, "run OAuth login immediately for gmail/graph")
 	return cmd
 }
 
@@ -316,6 +431,220 @@ func emailStatusCmd(gf *globalFlags) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func promptEmailSetup(opts *emailSetupOptions) error {
+	in := bufio.NewReader(os.Stdin)
+	prompt := func(label, current string) (string, error) {
+		if strings.TrimSpace(current) != "" {
+			return current, nil
+		}
+		fmt.Print(label)
+		v, err := in.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(v), nil
+	}
+	var err error
+	opts.Account, err = prompt("Account name: ", opts.Account)
+	if err != nil {
+		return err
+	}
+	opts.Backend, err = prompt("Backend [imap|gmail|graph]: ", opts.Backend)
+	if err != nil {
+		return err
+	}
+	opts.NotifyChannel, err = prompt("Notify channel [telegram|slack|discord]: ", opts.NotifyChannel)
+	if err != nil {
+		return err
+	}
+	opts.NotifySession, err = prompt("Notify session id (e.g. tg:123): ", opts.NotifySession)
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(opts.Backend), "imap") {
+		opts.IMAPHost, err = prompt("IMAP host:port: ", opts.IMAPHost)
+		if err != nil {
+			return err
+		}
+		opts.IMAPUser, err = prompt("IMAP username: ", opts.IMAPUser)
+		if err != nil {
+			return err
+		}
+		opts.IMAPPass, err = prompt("IMAP password/app password: ", opts.IMAPPass)
+		if err != nil {
+			return err
+		}
+		opts.SMTPHost, err = prompt("SMTP host: ", opts.SMTPHost)
+		if err != nil {
+			return err
+		}
+		port, err := prompt(fmt.Sprintf("SMTP port [%d]: ", opts.SMTPPort), "")
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(port) != "" {
+			p, convErr := strconv.Atoi(strings.TrimSpace(port))
+			if convErr != nil {
+				return fmt.Errorf("invalid smtp port %q: %w", port, convErr)
+			}
+			opts.SMTPPort = p
+		}
+		opts.SMTPUser, err = prompt("SMTP username: ", opts.SMTPUser)
+		if err != nil {
+			return err
+		}
+		opts.SMTPPass, err = prompt("SMTP password: ", opts.SMTPPass)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func accountConfigFromSetup(opts *emailSetupOptions) (config.EmailAccountConfig, error) {
+	acc := config.EmailAccountConfig{
+		Name:    strings.TrimSpace(opts.Account),
+		Backend: strings.ToLower(strings.TrimSpace(opts.Backend)),
+	}
+	switch acc.Backend {
+	case "imap":
+		if strings.TrimSpace(opts.IMAPHost) == "" || strings.TrimSpace(opts.IMAPUser) == "" || strings.TrimSpace(opts.IMAPPass) == "" {
+			return config.EmailAccountConfig{}, fmt.Errorf("imap backend requires --imap-host, --imap-user, and --imap-pass")
+		}
+		if strings.TrimSpace(opts.SMTPHost) == "" || strings.TrimSpace(opts.SMTPUser) == "" || strings.TrimSpace(opts.SMTPPass) == "" {
+			return config.EmailAccountConfig{}, fmt.Errorf("imap backend requires --smtp-host, --smtp-user, and --smtp-pass")
+		}
+		acc.IMAP = &config.EmailIMAPConfig{
+			Host:     strings.TrimSpace(opts.IMAPHost),
+			Username: strings.TrimSpace(opts.IMAPUser),
+			Password: strings.TrimSpace(opts.IMAPPass),
+			Mailbox:  "INBOX",
+		}
+		acc.SMTP = &config.EmailSMTPConfig{
+			Host:     strings.TrimSpace(opts.SMTPHost),
+			Port:     opts.SMTPPort,
+			Username: strings.TrimSpace(opts.SMTPUser),
+			Password: strings.TrimSpace(opts.SMTPPass),
+			StartTLS: true,
+		}
+	case "gmail":
+		acc.Gmail = &config.EmailGmailAPIConfig{
+			TokenFile: filepath.ToSlash(filepath.Join("email", "oauth-"+acc.Name+"-gmail.json")),
+		}
+	case "graph":
+		acc.Graph = &config.EmailGraphAPIConfig{
+			TokenFile: filepath.ToSlash(filepath.Join("email", "oauth-"+acc.Name+"-graph.json")),
+		}
+	default:
+		return config.EmailAccountConfig{}, fmt.Errorf("unsupported backend %q", acc.Backend)
+	}
+	return acc, nil
+}
+
+func upsertEmailAccount(accounts []config.EmailAccountConfig, acc config.EmailAccountConfig) []config.EmailAccountConfig {
+	for i := range accounts {
+		if strings.EqualFold(strings.TrimSpace(accounts[i].Name), strings.TrimSpace(acc.Name)) {
+			accounts[i] = acc
+			return accounts
+		}
+	}
+	return append(accounts, acc)
+}
+
+func loadOrInitConfigForSetup(path string) (*config.Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		return &config.Config{
+			Version:  1,
+			StateDir: filepath.Dir(path),
+		}, nil
+	}
+	var cfg config.Config
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if strings.TrimSpace(cfg.StateDir) == "" {
+		cfg.StateDir = filepath.Dir(path)
+	}
+	if cfg.Version == 0 {
+		cfg.Version = 1
+	}
+	return &cfg, nil
+}
+
+func writeConfigForSetup(path string, cfg *config.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("nil config")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0o600)
+}
+
+func runEmailOAuthLoginGmail(gf *globalFlags, account string) error {
+	cmd := emailLoginGmailCmd(gf)
+	if err := cmd.Flags().Set("account", account); err != nil {
+		return err
+	}
+	return cmd.RunE(cmd, nil)
+}
+
+func runEmailOAuthLoginGraph(gf *globalFlags, account string) error {
+	cmd := emailLoginGraphCmd(gf)
+	if err := cmd.Flags().Set("account", account); err != nil {
+		return err
+	}
+	return cmd.RunE(cmd, nil)
+}
+
+func detectNotifySessionFromHistory(cfg *config.Config, channel string) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("config unavailable")
+	}
+	ch := strings.ToLower(strings.TrimSpace(channel))
+	prefix := ""
+	switch ch {
+	case "telegram":
+		prefix = "tg:"
+	case "slack":
+		prefix = "slack:"
+	case "discord":
+		prefix = "discord:"
+	default:
+		return "", fmt.Errorf("unsupported channel %q", channel)
+	}
+	dbPath := strings.TrimSpace(cfg.Memory.EpisodicDBPath)
+	if dbPath == "" {
+		dbPath = filepath.Join(cfg.StateDir, "memory", "episodic.db")
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return "", fmt.Errorf("episodic memory DB not found at %s; send one message from %s first", dbPath, ch)
+	}
+	ep, err := memory.NewEpisodicMemory(dbPath)
+	if err != nil {
+		return "", err
+	}
+	defer ep.Close()
+	ids, err := ep.ListSessions(context.Background(), 200)
+	if err != nil {
+		return "", err
+	}
+	for _, id := range ids {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(id)), prefix) {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("no recent %s sessions found in memory history", ch)
 }
 
 func runEmailCLIAction(gf *globalFlags, verb, token, editBody string) error {
