@@ -139,10 +139,11 @@ func (s *Service) Run(ctx context.Context) {
 				m, err := be.Fetch(c, ref)
 				if err != nil {
 					s.log.Warn("email fetch", zap.String("account", acc.Name), zap.Error(err))
-					return nil
+					return err
 				}
 				if err := s.ProcessNewMail(c, acc, m); err != nil {
 					s.log.Warn("email pipeline", zap.String("account", acc.Name), zap.Error(err))
+					return err
 				}
 				return nil
 			})
