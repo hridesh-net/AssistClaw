@@ -346,6 +346,7 @@ func (p *Provider) newRequest(ctx context.Context, method, path string, body []b
 		url += "/v1"
 	}
 	url += path
+	fmt.Printf("[DEBUG] %s request URL: %s\n", p.cfg.Name, url)
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -391,6 +392,11 @@ func (p *Provider) buildBody(req *provider.CompletionRequest, stream bool) ([]by
 	model := req.Model
 	if model == "" {
 		model = p.cfg.DefaultModel
+	}
+	
+	// Strip provider prefix if present (e.g. "groq/llama-3.3-70b-versatile" → "llama-3.3-70b-versatile")
+	if idx := strings.Index(model, "/"); idx != -1 {
+		model = model[idx+1:]
 	}
 
 	var messages []chatMessage

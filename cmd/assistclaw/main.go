@@ -1908,8 +1908,14 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 		}))
 	}
 	if prov.Groq != nil {
+		groqBaseURL := prov.Groq.BaseURL
+		if groqBaseURL == "" {
+			groqBaseURL = "https://api.groq.com/openai/v1"
+		}
 		register(openaicompat.New(openaicompat.Config{
-			Name: "groq", BaseURL: "https://api.groq.com", APIKey: prov.Groq.APIKey,
+			Name:           "groq",
+			BaseURL:        groqBaseURL,
+			APIKey:         prov.Groq.APIKey,
 			DefaultModel:   prov.Groq.DefaultModel,
 			StaticModels:   catalogs.GroqModels("groq"),
 			DiscoverModels: true,
