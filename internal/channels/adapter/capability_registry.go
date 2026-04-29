@@ -53,6 +53,18 @@ var capabilityRegistry = map[string]ChannelCapabilities{
 		Edits:            false,
 		MaxMessageLength: 4000,
 	},
+	"msteams": {
+		Threading:          true,
+		Attachments:        true,
+		DirectMessages:     true,
+		GroupMessages:      true,
+		Mentions:           true,
+		Voice:              false,
+		Reactions:          false,
+		Edits:              false,
+		MaxMessageLength:   28000,
+		InteractiveButtons: false,
+	},
 }
 
 var capabilityRegistryMu sync.RWMutex
