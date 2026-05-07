@@ -1,0 +1,187 @@
+/* Email Widget Supreme Styling */
+.email-app-widget {
+  background: rgba(22, 22, 31, 0.7);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+  width: 100%;
+  max-width: 850px;
+  margin-top: 12px;
+  font-family: var(--font-body);
+  color: var(--text);
+}
+
+/* Header */
+.ew-header {
+  padding: 16px 20px;
+  background: linear-gradient(90deg, rgba(162, 114, 255, 0.1) 0%, rgba(0,0,0,0) 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ew-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ew-bot-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 4px 12px rgba(162, 114, 255, 0.3);
+}
+.ew-header-title h3 {
+  font-family: var(--font-ui);
+  margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.3px;
+}
+.ew-header-title p {
+  margin: 0; font-size: 12px; color: var(--text-sub);
+}
+
+.ew-header-right {
+  display: flex; align-items: center; gap: 10px;
+}
+.ew-badge {
+  padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; border: 1px solid transparent; cursor: pointer; user-select: none;
+}
+.ew-badge.high { background: rgba(255, 85, 119, 0.15); color: #ff5577; border-color: rgba(255, 85, 119, 0.3); }
+.ew-badge.normal { background: rgba(162, 114, 255, 0.15); color: #c4a1ff; border-color: rgba(162, 114, 255, 0.3); }
+.ew-badge.low { background: rgba(122, 255, 212, 0.15); color: #7affd4; border-color: rgba(122, 255, 212, 0.3); }
+
+.ew-priority-dropdown {
+  position: absolute; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px; box-shadow: 0 10px 24px rgba(0,0,0,0.5); z-index: 10;
+  display: flex; flex-direction: column; gap: 4px; top: 60px; right: 20px;
+}
+.ew-priority-dropdown.hidden { display: none; }
+.ew-priority-option { padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.ew-priority-option:hover { background: var(--bg-hover); }
+
+/* Body Sections */
+.ew-body { padding: 4px 0; }
+
+.ew-section {
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.ew-section:last-child { border-bottom: none; }
+
+.ew-section-header {
+  padding: 14px 20px;
+  display: flex; justify-content: space-between; align-items: center;
+  cursor: pointer; user-select: none; transition: background 0.2s;
+}
+.ew-section-header:hover { background: rgba(255,255,255,0.02); }
+.ew-section-title {
+  font-family: var(--font-ui); font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--muted); display: flex; align-items: center; gap: 8px;
+}
+.ew-chevron {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); color: var(--muted);
+}
+.ew-section.collapsed .ew-chevron { transform: rotate(-90deg); }
+.ew-section-content {
+  padding: 0 20px 20px; display: none; animation: ewFadeIn 0.3s ease;
+}
+.ew-section:not(.collapsed) .ew-section-content { display: block; }
+@keyframes ewFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Shared details */
+.ew-grid { display: grid; gap: 16px; }
+
+/* 1. Email Details */
+.ew-details { display: grid; grid-template-columns: auto 1fr; gap: 12px 16px; align-items: center; font-size: 13px; }
+.ew-label { color: var(--text-sub); font-weight: 500; }
+.ew-value { color: var(--text); }
+.ew-tiles { display: flex; gap: 8px; flex-wrap: wrap; }
+.ew-tile { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 12px; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+
+/* 2. AI Summary */
+.ew-summary-box {
+  background: rgba(0,0,0,0.2); border-left: 4px solid var(--accent);
+  padding: 16px; border-radius: 0 8px 8px 0; margin-bottom: 16px;
+}
+.ew-summary-text { font-size: 14px; line-height: 1.6; }
+.ew-stats-row { display: flex; gap: 12px; margin-bottom: 16px; }
+.ew-stat-card {
+  flex: 1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px; padding: 12px; text-align: center;
+}
+.ew-stat-card .val { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.ew-stat-card .lbl { font-size: 11px; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; }
+.ew-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.ew-tag {
+  background: rgba(162, 114, 255, 0.1); color: var(--accent); border: 1px solid rgba(162, 114, 255, 0.3);
+  padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.ew-tag:hover { background: rgba(162, 114, 255, 0.2); transform: translateY(-1px); }
+
+/* 3. Draft Reply */
+.ew-draft-tools { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.ew-select {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 12px; border-radius: 8px; font-size: 12px; outline: none; cursor: pointer; font-family: var(--font-ui);
+}
+.ew-select:hover { border-color: rgba(255,255,255,0.2); }
+.ew-textarea {
+  width: 100%; min-height: 160px; background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; color: var(--text); font-family: var(--font-body); font-size: 14px;
+  line-height: 1.6; resize: vertical; outline: none; transition: border-color 0.2s;
+}
+.ew-textarea:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 3px rgba(162, 114, 255, 0.15); }
+
+/* 4. Send Options */
+.ew-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ew-opt-group { display: flex; flex-direction: column; gap: 6px; }
+.ew-opt-group label { font-size: 12px; color: var(--muted); }
+.ew-input {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+  padding: 10px 12px; border-radius: 8px; font-size: 13px; outline: none; width: 100%;
+}
+.ew-input:focus { border-color: var(--accent); }
+
+/* 5. Thread History */
+.ew-timeline { border-left: 2px solid rgba(255,255,255,0.1); margin-left: 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 16px; }
+.ew-timeline-item { position: relative; }
+.ew-timeline-dot {
+  position: absolute; left: -27px; top: 4px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--bg-card); border: 2px solid var(--muted);
+}
+.ew-timeline-item.active .ew-timeline-dot { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.ew-tl-header { font-size: 12px; display: flex; justify-content: space-between; color: var(--text-sub); margin-bottom: 4px; }
+.ew-tl-content { font-size: 13px; color: var(--text); background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); }
+
+/* Footer Actions */
+.ew-footer {
+  padding: 16px 20px; background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+}
+.ew-btn {
+  flex: 1; min-width: 120px; padding: 12px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+  display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; transition: all 0.2s;
+  border: 1px solid transparent; font-family: var(--font-ui);
+}
+.ew-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.3); }
+.ew-btn:active { transform: scale(0.96); }
+
+.ew-btn.approve { background: rgba(122, 255, 212, 0.1); color: #7affd4; border-color: rgba(122, 255, 212, 0.3); }
+.ew-btn.approve:hover { background: rgba(122, 255, 212, 0.2); }
+
+.ew-btn.edit { background: rgba(102, 178, 255, 0.1); color: #66b2ff; border-color: rgba(102, 178, 255, 0.3); }
+.ew-btn.edit:hover { background: rgba(102, 178, 255, 0.2); }
+
+.ew-btn.regenerate { background: rgba(255, 209, 102, 0.1); color: #ffd166; border-color: rgba(255, 209, 102, 0.3); }
+.ew-btn.regenerate:hover { background: rgba(255, 209, 102, 0.2); }
+
+.ew-btn.translate { background: rgba(224, 114, 255, 0.1); color: #e072ff; border-color: rgba(224, 114, 255, 0.3); }
+.ew-btn.translate:hover { background: rgba(224, 114, 255, 0.2); }
+
+.ew-btn.reject { background: rgba(255, 85, 119, 0.1); color: #ff5577; border-color: rgba(255, 85, 119, 0.3); }
+.ew-btn.reject:hover { background: rgba(255, 85, 119, 0.2); }
+

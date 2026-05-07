@@ -12,9 +12,12 @@ import (
 )
 
 var (
-	reApprove = regexp.MustCompile(`(?i)^\s*approve\s+([a-z0-9]+)\s*$`)
-	reReject  = regexp.MustCompile(`(?i)^\s*reject\s+([a-z0-9]+)\s*$`)
-	reEdit    = regexp.MustCompile(`(?i)^\s*edit\s+([a-z0-9]+)\s*:\s*(.+)$`)
+	reApprove          = regexp.MustCompile(`(?i)^\s*approve\s+([a-z0-9]+)\s*$`)
+	reReject           = regexp.MustCompile(`(?i)^\s*reject\s+([a-z0-9]+)\s*$`)
+	reEdit             = regexp.MustCompile(`(?i)^\s*edit\s+([a-z0-9]+)\s*:\s*(.+)$`)
+	reEditPrompt       = regexp.MustCompile(`(?i)^\s*edit_prompt\s+([a-z0-9]+)\s*$`)
+	reRegeneratePrompt = regexp.MustCompile(`(?i)^\s*regenerate_prompt\s+([a-z0-9]+)\s*$`)
+	reRegenerate       = regexp.MustCompile(`(?i)^\s*regenerate\s+([a-z0-9]+)\s*:\s*(.+)$`)
 )
 
 // ParseInboundCommand detects approve/reject/edit lines.
@@ -34,6 +37,15 @@ func ParseInboundCommand(text string) (verb, token, editBody string) {
 	}
 	if m := reEdit.FindStringSubmatch(first); len(m) == 3 {
 		return "edit", strings.ToLower(m[1]), strings.TrimSpace(m[2])
+	}
+	if m := reEditPrompt.FindStringSubmatch(first); len(m) == 2 {
+		return "edit_prompt", strings.ToLower(m[1]), ""
+	}
+	if m := reRegeneratePrompt.FindStringSubmatch(first); len(m) == 2 {
+		return "regenerate_prompt", strings.ToLower(m[1]), ""
+	}
+	if m := reRegenerate.FindStringSubmatch(first); len(m) == 3 {
+		return "regenerate", strings.ToLower(m[1]), strings.TrimSpace(m[2])
 	}
 	return "", "", ""
 }
@@ -82,6 +94,9 @@ func (s *Service) HandleInboundCommand(ctx context.Context, channelID, sessionID
 		_ = s.store.AppendAudit(ctx, "reject", token, msg.Subject)
 		return fmt.Sprintf("Rejected draft %s. You can handle the thread manually.", token), true, nil
 
+	case "edit_prompt":
+		return fmt.Sprintf("To edit this draft, please reply with the following format:\nedit %s: <your new draft text here>", token), true, nil
+
 	case "edit":
 		if editBody == "" {
 			return "Edit text is empty; use: edit <token>: <new body>", true, nil
@@ -100,6 +115,34 @@ func (s *Service) HandleInboundCommand(ctx context.Context, channelID, sessionID
 			return "Updated draft locally but failed to post: " + err.Error(), true, nil
 		}
 		return "Draft updated and reposted. Reply with approve " + token + " when ready.", true, nil
+
+	case "regenerate_prompt":
+		return fmt.Sprintf("To regenerate this draft, please reply with the following format:\nregenerate %s: <your instructions here (e.g. make it shorter)>", token), true, nil
+
+	case "regenerate":
+		if editBody == "" {
+			return "Instruction text is empty. Use: regenerate <token>: <instruction>", true, nil
+		}
+		prompt := fmt.Sprintf("Original Email summary:\n%s\n\nUser Instructions for Reply:\n%s\n\nPlease write a new helpful, professional reply based ONLY on these instructions.", d.Summary, editBody)
+
+		newDraft, err := s.runLLM(ctx, "You are a professional email assistant. Read the summary and follow the user instructions exactly.", prompt)
+		if err != nil {
+			return "Failed to run LLM: " + err.Error(), true, nil
+		}
+		if err := s.store.UpdateDraftBody(ctx, token, newDraft); err != nil {
+			return "", true, err
+		}
+		_ = s.store.AppendAudit(ctx, "regenerate", token, editBody)
+
+		body := formatMailPost(msg, d.Summary, newDraft, token)
+		acc, ok := s.accountByName(msg.AccountName)
+		if !ok {
+			return "Internal error: unknown account " + msg.AccountName, true, nil
+		}
+		if err := s.publishForAccount(ctx, acc, body, token); err != nil {
+			return "Updated draft locally but failed to post: " + err.Error(), true, nil
+		}
+		return "Draft regenerated and reposted. Reply with approve " + token + " when ready.", true, nil
 
 	case "approve":
 		_ = s.store.AppendAudit(ctx, "approve_intent", token, msg.Subject)

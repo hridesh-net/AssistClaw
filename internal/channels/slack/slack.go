@@ -26,11 +26,11 @@ var (
 
 // Channel implements [channels.Channel] and [adapter.Adapter] for Slack Socket Mode.
 type Channel struct {
-	client    *socketmode.Client
-	stopCh    chan struct{}
-	stopOnce  sync.Once
-	dmMode    string
-	allowFrom []string
+	client       *socketmode.Client
+	stopCh       chan struct{}
+	stopOnce     sync.Once
+	dmMode       string
+	allowFrom    []string
 	reliableSend *adapter.ReliableSender
 }
 
@@ -162,9 +162,92 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 				case socketmode.EventTypeInteractive:
 					c.client.Ack(*evt.Request)
 					cb, ok := evt.Data.(slack.InteractionCallback)
-					if !ok || cb.Type != slack.InteractionTypeBlockActions {
+					if !ok {
 						continue
 					}
+
+					if cb.Type == slack.InteractionTypeViewSubmission {
+						if strings.HasPrefix(cb.View.CallbackID, "edit_draft_modal_") {
+							token := strings.TrimPrefix(cb.View.CallbackID, "edit_draft_modal_")
+							newBody := ""
+							if block, ok := cb.View.State.Values["draft_block"]; ok {
+								if act, ok := block["draft_input"]; ok {
+									newBody = act.Value
+								}
+							}
+							if newBody == "" {
+								continue
+							}
+							user := cb.User.ID
+
+							if c.dmMode == "disabled" {
+								continue
+							}
+							if c.dmMode == "allowlist" {
+								allowed := false
+								for _, allowedNum := range c.allowFrom {
+									if user == allowedNum {
+										allowed = true
+										break
+									}
+								}
+								if !allowed {
+									continue
+								}
+							}
+
+							chID := ""
+							threadTS := ""
+							parts := strings.Split(cb.View.PrivateMetadata, "|")
+							if len(parts) >= 1 {
+								chID = parts[0]
+							}
+							if len(parts) >= 2 {
+								threadTS = parts[1]
+							}
+
+							sessionID := fmt.Sprintf("slack:%s", chID)
+							if threadTS != "" {
+								sessionID = fmt.Sprintf("slack:%s:%s", chID, threadTS)
+							}
+
+							val := fmt.Sprintf("edit %s: %s", token, newBody)
+
+							inEv := adapter.InboundEvent{
+								ID:         fmt.Sprintf("%d", time.Now().UnixNano()),
+								ChannelID:  c.Name(),
+								SessionID:  sessionID,
+								OccurredAt: time.Now().UTC(),
+								Sender: adapter.SenderRef{
+									ID: user,
+								},
+								Recipient: adapter.RecipientRef{
+									ID:   chID,
+									Kind: "channel",
+								},
+								Text: val,
+								Parts: []provider.ContentPart{{
+									Type: provider.ContentTypeText,
+									Text: val,
+								}},
+								Metadata: map[string]string{
+									channels.MetaSlackChannelID: chID,
+									channels.MetaSlackThreadTS:  threadTS,
+								},
+							}
+							go func(inEv adapter.InboundEvent) {
+								if err := h(ctx, inEv); err != nil {
+									log.Printf("Slack: inbound handler error: %v", err)
+								}
+							}(inEv)
+						}
+						continue
+					}
+
+					if cb.Type != slack.InteractionTypeBlockActions {
+						continue
+					}
+
 					for _, act := range cb.ActionCallback.BlockActions {
 						if act == nil || !strings.HasPrefix(act.ActionID, "assistclaw_mail_") {
 							continue
@@ -181,6 +264,35 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 						if threadTS == "" {
 							threadTS = strings.TrimSpace(cb.Message.ThreadTimestamp)
 						}
+
+						if strings.HasPrefix(val, "edit_prompt ") {
+							token := strings.TrimPrefix(val, "edit_prompt ")
+
+							textObj := slack.NewTextBlockObject(slack.PlainTextType, "Draft Body", false, false)
+							inputObj := slack.NewPlainTextInputBlockElement(slack.NewTextBlockObject(slack.PlainTextType, "Enter new email body...", false, false), "draft_input")
+							inputObj.Multiline = true
+
+							modalRequest := slack.ModalViewRequest{
+								Type:            slack.VTModal,
+								CallbackID:      "edit_draft_modal_" + token,
+								Title:           slack.NewTextBlockObject(slack.PlainTextType, "Edit Draft", false, false),
+								Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Save", false, false),
+								Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+								PrivateMetadata: fmt.Sprintf("%s|%s", chID, threadTS),
+								Blocks: slack.Blocks{
+									BlockSet: []slack.Block{
+										slack.NewInputBlock("draft_block", textObj, nil, inputObj),
+									},
+								},
+							}
+
+							_, err := c.client.OpenView(cb.TriggerID, modalRequest)
+							if err != nil {
+								log.Printf("Slack: failed to open view: %v", err)
+							}
+							continue
+						}
+
 						sessionID := fmt.Sprintf("slack:%s", chID)
 						if threadTS != "" {
 							sessionID = fmt.Sprintf("slack:%s:%s", chID, threadTS)
@@ -417,7 +529,7 @@ func sanitizeSlackBlockID(s string) string {
 
 func slackBlocksFromMail(body string, kb [][]adapter.InlineKeyboardButton) slack.Blocks {
 	tb := truncateMailRunes(body, 2900)
-	header := slack.NewSectionBlock(slack.NewTextBlockObject(slack.PlainTextType, tb, false, false), nil, nil)
+	header := slack.NewSectionBlock(slack.NewTextBlockObject(slack.MarkdownType, tb, false, false), nil, nil)
 	var rows []slack.Block
 	for ri, row := range kb {
 		if len(row) == 0 {

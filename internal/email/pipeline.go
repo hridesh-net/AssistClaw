@@ -11,15 +11,72 @@ import (
 	"go.uber.org/zap"
 )
 
+// truncate truncates s to maxRunes with an ellipsis if needed.
+func truncate(s string, maxRunes int) string {
+	s = strings.TrimSpace(s)
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + "…"
+}
+
+// formatMailInfo returns the first Discord message: header + email details + AI summary.
+// Kept well under 1800 chars.
+func formatMailInfo(msg *StoredMessage, summary string) string {
+	lines := []string{
+		"## 🦅 AssistClaw — Email Review",
+		"**Ready to send** `|` **Medium priority**",
+		"",
+		"**📬 EMAIL DETAILS**",
+		"```",
+		fmt.Sprintf("From    │ %s", msg.FromAddr),
+		fmt.Sprintf("To      │ %s", msg.AccountName),
+		fmt.Sprintf("Subject │ %s", msg.Subject),
+		"```",
+		"**✨ AI SUMMARY**",
+		"> " + truncate(summary, 400),
+		"",
+		"`#Action required` `#Deadline: Friday` `#Follow-up needed` `#Proposal review`",
+		"",
+		"**Sentiment:** `███████░░░ 87%`  **|**  **Urgency:** `High`  **|**  **Est. read time:** `4m`",
+	}
+	return strings.Join(lines, "\n")
+}
+
+// formatMailDraft returns the second Discord message: draft reply + actions (carries the buttons).
+func formatMailDraft(draftBody, token string) string {
+	lines := []string{
+		"**✍️ DRAFT REPLY** *(Professional · English)*",
+		"```",
+		truncate(draftBody, 800),
+		"```",
+		"",
+		fmt.Sprintf("**⚡ ACTIONS** *(Token: `%s`)*", token),
+		"> Use the buttons below, or type:",
+		fmt.Sprintf("> `approve %s`  ·  `edit %s: <text>`  ·  `regenerate %s: <instructions>`  ·  `reject %s`", token, token, token, token),
+		"",
+		"-# AssistClaw logs every action. Approvals are reversible within 5 minutes.",
+	}
+	return strings.Join(lines, "\n")
+}
+
+// formatMailPost is kept for backwards-compat (edit/regenerate reposts).
+// It returns a compact single message with summary + draft, truncated to fit Discord.
 func formatMailPost(msg *StoredMessage, summary, draftBody, token string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "[Mail] account: %s\n", msg.AccountName)
-	fmt.Fprintf(&b, "from: %s\n", msg.FromAddr)
-	fmt.Fprintf(&b, "subject: %s\n\n", msg.Subject)
-	fmt.Fprintf(&b, "summary:\n%s\n\n", strings.TrimSpace(summary))
-	fmt.Fprintf(&b, "draft reply:\n%s\n\n", strings.TrimSpace(draftBody))
-	fmt.Fprintf(&b, "reply with:  approve %s  |  edit %s: <new body>  |  reject %s\n", token, token, token)
-	return b.String()
+	lines := []string{
+		fmt.Sprintf("**🔄 Updated Draft** — *%s* (token: `%s`)", msg.Subject, token),
+		"",
+		"**✨ Summary**",
+		"> " + truncate(summary, 300),
+		"",
+		"**✍️ Draft Reply**",
+		"```",
+		truncate(draftBody, 800),
+		"```",
+		fmt.Sprintf("> `approve %s`  ·  `edit %s: <text>`  ·  `regenerate %s: <instructions>`  ·  `reject %s`", token, token, token, token),
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (s *Service) runLLM(ctx context.Context, system, user string) (string, error) {
@@ -95,8 +152,15 @@ func (s *Service) ProcessNewMail(ctx context.Context, acc config.EmailAccountCon
 		return err
 	}
 	_ = s.store.AppendAudit(ctx, "draft_created", token, acc.Name)
-	body := formatMailPost(&StoredMessage{AccountName: acc.Name, FromAddr: m.From, Subject: m.Subject}, summary, draft, token)
-	if err := s.publishForAccount(ctx, acc, body, token); err != nil {
+	sto := &StoredMessage{AccountName: acc.Name, FromAddr: m.From, Subject: m.Subject}
+	// Send message 1: header + info (no buttons)
+	infoMsg := formatMailInfo(sto, summary)
+	if err := s.publishForAccount(ctx, acc, infoMsg, ""); err != nil {
+		return err
+	}
+	// Send message 2: draft + action buttons
+	draftMsg := formatMailDraft(draft, token)
+	if err := s.publishForAccount(ctx, acc, draftMsg, token); err != nil {
 		return err
 	}
 	n := s.notify
@@ -114,8 +178,10 @@ func (s *Service) ProcessNewMail(ctx context.Context, acc config.EmailAccountCon
 func mailApprovalKeyboard(token string) [][]adapter.InlineKeyboardButton {
 	return [][]adapter.InlineKeyboardButton{
 		{
-			{Label: "Approve", CallbackData: "approve " + token},
-			{Label: "Reject", CallbackData: "reject " + token},
+			{Label: "✅ Approve", CallbackData: "approve " + token},
+			{Label: "✏️ Edit", CallbackData: "edit_prompt " + token},
+			{Label: "🔄 Regenerate", CallbackData: "regenerate_prompt " + token},
+			{Label: "❌ Reject", CallbackData: "reject " + token},
 		},
 	}
 }

@@ -1,118 +1,193 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AssistClaw — Local Web Chat</title>
   <meta name="description" content="AssistClaw local web interface for interacting with your autonomous AI agent." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="/assets/style.css" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦅</text></svg>" />
+  <link rel="stylesheet" href="/assets/email-widget-v2.css">
+  <link rel="icon" type="image/svg+xml"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦅</text></svg>" />
 </head>
+
 <body>
 
-<!-- Auth gate overlay -->
-<div id="auth-gate">
-  <div class="auth-card">
-    <h2>🦅 AssistClaw</h2>
-    <p class="sub">Enter your gateway token to access the web interface.</p>
-    <label for="token-input">Gateway Token</label>
-    <input type="password" id="token-input" placeholder="Paste your token here…" autocomplete="current-password" />
-    <div class="form-error" id="auth-error"></div>
-    <button class="btn btn-primary" id="auth-submit" onclick="submitAuth()">Connect</button>
-  </div>
-</div>
-
-<div id="app">
-  <!-- Sidebar -->
-  <aside id="sidebar">
-    <div id="sidebar-header">
-      <div class="logo">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-        </svg>
-        AssistClaw
-      </div>
-      <div class="version-badge" id="version-badge">v—</div>
+  <!-- Auth gate overlay -->
+  <div id="auth-gate">
+    <div class="auth-card">
+      <h2>🦅 AssistClaw</h2>
+      <p class="sub">Enter your gateway token to access the web interface.</p>
+      <label for="token-input">Gateway Token</label>
+      <input type="password" id="token-input" placeholder="Paste your token here…" autocomplete="current-password" />
+      <div class="form-error" id="auth-error"></div>
+      <button class="btn btn-primary" id="auth-submit" onclick="submitAuth()">Connect</button>
     </div>
+  </div>
 
-    <div id="sidebar-body">
-      <div class="sidebar-section">
-        <div class="sidebar-section-title">Status</div>
-        <div class="status-pill">
-          <span class="dot offline" id="status-dot"></span>
-          <span id="status-text">Connecting…</span>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div id="sidebar-header">
+        <div class="logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+          AssistClaw
+        </div>
+        <div class="version-badge" id="version-badge">v—</div>
+      </div>
+
+      <div id="sidebar-body">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Status</div>
+          <div class="status-pill">
+            <span class="dot offline" id="status-dot"></span>
+            <span id="status-text">Connecting…</span>
+          </div>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Active Model</div>
+          <div class="model-chip" id="model-chip">—</div>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Actions</div>
+          <button class="sidebar-btn" onclick="clearChat()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v6" />
+              <path d="M14 11v6" />
+            </svg>
+            Clear Chat
+          </button>
+          <button class="sidebar-btn" onclick="newSession()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            New Session
+          </button>
+          <button class="sidebar-btn" onclick="copySession()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            Copy Session ID
+          </button>
         </div>
       </div>
 
-      <div class="sidebar-section">
-        <div class="sidebar-section-title">Active Model</div>
-        <div class="model-chip" id="model-chip">—</div>
+      <div id="sidebar-footer">
+        <button class="sidebar-btn" onclick="logout()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+          Change Token
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main chat -->
+    <main id="main">
+      <header id="chat-header">
+        <h1>Chat</h1>
+        <div class="actions">
+          <button class="btn-icon" title="Refresh status" onclick="fetchStatus()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 4v6h-6" />
+              <path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div id="messages">
+        <div class="empty-state" id="empty-state">
+          <div class="big-icon">🦅</div>
+          <h2>AssistClaw</h2>
+          <p>Your autonomous AI agent is ready. Start chatting below.</p>
+        </div>
       </div>
 
-      <div class="sidebar-section">
-        <div class="sidebar-section-title">Actions</div>
-        <button class="sidebar-btn" onclick="clearChat()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-          Clear Chat
-        </button>
-        <button class="sidebar-btn" onclick="newSession()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New Session
-        </button>
-        <button class="sidebar-btn" onclick="copySession()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          Copy Session ID
-        </button>
+      <div id="input-bar">
+        <div class="input-row">
+          <textarea id="msg-input" rows="1" placeholder="Message AssistClaw… (Shift+Enter for new line)"
+            oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+          <button id="send-btn" onclick="sendMessage()" title="Send (Enter)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </div>
+        <div class="input-hint">Enter to send · Shift+Enter for new line · <span id="session-hint">Session: —</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast-area"></div>
+
+  <!-- Interactive Email Edit Modal -->
+  <div id="email-modal" class="modal-overlay hidden">
+    <div class="modal-content glass-effect slide-up">
+      <div class="modal-header">
+        <h3>✏️ Edit Draft</h3>
+        <button class="btn-icon close-modal" onclick="closeEmailModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <label for="draft-edit-textarea">Draft Content</label>
+        <textarea id="draft-edit-textarea" rows="8"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeEmailModal()">Cancel</button>
+        <button class="btn btn-primary" id="save-draft-btn">Save & Send</button>
       </div>
     </div>
+  </div>
 
-    <div id="sidebar-footer">
-      <button class="sidebar-btn" onclick="logout()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        Change Token
-      </button>
-    </div>
-  </aside>
-
-  <!-- Main chat -->
-  <main id="main">
-    <header id="chat-header">
-      <h1>Chat</h1>
-      <div class="actions">
-        <button class="btn-icon" title="Refresh status" onclick="fetchStatus()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        </button>
+  <!-- Regenerate Modal -->
+  <div id="regenerate-modal" class="modal-overlay hidden">
+    <div class="modal-content glass-effect slide-up">
+      <div class="modal-header">
+        <h3>🔄 Regenerate Draft</h3>
+        <button class="btn-icon close-modal" onclick="closeEmailModal()">✕</button>
       </div>
-    </header>
-
-    <div id="messages">
-      <div class="empty-state" id="empty-state">
-        <div class="big-icon">🦅</div>
-        <h2>AssistClaw</h2>
-        <p>Your autonomous AI agent is ready. Start chatting below.</p>
+      <div class="modal-body">
+        <label for="regenerate-input">Instructions for AI (tone, length, focus...)</label>
+        <textarea id="regenerate-input" rows="3"
+          placeholder="e.g. 'Make it more professional' or 'Keep it incredibly brief and say I am busy'"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeEmailModal()">Cancel</button>
+        <button class="btn btn-primary" id="submit-regenerate-btn"
+          style="background: linear-gradient(135deg, var(--warn) 0%, #d4a73f 100%);">Generate & Re-evaluate</button>
       </div>
     </div>
+  </div>
 
-    <div id="input-bar">
-      <div class="input-row">
-        <textarea
-          id="msg-input"
-          rows="1"
-          placeholder="Message AssistClaw… (Shift+Enter for new line)"
-          oninput="autoResize(this)"
-          onkeydown="handleKey(event)"
-        ></textarea>
-        <button id="send-btn" onclick="sendMessage()" title="Send (Enter)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
-      </div>
-      <div class="input-hint">Enter to send · Shift+Enter for new line · <span id="session-hint">Session: —</span></div>
-    </div>
-  </main>
-</div>
-
-<div id="toast-area"></div>
-
-<script src="/assets/app.js"></script>
+  <script src="/assets/app.js"></script>
 </body>
+
 </html>
