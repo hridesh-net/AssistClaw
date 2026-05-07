@@ -31,6 +31,7 @@ import (
 	"github.com/assistclaw/assistclaw/internal/channels/discord"
 	"github.com/assistclaw/assistclaw/internal/channels/slack"
 	"github.com/assistclaw/assistclaw/internal/channels/telegram"
+	"github.com/assistclaw/assistclaw/internal/channels/teams"
 	"github.com/assistclaw/assistclaw/internal/channels/whatsapp"
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/email"
@@ -363,6 +364,9 @@ func statusCmd(gf *globalFlags) *cobra.Command {
 			}
 			if cfg.Channels.Slack != nil {
 				channels = append(channels, "Slack")
+			}
+			if cfg.Channels.Teams != nil {
+				channels = append(channels, "Teams")
 			}
 
 			// MCP transport
@@ -815,6 +819,9 @@ Extend behavior via skills, MCP, channels, or prompt_files as needed.`,
 			}
 			if cfg.Channels.Slack != nil {
 				ch = append(ch, "slack")
+			}
+			if cfg.Channels.Teams != nil {
+				ch = append(ch, "msteams")
 			}
 			if len(ch) == 0 {
 				fmt.Println(dim.Render("  (none configured)"))
@@ -1586,6 +1593,7 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	var dcCh *discord.Channel
 	var slCh *slack.Channel
 	var waCh *whatsapp.Channel
+	var teamsCh *teams.Channel
 	activeChannels := 0
 	reliableOutbound := map[string]*chadapter.ReliableSender{}
 	reliabilityCfg := chadapter.ReliabilityConfig{
@@ -1670,6 +1678,26 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 			activeChannels++
 		}
 	}
+	if cfg.Channels.Teams != nil {
+		tm, err := teams.New(
+			cfg.Channels.Teams.AppID,
+			cfg.Channels.Teams.AppPassword,
+			cfg.Channels.Teams.ListenAddr,
+			cfg.Channels.Teams.DMMode,
+			cfg.Channels.Teams.AllowFrom,
+		)
+		if err == nil {
+			tmRS := chadapter.NewReliableSender("msteams", tm, reliabilityCfg)
+			tm.WithReliableOutbound(tmRS)
+			reliableOutbound["msteams"] = tmRS
+			channelSenders["msteams"] = reliableToolSender{
+				rs: tmRS,
+			}
+			teamsCh = tm
+			log.Info("Teams channel active")
+			activeChannels++
+		}
+	}
 
 	if cfg.Email.Enabled {
 		emailStore, err := email.OpenStore(cfg.StateDir)
@@ -1703,6 +1731,9 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 	}
 	if waCh != nil {
 		go waCh.Start(ctx, msgHandler)
+	}
+	if teamsCh != nil {
+		go teamsCh.Start(ctx, msgHandler)
 	}
 
 	// Heartbeats: periodic synthetic turns on a dedicated session (no chat spam).
@@ -1908,8 +1939,14 @@ func registerProviders(ctx context.Context, cfg *config.Config, reg *provider.Re
 		}))
 	}
 	if prov.Groq != nil {
+		groqBaseURL := prov.Groq.BaseURL
+		if groqBaseURL == "" {
+			groqBaseURL = "https://api.groq.com/openai/v1"
+		}
 		register(openaicompat.New(openaicompat.Config{
-			Name: "groq", BaseURL: "https://api.groq.com", APIKey: prov.Groq.APIKey,
+			Name:           "groq",
+			BaseURL:        groqBaseURL,
+			APIKey:         prov.Groq.APIKey,
 			DefaultModel:   prov.Groq.DefaultModel,
 			StaticModels:   catalogs.GroqModels("groq"),
 			DiscoverModels: true,

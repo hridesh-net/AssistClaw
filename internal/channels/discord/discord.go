@@ -35,6 +35,8 @@ type Channel struct {
 
 	legacyMu      sync.RWMutex
 	legacyHandler channels.MessageHandler // used by voice path (!join) until refactored to InboundEvent
+	editMu        sync.Mutex
+	editExpect    map[string]string // userID -> token
 }
 
 func New(token string, dmMode string, allowFrom []string, requireMention bool, voiceClient *voice.Client) (*Channel, error) {
@@ -55,6 +57,7 @@ func New(token string, dmMode string, allowFrom []string, requireMention bool, v
 		requireMention:   requireMention,
 		voiceClient:      voiceClient,
 		voiceConnections: make(map[string]*discordgo.VoiceConnection),
+		editExpect:       make(map[string]string),
 	}, nil
 }
 
@@ -110,7 +113,12 @@ func (c *Channel) Send(ctx context.Context, msg adapter.OutboundMessage) (*adapt
 		return nil, adapter.NewChannelError(adapter.ErrorKindPermanent, "discord: empty outbound body", nil)
 	}
 	caps, _ := adapter.BuiltinCaps(c.Name())
+
 	send := &discordgo.MessageSend{Content: body}
+
+	// The email card is now rendered as rich Discord markdown natively by formatMailPost.
+	// No embed override needed.
+
 	if caps.InteractiveButtons && len(msg.InlineKeyboard) > 0 {
 		for _, row := range msg.InlineKeyboard {
 			if len(row) == 0 {
@@ -351,18 +359,10 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 	})
 
 	c.session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		if i == nil || i.Interaction == nil || i.Type != discordgo.InteractionMessageComponent {
+		if i == nil || i.Interaction == nil {
 			return
 		}
-		data := i.MessageComponentData()
-		cb := strings.TrimSpace(data.CustomID)
-		if cb == "" {
-			return
-		}
-		low := strings.ToLower(cb)
-		if !strings.HasPrefix(low, "approve ") && !strings.HasPrefix(low, "reject ") {
-			return
-		}
+
 		uid := ""
 		if i.Member != nil && i.Member.User != nil {
 			uid = i.Member.User.ID
@@ -384,10 +384,183 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 				}
 			}
 			if !allowed {
-				log.Printf("Discord: blocked component interaction from unauthorized sender: %s", uid)
 				return
 			}
 		}
+
+		sessionID := fmt.Sprintf("discord:%s:%s", i.GuildID, i.ChannelID)
+
+		if i.Type == discordgo.InteractionModalSubmit {
+			data := i.ModalSubmitData()
+
+			if strings.HasPrefix(data.CustomID, "edit_modal_") {
+				token := strings.TrimPrefix(data.CustomID, "edit_modal_")
+				newBody := ""
+				for _, comp := range data.Components {
+					if actionsRow, ok := comp.(*discordgo.ActionsRow); ok && len(actionsRow.Components) > 0 {
+						if textInput, ok := actionsRow.Components[0].(*discordgo.TextInput); ok {
+							if textInput.CustomID == "draft_body" {
+								newBody = textInput.Value
+								break
+							}
+						}
+					}
+				}
+
+				if newBody != "" {
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Saving your edit... please wait.",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+
+					val := fmt.Sprintf("edit %s: %s", token, newBody)
+					ev := adapter.InboundEvent{
+						ID:         i.ID,
+						ChannelID:  c.Name(),
+						SessionID:  sessionID,
+						OccurredAt: time.Now().UTC(),
+						Sender:     adapter.SenderRef{ID: uid},
+						Recipient:  adapter.RecipientRef{ID: i.ChannelID, Kind: "channel"},
+						Text:       val,
+						Parts:      []provider.ContentPart{{Type: provider.ContentTypeText, Text: val}},
+						Metadata: map[string]string{
+							channels.MetaDiscordChannelID: i.ChannelID,
+							channels.MetaDiscordGuildID:   i.GuildID,
+						},
+					}
+					go func() {
+						if err := h(ctx, ev); err != nil {
+							log.Printf("Discord: inbound handler error: %v", err)
+						}
+					}()
+				}
+			}
+			if strings.HasPrefix(data.CustomID, "regenerate_modal_") {
+				token := strings.TrimPrefix(data.CustomID, "regenerate_modal_")
+				instructions := ""
+				for _, comp := range data.Components {
+					if actionsRow, ok := comp.(*discordgo.ActionsRow); ok && len(actionsRow.Components) > 0 {
+						if textInput, ok := actionsRow.Components[0].(*discordgo.TextInput); ok {
+							if textInput.CustomID == "instructions" {
+								instructions = textInput.Value
+								break
+							}
+						}
+					}
+				}
+
+				if instructions != "" {
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Regenerating draft... please wait.",
+							Flags:   discordgo.MessageFlagsEphemeral,
+						},
+					})
+
+					val := fmt.Sprintf("regenerate %s: %s", token, instructions)
+					ev := adapter.InboundEvent{
+						ID:         i.ID,
+						ChannelID:  c.Name(),
+						SessionID:  sessionID,
+						OccurredAt: time.Now().UTC(),
+						Sender:     adapter.SenderRef{ID: uid},
+						Recipient:  adapter.RecipientRef{ID: i.ChannelID, Kind: "channel"},
+						Text:       val,
+						Parts:      []provider.ContentPart{{Type: provider.ContentTypeText, Text: val}},
+						Metadata: map[string]string{
+							channels.MetaDiscordChannelID: i.ChannelID,
+							channels.MetaDiscordGuildID:   i.GuildID,
+						},
+					}
+					go func() {
+						if err := h(ctx, ev); err != nil {
+							log.Printf("Discord: inbound handler error: %v", err)
+						}
+					}()
+				}
+			}
+			return
+		}
+
+		if i.Type != discordgo.InteractionMessageComponent {
+			return
+		}
+
+		data := i.MessageComponentData()
+		cb := strings.TrimSpace(data.CustomID)
+		if cb == "" {
+			return
+		}
+		low := strings.ToLower(cb)
+		if !strings.HasPrefix(low, "approve ") && !strings.HasPrefix(low, "reject ") && !strings.HasPrefix(low, "edit_prompt ") && !strings.HasPrefix(low, "regenerate_prompt ") {
+			return
+		}
+
+		if strings.HasPrefix(low, "edit_prompt ") {
+			token := strings.TrimSpace(strings.TrimPrefix(low, "edit_prompt "))
+
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseModal,
+				Data: &discordgo.InteractionResponseData{
+					CustomID: "edit_modal_" + token,
+					Title:    "Edit Draft",
+					Components: []discordgo.MessageComponent{
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
+								discordgo.TextInput{
+									CustomID:    "draft_body",
+									Label:       "Draft Content",
+									Style:       discordgo.TextInputParagraph,
+									Placeholder: "Enter new email body...",
+									Required:    true,
+									MinLength:   1,
+								},
+							},
+						},
+					},
+				},
+			})
+			if err != nil {
+				log.Printf("Discord: modal respond err: %v", err)
+			}
+			return
+		}
+
+		if strings.HasPrefix(low, "regenerate_prompt ") {
+			token := strings.TrimSpace(strings.TrimPrefix(low, "regenerate_prompt "))
+
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseModal,
+				Data: &discordgo.InteractionResponseData{
+					CustomID: "regenerate_modal_" + token,
+					Title:    "Regenerate Draft",
+					Components: []discordgo.MessageComponent{
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
+								discordgo.TextInput{
+									CustomID:    "instructions",
+									Label:       "AI Prompt / Tone",
+									Style:       discordgo.TextInputShort,
+									Placeholder: "Make it more professional, keep it brief, etc...",
+									Required:    true,
+									MinLength:   1,
+								},
+							},
+						},
+					},
+				},
+			})
+			if err != nil {
+				log.Printf("Discord: modal respond err: %v", err)
+			}
+			return
+		}
+
+		// For approve and reject
 		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
@@ -398,7 +571,7 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 			log.Printf("Discord: interaction respond: %v", err)
 			return
 		}
-		sessionID := fmt.Sprintf("discord:%s:%s", i.GuildID, i.ChannelID)
+
 		ev := adapter.InboundEvent{
 			ID:         i.ID,
 			ChannelID:  c.Name(),

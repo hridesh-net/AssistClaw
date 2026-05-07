@@ -558,6 +558,7 @@ type ChannelsConfig struct {
 	Discord  *DiscordConfig            `yaml:"discord"`
 	Slack    *SlackConfig              `yaml:"slack"`
 	WhatsApp *WhatsAppConfig           `yaml:"whatsapp"`
+	Teams    *TeamsConfig              `yaml:"teams"`
 }
 
 // OutboundReliabilityConfig configures shared retry/circuit-breaker/DLQ behavior
@@ -597,6 +598,21 @@ type SlackConfig struct {
 	AppToken  string   `yaml:"app_token"`
 	DMMode    string   `yaml:"dm_mode"`    // open, pairing, allowlist, disabled
 	AllowFrom []string `yaml:"allow_from"` // Whitelisted IDs/Usernames
+}
+
+// TeamsConfig configures the Microsoft Teams Bot Framework channel.
+type TeamsConfig struct {
+	// AppID is the Azure Bot application (client) ID.
+	AppID string `yaml:"app_id"`
+	// AppPassword is the Azure Bot client secret.
+	AppPassword string `yaml:"app_password"`
+	// ListenAddr is the local address to bind the HTTP listener on (default ":3979").
+	// Teams will POST inbound activities to https://<your-host><listen_addr>/teams/messages.
+	ListenAddr string `yaml:"listen_addr"`
+	// DMMode controls who can message the bot: open, allowlist, disabled.
+	DMMode string `yaml:"dm_mode"`
+	// AllowFrom is a list of Teams user IDs allowed when dm_mode is "allowlist".
+	AllowFrom []string `yaml:"allow_from"`
 }
 
 // ─────────────────────────────────────────────

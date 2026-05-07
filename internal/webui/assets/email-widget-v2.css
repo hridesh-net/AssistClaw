@@ -1,0 +1,767 @@
+/* Replicating the attached screenshot's EXACT styling */
+.email-app-widget {
+    width: 100%;
+    max-width: 800px;
+    font-family: var(--font-ui), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #E2E2E2;
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Individual Panel Boxes */
+.ew-panel {
+    background-color: #242424;
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.ew-panel.p-0 {
+    padding: 0;
+}
+
+/* Header Panel */
+.ew-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ew-h-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.ew-avatar {
+    width: 40px;
+    height: 40px;
+    background-color: #2D2A4A;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #A390FF;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.ew-h-title h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+.ew-h-title p {
+    margin: 0;
+    font-size: 12px;
+    color: #999999;
+}
+
+.ew-h-right {
+    display: flex;
+    gap: 8px;
+}
+
+.ew-pill {
+    padding: 4px 12px;
+    border: 1px solid #3A3A3A;
+    border-radius: 16px;
+    font-size: 12px;
+    color: #CCCCCC;
+    background: transparent;
+    cursor: pointer;
+}
+
+.ew-pill.green {
+    border-color: #2E5A36;
+    color: #5FDA7A;
+    background-color: rgba(95, 218, 122, 0.05);
+}
+
+/* Section Title */
+.ew-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #888888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+/* Section Header for Collapsible Panels */
+.ew-collapsible-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ew-collapsible-header h4 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+.ew-chevron {
+    width: 14px;
+    height: 14px;
+    fill: #888;
+    transition: transform 0.2s;
+}
+
+.ew-panel.collapsed .ew-chevron {
+    transform: rotate(-90deg);
+}
+
+.ew-collapsible-body {
+    padding: 0 16px 16px 16px;
+}
+
+.ew-panel.collapsed .ew-collapsible-body {
+    display: none;
+}
+
+/* Email Details Layout */
+.ew-details-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ew-details-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+}
+
+.ew-col-left {
+    width: 50%;
+}
+
+.ew-col-right {
+    width: 50%;
+}
+
+.ew-info-label {
+    color: #888888;
+    margin-bottom: 2px;
+}
+
+.ew-info-value.bold {
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+.ew-info-value.sub {
+    color: #CCCCCC;
+    font-size: 12px;
+}
+
+.ew-flex-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 13px;
+}
+
+.ew-flex-row .ew-label {
+    color: #888888;
+    width: 120px;
+}
+
+.ew-flex-row .ew-value {
+    color: #FFFFFF;
+    font-weight: 500;
+    text-align: right;
+    flex: 1;
+}
+
+.ew-attachments {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.ew-attachment-pill {
+    padding: 2px 8px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #AAA;
+    background: #2A2A2A;
+}
+
+/* AI Summary Box */
+.ew-summary-box {
+    border-left: 2px solid #5755D9;
+    background-color: #2A2A2A;
+    padding: 12px 14px;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #DDDDDD;
+    margin-bottom: 20px;
+}
+
+.ew-intent-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.ew-intent-tag {
+    padding: 4px 12px;
+    border: 1px solid #444;
+    border-radius: 14px;
+    font-size: 12px;
+    color: #CCC;
+    cursor: pointer;
+}
+
+.ew-intent-tag.highlight {
+    border-color: #8CA8F9;
+    color: #8CA8F9;
+    background: rgba(140, 168, 249, 0.1);
+}
+
+/* Stats Cards */
+.ew-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+}
+
+.ew-stat {
+    background-color: #2A2A2A;
+    padding: 12px;
+    border-radius: 6px;
+    text-align: center;
+    border: 1px solid #333;
+}
+
+.ew-stat-val {
+    font-size: 18px;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.ew-stat-lbl {
+    font-size: 11px;
+    color: #888;
+}
+
+.ew-stat-val.blue {
+    color: #4A90E2;
+}
+
+.ew-stat-val.green {
+    color: #5FDA7A;
+}
+
+.ew-stat-val.purple {
+    color: #9B59B6;
+}
+
+/* Draft Reply */
+.ew-draft-toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.ew-dropdown {
+    background: #242424;
+    border: 1px solid #444;
+    color: #DDD;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    height: 32px;
+}
+
+.btn-copy {
+    margin-left: auto;
+    background: #242424;
+    border: 1px solid #444;
+    color: #DDD;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    height: 32px;
+}
+
+.ew-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: #2A2A2A;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 12px;
+    color: #EEE;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    resize: vertical;
+    min-height: 120px;
+    outline: none;
+    margin-bottom: 16px;
+}
+
+.ew-textarea:focus {
+    border-color: #5755D9;
+}
+
+/* Actions Footer */
+.ew-actions-grid {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.ew-action-btn {
+    flex: 1;
+    background: transparent;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: #E2E2E2;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background 0.1s;
+}
+
+.ew-action-btn:hover {
+    background: #333;
+}
+
+.ew-action-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+}
+
+/* Footer Hint */
+.ew-footer-hint {
+    font-size: 11px;
+    color: #777;
+    margin-top: 12px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   AssistClaw — New Dashboard Card System (ac-*)
+   ═══════════════════════════════════════════════════════ */
+
+/* Base card */
+.ac-info-card,
+.ac-draft-card {
+    width: 100%;
+    max-width: 780px;
+    background: rgba(20, 20, 30, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    font-family: var(--font-body, 'Inter', sans-serif);
+    color: #e2e2e2;
+    margin-top: 10px;
+    animation: acFadeUp 0.25s ease;
+}
+
+.ac-draft-updated {
+    border-color: rgba(255, 209, 102, 0.25);
+    box-shadow: 0 8px 32px rgba(255, 209, 102, 0.08), 0 0 0 1px rgba(255, 209, 102, 0.1);
+}
+
+@keyframes acFadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ── Card Header ─────────────────────────────────────── */
+.ac-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: linear-gradient(90deg, rgba(162, 114, 255, 0.08) 0%, transparent 80%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ac-card-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.ac-bot-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #a272ff, #7957d5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    box-shadow: 0 4px 12px rgba(162, 114, 255, 0.35);
+    flex-shrink: 0;
+}
+
+.ac-card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.2px;
+}
+
+.ac-card-sub {
+    font-weight: 400;
+    font-size: 12px;
+    color: #888;
+    margin-left: 6px;
+}
+
+.ac-card-time {
+    font-size: 11px;
+    color: #666;
+    margin-top: 2px;
+}
+
+.ac-token-code {
+    background: rgba(162, 114, 255, 0.12);
+    color: #a272ff;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    font-size: 11px;
+}
+
+.ac-card-badges {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* ── Badges ──────────────────────────────────────────── */
+.ac-badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    color: #aaa;
+    white-space: nowrap;
+}
+
+.ac-badge-green {
+    background: rgba(122, 255, 212, 0.1);
+    border-color: rgba(122, 255, 212, 0.3);
+    color: #7affd4;
+}
+
+.ac-badge-blue {
+    background: rgba(102, 178, 255, 0.1);
+    border-color: rgba(102, 178, 255, 0.3);
+    color: #66b2ff;
+}
+
+.ac-badge-yellow {
+    background: rgba(255, 209, 102, 0.1);
+    border-color: rgba(255, 209, 102, 0.3);
+    color: #ffd166;
+}
+
+/* ── Card Sections ───────────────────────────────────── */
+.ac-card-section {
+    padding: 16px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ac-card-section:last-of-type {
+    border-bottom: none;
+}
+
+.ac-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #666;
+    margin-bottom: 12px;
+}
+
+/* ── Detail Grid (email metadata) ────────────────────── */
+.ac-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
+}
+
+.ac-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ac-detail-full {
+    grid-column: 1 / -1;
+}
+
+.ac-detail-key {
+    font-size: 11px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.ac-detail-val {
+    font-size: 13px;
+    color: #e2e2e2;
+    font-weight: 500;
+    word-break: break-word;
+}
+
+/* ── AI Summary Box ──────────────────────────────────── */
+.ac-summary-box {
+    background: rgba(0, 0, 0, 0.25);
+    border-left: 3px solid #a272ff;
+    border-radius: 0 8px 8px 0;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: #ccc;
+}
+
+/* ── Draft Toolbar ───────────────────────────────────── */
+.ac-draft-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.ac-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ac-select {
+    background: rgba(10, 10, 16, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #ccc;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: var(--font-ui, 'Outfit', sans-serif);
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.ac-select:hover,
+.ac-select:focus {
+    border-color: rgba(162, 114, 255, 0.4);
+}
+
+.ac-toolbar-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #aaa;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.ac-toolbar-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Draft Textarea ──────────────────────────────────── */
+.ac-draft-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 14px 16px;
+    color: #e8e8e8;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    font-size: 13.5px;
+    line-height: 1.7;
+    resize: vertical;
+    min-height: 140px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.ac-draft-textarea:focus {
+    border-color: rgba(162, 114, 255, 0.5);
+    box-shadow: 0 0 0 3px rgba(162, 114, 255, 0.12);
+}
+
+/* ── Quick Tag Row ───────────────────────────────────── */
+.ac-tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ac-tag {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #aaa;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.18s;
+    font-family: var(--font-ui, 'Outfit', sans-serif);
+}
+
+.ac-tag:hover {
+    background: rgba(162, 114, 255, 0.15);
+    border-color: rgba(162, 114, 255, 0.4);
+    color: #c4a1ff;
+    transform: translateY(-1px);
+}
+
+/* ── Actions Bar ─────────────────────────────────────── */
+.ac-actions-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ac-action-btn {
+    flex: 1;
+    min-width: 110px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+    font-family: var(--font-ui, 'Outfit', sans-serif);
+}
+
+.ac-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
+.ac-action-btn:active {
+    transform: scale(0.96);
+}
+
+.ac-btn-approve {
+    background: rgba(122, 255, 212, 0.08);
+    color: #7affd4;
+    border-color: rgba(122, 255, 212, 0.25);
+}
+
+.ac-btn-approve:hover {
+    background: rgba(122, 255, 212, 0.18);
+}
+
+.ac-btn-edit {
+    background: rgba(162, 114, 255, 0.08);
+    color: #c4a1ff;
+    border-color: rgba(162, 114, 255, 0.25);
+}
+
+.ac-btn-edit:hover {
+    background: rgba(162, 114, 255, 0.18);
+}
+
+.ac-btn-regen {
+    background: rgba(255, 209, 102, 0.08);
+    color: #ffd166;
+    border-color: rgba(255, 209, 102, 0.25);
+}
+
+.ac-btn-regen:hover {
+    background: rgba(255, 209, 102, 0.18);
+}
+
+.ac-btn-reject {
+    background: rgba(255, 85, 119, 0.08);
+    color: #ff5577;
+    border-color: rgba(255, 85, 119, 0.25);
+}
+
+.ac-btn-reject:hover {
+    background: rgba(255, 85, 119, 0.18);
+}
+
+/* ── Footer note ─────────────────────────────────────── */
+.ac-card-footer-note {
+    font-size: 11px;
+    color: #555;
+    padding: 10px 18px 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* ── Responsive ──────────────────────────────────────── */
+@media (max-width: 560px) {
+    .ac-detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ac-actions-bar {
+        flex-direction: column;
+    }
+
+    .ac-action-btn {
+        min-width: unset;
+    }
+
+    .ac-draft-toolbar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
