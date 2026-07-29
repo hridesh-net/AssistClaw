@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/assistclaw/assistclaw/internal/core"
 	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/assistclaw/assistclaw/internal/localintel"
 	"github.com/assistclaw/assistclaw/internal/memory"
@@ -34,77 +35,25 @@ var (
 )
 
 // ─────────────────────────────────────────────
-// Tool interface
+// Tool contract (aliases to internal/core)
 // ─────────────────────────────────────────────
 
-// Tool is the interface that all built-in and user-generated tools must implement.
-type Tool interface {
-	// Definition returns the schema passed to the LLM.
-	Definition() provider.ToolDef
-	// Execute runs the tool with the given JSON input.
-	// Returns (output string, error). Non-fatal errors should be returned
-	// as output strings so the LLM can reason about them.
-	Execute(ctx context.Context, input json.RawMessage) (string, error)
-}
+// Tool, ToolRegistry and ToolCatalog now live in internal/core (the contract
+// layer). They are re-exported here as aliases so existing references
+// (agent.Tool, agent.ToolRegistry, agent.NewToolRegistry, agent.ToolCatalog)
+// continue to compile. New code should import internal/core directly.
+type (
+	Tool         = core.Tool
+	ToolRegistry = core.ToolRegistry
+	ToolCatalog  = core.ToolCatalog
+)
 
-// ToolRegistry maps tool names to implementations.
-type ToolRegistry struct {
-	tools map[string]Tool
-}
-
-// NewToolRegistry creates an empty tool registry.
-func NewToolRegistry() *ToolRegistry {
-	return &ToolRegistry{tools: make(map[string]Tool)}
-}
-
-// Register adds a tool.
-func (r *ToolRegistry) Register(t Tool) {
-	r.tools[t.Definition().Name] = t
-}
-
-// Get returns a tool by name.
-func (r *ToolRegistry) Get(name string) (Tool, bool) {
-	t, ok := r.tools[name]
-	return t, ok
-}
-
-// Definitions returns all tool definitions for LLM requests.
-func (r *ToolRegistry) Definitions() []provider.ToolDef {
-	defs := make([]provider.ToolDef, 0, len(r.tools))
-	for _, t := range r.tools {
-		defs = append(defs, t.Definition())
-	}
-	return defs
-}
-
-// CloneWithout returns a new registry with the given tool names omitted (e.g. avoid sub-agent recursion).
-func (r *ToolRegistry) CloneWithout(omit ...string) *ToolRegistry {
-	skip := make(map[string]bool, len(omit))
-	for _, n := range omit {
-		skip[n] = true
-	}
-	out := NewToolRegistry()
-	for _, t := range r.tools {
-		n := t.Definition().Name
-		if skip[n] {
-			continue
-		}
-		out.Register(t)
-	}
-	return out
-}
+// NewToolRegistry creates an empty tool registry (see internal/core).
+var NewToolRegistry = core.NewToolRegistry
 
 // ─────────────────────────────────────────────
 // Runner
 // ─────────────────────────────────────────────
-
-// ToolCatalog is the interface the Runner uses to select per-request tools.
-// Implemented by tools.Catalog. If nil, falls back to r.tools.Definitions().
-type ToolCatalog interface {
-	SelectForRequest(userMessage string, caps provider.ProviderCaps) []provider.ToolDef
-	RecordUsage(toolName string)
-	DecayInertia()
-}
 
 // Config holds runner-specific settings.
 type Config struct {
