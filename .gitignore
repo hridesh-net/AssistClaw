@@ -69,3 +69,12 @@ yarn-error.log*
 sqlite3.h
 sqlite3ext.h
 dist/
+
+# graphify knowledge-graph output (regenerable from research/)
+graphify-out/
+
+# Rust build artifacts (cargo target dirs anywhere in the tree)
+target/
+**/target/
+# C++ sensing cmake build output
+sensing/build/
