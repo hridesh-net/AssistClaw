@@ -1020,81 +1020,18 @@ func versionCmd(gf *globalFlags) *cobra.Command {
 // effectiveMCPClients returns cfg.MCP.Clients plus an optional synthetic MemPalace stdio client
 // when memory.mempalace.auto_start is true and no client with the same name is already defined.
 func effectiveMCPClients(cfg *config.Config) ([]config.MCPClientConfig, bool) {
-	out := append([]config.MCPClientConfig(nil), cfg.MCP.Clients...)
-	name := strings.TrimSpace(cfg.Memory.MemPalace.MCPClientName)
-	if name == "" {
-		name = "mempalace"
-	}
-	if !cfg.Memory.MemPalace.AutoStart {
-		return out, false
-	}
-	for _, c := range out {
-		if c.Name == name {
-			return out, false
-		}
-	}
-	py := strings.TrimSpace(cfg.Memory.MemPalace.PythonExecutable)
-	if py == "" {
-		py = "python3"
-	}
-	syn := config.MCPClientConfig{
-		Name:      name,
-		Transport: "stdio",
-		Command:   py,
-		Args:      []string{"-m", "mempalace.mcp_server"},
-	}
-	if cfg.Memory.MemPalace.ManagedVenv {
-		syn.Dir = mempalace.ManagedWorldDir(cfg.StateDir)
-	}
-	out = append(out, syn)
-	return out, true
+	return kernel.EffectiveMCPClients(cfg)
 }
 
 // augmentActiveSkillsWithMCP appends skill names registered by external MCP (prefix "mcp:")
 // so they appear in the session skills header and skill_graph_index without requiring users
 // to list every server in agent.enabled_skills.
 func augmentActiveSkillsWithMCP(skillReg skills.Registry, active []string) []string {
-	seen := make(map[string]struct{}, len(active))
-	for _, n := range active {
-		if n == "" {
-			continue
-		}
-		seen[n] = struct{}{}
-	}
-	out := append([]string(nil), active...)
-	for _, s := range skillReg.List() {
-		name := s.Name
-		if !strings.HasPrefix(name, "mcp:") {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		out = append(out, name)
-	}
-	return out
+	return kernel.AugmentActiveSkillsWithMCP(skillReg, active)
 }
 
 func mcpClientConfigsFromYAML(in []config.MCPClientConfig) []mcp.ClientConfig {
-	out := make([]mcp.ClientConfig, 0, len(in))
-	for _, c := range in {
-		tr := mcp.TransportStdio
-		if strings.EqualFold(strings.TrimSpace(c.Transport), "http") {
-			tr = mcp.TransportHTTP
-		}
-		out = append(out, mcp.ClientConfig{
-			Name:      c.Name,
-			Transport: tr,
-			Command:   c.Command,
-			Args:      c.Args,
-			Dir:       c.Dir,
-			Env:       c.Env,
-			URL:       c.URL,
-			AuthToken: c.AuthToken,
-		})
-	}
-	return out
+	return kernel.MCPClientConfigsFromYAML(in)
 }
 
 func loadConfig(path string, log *zap.Logger) (*config.Config, error) {
@@ -2074,50 +2011,12 @@ func runAgent(gf *globalFlags, configPath string, model string, message string, 
 // extractBundledSkills copies the repo's skills/ directory into destDir (bundled dir).
 // It searches for the skills directory relative to the binary, CWD, or common install paths.
 func extractBundledSkills(destDir string) error {
-	// Check if already populated (skip to avoid overwriting user edits)
-	if info, err := os.ReadDir(destDir); err == nil && len(info) > 0 {
-		return nil // already extracted
-	}
-
-	// Find the source skills directory
-	src := resolveBundledSkillsSrc()
-	if src == "" {
-		// Not available (e.g., installed without repo) — that's OK, marketplace will handle it
-		return nil
-	}
-
-	return skills.CopyDir(src, destDir)
+	return kernel.ExtractBundledSkills(destDir)
 }
 
 // resolveBundledSkillsSrc locates the bundled skills/ directory relative to common install paths.
 func resolveBundledSkillsSrc() string {
-	candidates := []string{}
-
-	// 1. Relative to the running binary
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "skills"))
-	}
-
-	// 2. Relative to CWD (development mode)
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(cwd, "skills"))
-	}
-
-	// 3. Common install locations
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".assistclaw", "repo", "skills"))
-	}
-	candidates = append(candidates,
-		"/usr/local/share/assistclaw/skills",
-		"/opt/assistclaw/skills",
-	)
-
-	for _, c := range candidates {
-		if info, err := os.Stat(c); err == nil && info.IsDir() {
-			return c
-		}
-	}
-	return ""
+	return kernel.ResolveBundledSkillsSrc()
 }
 
 // buildLogger delegates to kernel.BuildLogger. Retained as a package-local
