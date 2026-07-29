@@ -355,20 +355,23 @@ func (WebFetchTool) Execute(ctx context.Context, input json.RawMessage) (string,
 // webFetchHTMLToText strips HTML tags and script/style blocks.
 func webFetchHTMLToText(html string) string {
 	// Remove script/style
+	low := strings.ToLower(html)
 	for _, tag := range []string{"script", "style", "noscript", "nav", "footer"} {
 		open := "<" + tag
 		close := "</" + tag + ">"
 		for {
-			start := strings.Index(strings.ToLower(html), open)
+			start := strings.Index(low, open)
 			if start == -1 {
 				break
 			}
-			end := strings.Index(strings.ToLower(html[start:]), close)
+			end := strings.Index(low[start:], close)
 			if end == -1 {
 				html = html[:start]
+				low = low[:start]
 				break
 			}
 			html = html[:start] + " " + html[start+end+len(close):]
+			low = low[:start] + " " + low[start+end+len(close):]
 		}
 	}
 	// Strip remaining tags

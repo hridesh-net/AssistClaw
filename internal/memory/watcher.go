@@ -60,6 +60,7 @@ func (m *Manager) Watch(ctx context.Context, registry *embeddings.Registry, work
 				}
 
 				debouncer[event.Name] = time.AfterFunc(500*time.Millisecond, func() {
+					delete(debouncer, event.Name)
 					relPath, _ := filepath.Rel(workspaceDir, event.Name)
 					if err := m.syncFile(ctx, registry, workspaceDir, event.Name, relPath); err != nil {
 						fmt.Printf("[memory] error syncing changed file %s: %v\n", relPath, err)

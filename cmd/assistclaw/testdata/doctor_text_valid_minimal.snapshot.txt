@@ -6,6 +6,8 @@
   Channel API checks skipped (--skip-network).
 [ok] config.validate
   <<CONFIG_PATH>>: parsed and validated
+[skipped] email.enabled
+  email.enabled is false.
 [skipped] provider.health
   LLM provider API checks skipped (--skip-network).
 [skipped] webhooks.gateway

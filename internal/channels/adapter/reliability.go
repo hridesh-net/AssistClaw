@@ -1,11 +1,12 @@
 package adapter
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -76,6 +77,10 @@ type ReliableSender struct {
 	consecutiveFail int
 	breakerOpenTill time.Time
 	halfOpenProbe   bool
+
+	// DLQ file handle reused across writes.
+	dlqMu   sync.Mutex
+	dlqFile *os.File
 
 	// test seams
 	nowFn   func() time.Time
@@ -266,7 +271,7 @@ func (r *ReliableSender) writeDLQ(msg OutboundMessage, err error, attempts int) 
 		SessionID:      msg.SessionID,
 		IdempotencyKey: msg.IdempotencyKey,
 		Text:           msg.Text,
-		Reason:         fmt.Sprintf("%v", err),
+		Reason:         err.Error(),
 		Attempts:       attempts,
 	}
 	line, mErr := json.Marshal(rec)
@@ -276,30 +281,38 @@ func (r *ReliableSender) writeDLQ(msg OutboundMessage, err error, attempts int) 
 	if mkErr := os.MkdirAll(filepath.Dir(r.cfg.DLQPath), 0o755); mkErr != nil {
 		return mkErr
 	}
-	f, oErr := os.OpenFile(r.cfg.DLQPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if oErr != nil {
-		return oErr
+
+	r.dlqMu.Lock()
+	defer r.dlqMu.Unlock()
+	if r.dlqFile == nil {
+		f, oErr := os.OpenFile(r.cfg.DLQPath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o600)
+		if oErr != nil {
+			return oErr
+		}
+		r.dlqFile = f
 	}
-	defer f.Close()
-	if _, wErr := f.Write(append(line, '\n')); wErr != nil {
+	if _, wErr := r.dlqFile.Write(append(line, '\n')); wErr != nil {
 		return wErr
 	}
-	if depth, dErr := countDLQLines(r.cfg.DLQPath); dErr == nil {
+	if depth, dErr := countDLQLines(r.dlqFile); dErr == nil {
 		metrics.Default().SetDLQDepth(r.channelName, float64(depth))
 	}
 	return nil
 }
 
-func countDLQLines(path string) (int, error) {
-	b, err := os.ReadFile(path)
+func countDLQLines(r io.ReadSeeker) (int, error) {
+	offset, err := r.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return 0, err
 	}
-	count := 0
-	for _, ch := range b {
-		if ch == '\n' {
-			count++
-		}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return 0, err
 	}
-	return count, nil
+	scanner := bufio.NewScanner(r)
+	count := 0
+	for scanner.Scan() {
+		count++
+	}
+	_, _ = r.Seek(offset, io.SeekStart)
+	return count, scanner.Err()
 }

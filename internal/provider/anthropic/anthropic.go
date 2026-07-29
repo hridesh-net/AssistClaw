@@ -46,7 +46,17 @@ func New(cfg Config) *Provider {
 		base = defaultBaseURL
 	}
 	cfg.BaseURL = strings.TrimRight(base, "/")
-	return &Provider{cfg: cfg, client: &http.Client{Timeout: defaultTimeout}}
+	return &Provider{
+		cfg: cfg,
+		client: &http.Client{
+			Timeout: defaultTimeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
+	}
 }
 
 func (p *Provider) Name() string { return providerName }

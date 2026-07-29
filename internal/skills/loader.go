@@ -11,12 +11,17 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type loader struct {
-	skills map[string]*Skill
+	skills   map[string]*Skill
+	lastDir  string
+	lastLoad time.Time
+	mu       sync.RWMutex
 }
 
 // NewRegistry creates a new Skill Registry.
@@ -27,7 +32,15 @@ func NewRegistry() Registry {
 }
 
 // LoadAll walks the given directory looking for skill directories and indexing all .md nodes.
+// Results are cached for 30 seconds when called with the same directory.
 func (l *loader) LoadAll(ctx context.Context, dir string) error {
+	l.mu.RLock()
+	if dir == l.lastDir && time.Since(l.lastLoad) < 30*time.Second {
+		l.mu.RUnlock()
+		return nil
+	}
+	l.mu.RUnlock()
+
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return nil
 	}
@@ -49,6 +62,11 @@ func (l *loader) LoadAll(ctx context.Context, dir string) error {
 		}
 		l.skills[skill.Name] = skill
 	}
+
+	l.mu.Lock()
+	l.lastDir = dir
+	l.lastLoad = time.Now()
+	l.mu.Unlock()
 	return nil
 }
 
@@ -143,6 +161,7 @@ func (l *loader) Discover(dir string) ([]SkillInfo, error) {
 			Emoji:       skill.Metadata.AssistClaw.Emoji,
 			Eligible:    met,
 			Missing:     missing,
+			Sensitive:   skill.Sensitive,
 		})
 	}
 	return out, nil

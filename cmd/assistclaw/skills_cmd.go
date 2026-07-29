@@ -4,7 +4,6 @@ package main
 // Provides list, add, remove, enable, disable, install, info, marketplace.
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +34,7 @@ Run 'assistclaw skills configure' (or just 'assistclaw skills') for the interact
 			if err != nil {
 				return err
 			}
-			return RunSkillsConfigure(cfg, gf.configPath, "")
+			return RunSkillsConfigure(cmd.Context(), cfg, gf.configPath, "")
 		},
 	}
 
@@ -73,7 +72,7 @@ func skillsListCmd(gf *globalFlags) *cobra.Command {
 			bundledDir := filepath.Join(cfg.StateDir, "skills", "bundled")
 
 			reg := skills.NewRegistry()
-			_ = reg.LoadAll(context.Background(), customDir)
+			_ = reg.LoadAll(cmd.Context(), customDir)
 
 			all := reg.List()
 			if len(all) == 0 && !showAll {
@@ -116,7 +115,7 @@ func skillsListCmd(gf *globalFlags) *cobra.Command {
 			if showAll {
 				fmt.Printf("\nBundled (available to add): %s\n", bundledDir)
 				bundleReg := skills.NewRegistry()
-				_ = bundleReg.LoadAll(context.Background(), bundledDir)
+				_ = bundleReg.LoadAll(cmd.Context(), bundledDir)
 				for _, s := range bundleReg.List() {
 					if _, ok := reg.Get(s.Name); !ok {
 						fmt.Printf("  + %s — %s\n", s.Name, s.Description)
@@ -154,7 +153,7 @@ func skillsAddCmd(gf *globalFlags) *cobra.Command {
 			mp := skills.NewMarketplace(bundledDir, customDir)
 
 			fmt.Printf("Installing skill %q...\n", name)
-			dest, err := mp.Install(context.Background(), name)
+			dest, err := mp.Install(cmd.Context(), name)
 			if err != nil {
 				return err
 			}
@@ -163,13 +162,13 @@ func skillsAddCmd(gf *globalFlags) *cobra.Command {
 			// Check and offer dependency install
 			if !noDeps {
 				reg := skills.NewRegistry()
-				_ = reg.LoadAll(context.Background(), dest)
+				_ = reg.LoadAll(cmd.Context(), dest)
 				s, ok := reg.Get(name)
 				if ok {
 					met, missing := reg.CheckRequirements(s)
 					if !met {
 						fmt.Printf("⚠ Missing dependencies: %s. Attempting auto-repair...\n", strings.Join(missing, ", "))
-						if err := reg.InstallDependency(context.Background(), s); err != nil {
+						if err := reg.InstallDependency(cmd.Context(), s); err != nil {
 							fmt.Printf("❌ Auto-repair failed: %v. You may need to install them manually.\n", err)
 						} else {
 							fmt.Printf("✅ Dependencies installed successfully.\n")
@@ -287,7 +286,7 @@ func skillsInstallCmd(gf *globalFlags) *cobra.Command {
 			mp := skills.NewMarketplace(bundledDir, customDir)
 
 			fmt.Printf("Installing %q...\n", nameOrURL)
-			dest, err := mp.Install(context.Background(), nameOrURL)
+			dest, err := mp.Install(cmd.Context(), nameOrURL)
 			if err != nil {
 				return err
 			}
@@ -296,13 +295,13 @@ func skillsInstallCmd(gf *globalFlags) *cobra.Command {
 
 			// Check and offer dependency install
 			reg := skills.NewRegistry()
-			_ = reg.LoadAll(context.Background(), dest)
+			_ = reg.LoadAll(cmd.Context(), dest)
 			s, ok := reg.Get(name)
 			if ok && !noDeps {
 				met, missing := reg.CheckRequirements(s)
 				if !met {
 					fmt.Printf("⚠ Missing dependencies: %s. Attempting auto-repair...\n", strings.Join(missing, ", "))
-					if err := reg.InstallDependency(context.Background(), s); err != nil {
+					if err := reg.InstallDependency(cmd.Context(), s); err != nil {
 						fmt.Printf("❌ Auto-repair failed: %v. You may need to install them manually.\n", err)
 					} else {
 						fmt.Printf("✅ Dependencies installed successfully.\n")
@@ -339,7 +338,7 @@ func skillsInfoCmd(gf *globalFlags) *cobra.Command {
 				filepath.Join(cfg.StateDir, "skills", "custom"),
 				filepath.Join(cfg.StateDir, "skills", "bundled"),
 			} {
-				_ = reg.LoadAll(context.Background(), dir)
+				_ = reg.LoadAll(cmd.Context(), dir)
 			}
 
 			s, ok := reg.Get(name)
@@ -407,7 +406,7 @@ func skillsMarketplaceCmd(gf *globalFlags) *cobra.Command {
 			mp := skills.NewMarketplace(bundledDir, customDir)
 
 			fmt.Println("Fetching marketplace index...")
-			index, err := mp.FetchIndex(context.Background())
+			index, err := mp.FetchIndex(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("marketplace unavailable: %w", err)
 			}
@@ -415,7 +414,7 @@ func skillsMarketplaceCmd(gf *globalFlags) *cobra.Command {
 			// Filter
 			entries := index.Skills
 			if query != "" {
-				results, _ := mp.Search(context.Background(), query)
+				results, _ := mp.Search(cmd.Context(), query)
 				entries = results
 			}
 			if tag != "" {
@@ -433,7 +432,7 @@ func skillsMarketplaceCmd(gf *globalFlags) *cobra.Command {
 
 			// Load installed skills to show install status
 			reg := skills.NewRegistry()
-			_ = reg.LoadAll(context.Background(), customDir)
+			_ = reg.LoadAll(cmd.Context(), customDir)
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintf(w, "\n  AssistClaw Skill Marketplace  (%d skills)\n\n", len(entries))

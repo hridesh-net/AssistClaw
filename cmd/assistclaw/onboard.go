@@ -99,7 +99,7 @@ func onboardCmd(gf *globalFlags) *cobra.Command {
 			if path == "" {
 				path = config.DefaultConfigPath()
 			}
-			shouldStart, err := runOnboarding(path)
+			shouldStart, err := runOnboarding(cmd.Context(), path)
 			if err != nil {
 				return err
 			}
@@ -131,11 +131,11 @@ var openAICompatProviders = map[string]bool{
 	"xai":        true,
 }
 
-func collectProvider(theme *huh.Theme, providerType string, isPrimary bool, initial provEntry) (provEntry, error) {
-	return collectProviderFiltered(theme, providerType, isPrimary, initial, false)
+func collectProvider(ctx context.Context, theme *huh.Theme, providerType string, isPrimary bool, initial provEntry) (provEntry, error) {
+	return collectProviderFiltered(ctx, theme, providerType, isPrimary, initial, false)
 }
 
-func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bool, initial provEntry, planoMode bool) (provEntry, error) {
+func collectProviderFiltered(ctx context.Context, theme *huh.Theme, providerType string, isPrimary bool, initial provEntry, planoMode bool) (provEntry, error) {
 	entry := initial
 	var providerOptions []huh.Option[string]
 
@@ -375,9 +375,9 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 
 	var modelOpts []huh.Option[string]
 	if entry.provider == "bedrock" {
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		pctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
-		picks := bedrock.ListOnboardingTextModels(ctx, bedrock.Config{
+		picks := bedrock.ListOnboardingTextModels(pctx, bedrock.Config{
 			Region:          strings.TrimSpace(entry.awsRegion),
 			Profile:         strings.TrimSpace(entry.awsProfile),
 			AccessKeyID:     strings.TrimSpace(entry.awsAccessKey),
@@ -442,7 +442,7 @@ func collectProviderFiltered(theme *huh.Theme, providerType string, isPrimary bo
 
 // runOnboarding leads the user through the setup process.
 // Returns (true, nil) if the agent should be started immediately.
-func runOnboarding(configPath string) (bool, error) {
+func runOnboarding(ctx context.Context, configPath string) (bool, error) {
 	var (
 		primary            provEntry
 		secondary          provEntry
@@ -903,7 +903,7 @@ func runOnboarding(configPath string) (bool, error) {
 	// Step 1: Primary LLM Provider
 	// ────────────────────────────────────────────────────────────────────────
 	var err error
-	primary, err = collectProvider(theme, "primary", true, primary)
+	primary, err = collectProvider(ctx, theme, "primary", true, primary)
 	if err != nil {
 		return false, err
 	}
@@ -931,7 +931,7 @@ func runOnboarding(configPath string) (bool, error) {
 
 	if secChoice == "configure" {
 		// Secondary provider — show all providers (no Plano filter yet)
-		secondary, err = collectProvider(theme, "secondary", false, secondary)
+		secondary, err = collectProvider(ctx, theme, "secondary", false, secondary)
 		if err != nil {
 			return false, err
 		}
@@ -1101,9 +1101,9 @@ func runOnboarding(configPath string) (bool, error) {
 	var embedModelOpts []huh.Option[string]
 	if embed.provider == "bedrock" {
 		if primary.provider == "bedrock" {
-			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			pctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 			defer cancel()
-			for _, p := range bedrock.ListOnboardingEmbeddingModels(ctx, bedrock.Config{
+			for _, p := range bedrock.ListOnboardingEmbeddingModels(pctx, bedrock.Config{
 				Region:          strings.TrimSpace(primary.awsRegion),
 				Profile:         strings.TrimSpace(primary.awsProfile),
 				AccessKeyID:     strings.TrimSpace(primary.awsAccessKey),
@@ -1175,7 +1175,7 @@ func runOnboarding(configPath string) (bool, error) {
 		} else {
 			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).
 				Render("  Downloading GGUF with progress..."))
-			res, err := localintel.BootstrapGGUF(context.Background(), localintel.BootstrapOptions{
+			res, err := localintel.BootstrapGGUF(ctx, localintel.BootstrapOptions{
 				StateDir: stateDir,
 				GGUFPath: dst,
 				Progress: os.Stderr,
@@ -1397,8 +1397,8 @@ func runOnboarding(configPath string) (bool, error) {
 				if err == nil {
 					if !wa.IsLinked() {
 						fmt.Println("\n--- WhatsApp Pairing ---")
-						_ = wa.Connect(context.Background())
-						_ = wa.Stop() // Terminate onboarding connection to avoid conflict with agent
+						if connectErr := wa.Connect(ctx); connectErr != nil { fmt.Printf("WhatsApp connect error: %v\n", connectErr) }
+						if stopErr := wa.Stop(); stopErr != nil { fmt.Printf("WhatsApp stop error: %v\n", stopErr) } // Terminate onboarding connection to avoid conflict with agent
 					}
 					fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✔ WhatsApp Linked! Continuing setup..."))
 				} else {
@@ -1422,7 +1422,7 @@ func runOnboarding(configPath string) (bool, error) {
 		}
 
 		mp := skills.NewMarketplace(bundledDir, customDir)
-		idx, err := mp.FetchIndex(context.Background())
+		idx, err := mp.FetchIndex(ctx)
 		if err == nil {
 			type skillOption struct {
 				name string
@@ -1481,7 +1481,7 @@ func runOnboarding(configPath string) (bool, error) {
 						dest, err := mp.InstallFromPath(customPath)
 						if err != nil {
 							// Try as URL
-							dest, err = mp.Install(context.Background(), customPath)
+							dest, err = mp.Install(ctx, customPath)
 						}
 						if err == nil {
 							selectedSkills = append(selectedSkills, filepath.Base(dest))
@@ -1496,7 +1496,7 @@ func runOnboarding(configPath string) (bool, error) {
 					dest := filepath.Join(customDir, n)
 					if _, err := os.Stat(dest); os.IsNotExist(err) {
 						fmt.Printf("  Installing %s...", n)
-						if _, err := mp.Install(context.Background(), n); err != nil {
+						if _, err := mp.Install(ctx, n); err != nil {
 							fmt.Printf(" ⚠ %v\n", err)
 						} else {
 							fmt.Println(" ✔")

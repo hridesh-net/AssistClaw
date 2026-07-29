@@ -26,12 +26,15 @@ var (
 
 // Channel implements [channels.Channel] and [adapter.Adapter] for Slack Socket Mode.
 type Channel struct {
-	client    *socketmode.Client
-	stopCh    chan struct{}
-	stopOnce  sync.Once
-	dmMode    string
-	allowFrom []string
+	client       *socketmode.Client
+	stopCh       chan struct{}
+	stopOnce     sync.Once
+	dmMode       string
+	allowFrom    []string
 	reliableSend *adapter.ReliableSender
+	// sem bounds concurrent inbound handler goroutines to prevent bursts from
+	// ballooning goroutine count.
+	sem chan struct{}
 }
 
 func New(botToken, appToken string, dmMode string, allowFrom []string) (*Channel, error) {
@@ -51,6 +54,7 @@ func New(botToken, appToken string, dmMode string, allowFrom []string) (*Channel
 		stopCh:    make(chan struct{}),
 		dmMode:    dmMode,
 		allowFrom: allowFrom,
+		sem:       make(chan struct{}, 50),
 	}, nil
 }
 
@@ -65,7 +69,7 @@ func (c *Channel) AdapterVersion() int {
 func (c *Channel) Capabilities() adapter.ChannelCapabilities {
 	caps, ok := adapter.BuiltinCaps(c.Name())
 	if !ok {
-		panic("internal/channels/adapter: missing capability_registry entry for " + c.Name())
+		return adapter.ChannelCapabilities{}
 	}
 	return caps
 }
@@ -181,9 +185,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 						if threadTS == "" {
 							threadTS = strings.TrimSpace(cb.Message.ThreadTimestamp)
 						}
-						sessionID := fmt.Sprintf("slack:%s", chID)
+						sessionID := "slack:" + chID
 						if threadTS != "" {
-							sessionID = fmt.Sprintf("slack:%s:%s", chID, threadTS)
+							sessionID = "slack:" + chID + ":" + threadTS
 						}
 						user := cb.User.ID
 						if c.dmMode == "disabled" {
@@ -224,7 +228,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 								channels.MetaSlackThreadTS:  threadTS,
 							},
 						}
+						c.sem <- struct{}{}
 						go func(inEv adapter.InboundEvent) {
+							defer func() { <-c.sem }()
 							if err := h(ctx, inEv); err != nil {
 								log.Printf("Slack: inbound handler error: %v", err)
 							}
@@ -246,9 +252,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 								break
 							}
 
-							sessionID := fmt.Sprintf("slack:%s:%s", ev.Channel, ev.ThreadTimeStamp)
+							sessionID := "slack:" + ev.Channel + ":" + ev.ThreadTimeStamp
 							if ev.ThreadTimeStamp == "" {
-								sessionID = fmt.Sprintf("slack:%s", ev.Channel)
+								sessionID = "slack:" + ev.Channel
 							}
 							user := ev.User
 
@@ -295,7 +301,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 								},
 							}
 
+							c.sem <- struct{}{}
 							go func(ev adapter.InboundEvent) {
+								defer func() { <-c.sem }()
 								if err := h(ctx, ev); err != nil {
 									log.Printf("Slack: inbound handler error: %v", err)
 								}
@@ -347,7 +355,11 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 			return nil
 		}
 
-		go handler(ctx, msg, replyFn, nil, nil)
+		c.sem <- struct{}{}
+		go func() {
+			defer func() { <-c.sem }()
+			handler(ctx, msg, replyFn, nil, nil)
+		}()
 		return nil
 	}
 }
@@ -429,14 +441,14 @@ func slackBlocksFromMail(body string, kb [][]adapter.InlineKeyboardButton) slack
 			if label == "" {
 				label = "…"
 			}
-			aid := fmt.Sprintf("assistclaw_mail_%d_%d", ri, bi)
+			aid := "assistclaw_mail_" + strconv.Itoa(ri) + "_" + strconv.Itoa(bi)
 			val := strings.TrimSpace(b.CallbackData)
 			elems = append(elems, slack.NewButtonBlockElement(aid, val, slack.NewTextBlockObject(slack.PlainTextType, label, false, false)))
 		}
 		if len(elems) == 0 {
 			continue
 		}
-		bid := fmt.Sprintf("assistclaw_mail_%d_%s", ri, sanitizeSlackBlockID(row[0].CallbackData))
+		bid := "assistclaw_mail_" + strconv.Itoa(ri) + "_" + sanitizeSlackBlockID(row[0].CallbackData)
 		rows = append(rows, slack.NewActionBlock(bid, elems...))
 	}
 	if len(rows) == 0 {

@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -98,15 +97,15 @@ func (s *Server) handleA2A(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Method {
 	case "message/send":
-		s.handleA2AMessageSend(w, &req)
+		s.handleA2AMessageSend(w, r, &req)
 	case "message/stream":
-		s.handleA2AMessageStream(w, &req)
+		s.handleA2AMessageStream(w, r, &req)
 	default:
 		s.sendJSONRPCError(w, req.ID, -32601, "Method not found")
 	}
 }
 
-func (s *Server) handleA2AMessageSend(w http.ResponseWriter, req *JSONRPCRequest) {
+func (s *Server) handleA2AMessageSend(w http.ResponseWriter, r *http.Request, req *JSONRPCRequest) {
 	var params A2AMessageParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		s.sendJSONRPCError(w, req.ID, -32602, "Invalid params")
@@ -119,7 +118,7 @@ func (s *Server) handleA2AMessageSend(w http.ResponseWriter, req *JSONRPCRequest
 	}
 	sessionRunner := s.Runner.WithSession(sessionID)
 
-	ctx := context.Background()
+	ctx := r.Context()
 	res, err := sessionRunner.Run(ctx, memory.Message{
 		ID:        uuid.New().String(),
 		SessionID: sessionID,
@@ -145,7 +144,7 @@ func (s *Server) handleA2AMessageSend(w http.ResponseWriter, req *JSONRPCRequest
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (s *Server) handleA2AMessageStream(w http.ResponseWriter, req *JSONRPCRequest) {
+func (s *Server) handleA2AMessageStream(w http.ResponseWriter, r *http.Request, req *JSONRPCRequest) {
 	var params A2AMessageParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		s.sendJSONRPCError(w, req.ID, -32602, "Invalid params")
@@ -169,7 +168,7 @@ func (s *Server) handleA2AMessageStream(w http.ResponseWriter, req *JSONRPCReque
 	}
 	sessionRunner := s.Runner.WithSession(sessionID)
 
-	ctx := context.Background()
+	ctx := r.Context()
 	done := make(chan struct{})
 	handler := &a2aSSEHandler{
 		w:       w,

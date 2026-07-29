@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"encoding/json"
+	"sync"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 // MessagePayload represents a JSON message sent over the WebSocket.
@@ -16,8 +18,15 @@ type MessagePayload struct {
 
 // Client represents a connected WebSocket client (e.g., WebChat UI, macOS app, Channel webhook).
 type Client struct {
-	ID   string
-	Conn *websocket.Conn
-	Send chan []byte
-	Hub  *Hub
+	ID        string
+	Conn      *websocket.Conn
+	Send      chan []byte
+	Hub       *Hub
+	logger    *zap.Logger
+	closeOnce sync.Once
+}
+
+// SafeCloseSend closes the Send channel exactly once.
+func (c *Client) SafeCloseSend() {
+	c.closeOnce.Do(func() { close(c.Send) })
 }

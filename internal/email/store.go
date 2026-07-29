@@ -78,11 +78,37 @@ func (s *Store) migrate() error {
 			token_json TEXT NOT NULL,
 			updated_at INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS email_goals (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			account_name TEXT NOT NULL,
+			counterpart TEXT NOT NULL,
+			subject TEXT NOT NULL,
+			objective TEXT NOT NULL,
+			status TEXT NOT NULL,
+			followup_after_secs INTEGER NOT NULL DEFAULT 172800,
+			max_followups INTEGER NOT NULL DEFAULT 3,
+			followups_sent INTEGER NOT NULL DEFAULT 0,
+			thread_refs TEXT NOT NULL DEFAULT '[]',
+			last_activity INTEGER NOT NULL,
+			created_at INTEGER NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS goal_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			goal_id INTEGER NOT NULL REFERENCES email_goals(id) ON DELETE CASCADE,
+			created_at INTEGER NOT NULL,
+			kind TEXT NOT NULL,
+			detail TEXT
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
 			return fmt.Errorf("migrate: %w: %s", err, q)
 		}
+	}
+	// Additive column for linking drafts to goals; ignore "duplicate column" on re-runs.
+	if _, err := s.db.Exec(`ALTER TABLE email_drafts ADD COLUMN goal_id INTEGER NOT NULL DEFAULT 0`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("migrate goal_id: %w", err)
 	}
 	return nil
 }

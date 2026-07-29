@@ -1,3 +1,5 @@
+//go:build assistclaw_browser
+
 package tools
 
 import (

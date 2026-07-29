@@ -5,6 +5,7 @@ package provider
 import (
 	"context"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -139,13 +140,13 @@ type CompletionResponse struct {
 
 // Text returns the concatenated text content from the response.
 func (r *CompletionResponse) Text() string {
-	var result string
+	var b strings.Builder
 	for _, part := range r.Content {
 		if part.Type == ContentTypeText {
-			result += part.Text
+			b.WriteString(part.Text)
 		}
 	}
-	return result
+	return b.String()
 }
 
 // ToolCalls returns all tool use content parts from the response.
@@ -298,7 +299,7 @@ func DrainStream(ch <-chan StreamEvent) {
 
 // CollectStream reads all events from a stream and assembles a CompletionResponse.
 func CollectStream(ctx context.Context, ch <-chan StreamEvent) (*CompletionResponse, error) {
-	var text string
+	var b strings.Builder
 	var toolCalls []ContentPart
 	var usage *TokenUsage
 	var finishReason FinishReason
@@ -307,14 +308,14 @@ func CollectStream(ctx context.Context, ch <-chan StreamEvent) (*CompletionRespo
 		select {
 		case <-ctx.Done():
 			// Drain remaining events
-			go DrainStream(ch)
+			DrainStream(ch)
 			return nil, ctx.Err()
 		default:
 		}
 
 		switch event.Type {
 		case StreamEventText:
-			text += event.Text
+			b.WriteString(event.Text)
 		case StreamEventToolUse:
 			if event.ToolUse != nil {
 				toolCalls = append(toolCalls, *event.ToolUse)
@@ -329,7 +330,8 @@ func CollectStream(ctx context.Context, ch <-chan StreamEvent) (*CompletionRespo
 		}
 	}
 
-	content := []ContentPart{}
+	content := make([]ContentPart, 0, 1+len(toolCalls))
+	text := b.String()
 	if text != "" {
 		content = append(content, ContentPart{Type: ContentTypeText, Text: text})
 	}
@@ -348,7 +350,7 @@ func CollectStream(ctx context.Context, ch <-chan StreamEvent) (*CompletionRespo
 // StreamToWriter streams text events to the provided writer.
 // Returns the full CompletionResponse once streaming is done.
 func StreamToWriter(ctx context.Context, ch <-chan StreamEvent, w io.Writer) (*CompletionResponse, error) {
-	var text string
+	var b strings.Builder
 	var toolCalls []ContentPart
 	var usage *TokenUsage
 	var finishReason FinishReason
@@ -356,14 +358,14 @@ func StreamToWriter(ctx context.Context, ch <-chan StreamEvent, w io.Writer) (*C
 	for event := range ch {
 		select {
 		case <-ctx.Done():
-			go DrainStream(ch)
+			DrainStream(ch)
 			return nil, ctx.Err()
 		default:
 		}
 
 		switch event.Type {
 		case StreamEventText:
-			text += event.Text
+			b.WriteString(event.Text)
 			if _, err := io.WriteString(w, event.Text); err != nil {
 				go DrainStream(ch)
 				return nil, err
@@ -382,7 +384,8 @@ func StreamToWriter(ctx context.Context, ch <-chan StreamEvent, w io.Writer) (*C
 		}
 	}
 
-	content := []ContentPart{}
+	content := make([]ContentPart, 0, 1+len(toolCalls))
+	text := b.String()
 	if text != "" {
 		content = append(content, ContentPart{Type: ContentTypeText, Text: text})
 	}

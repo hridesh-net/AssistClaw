@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/assistclaw/assistclaw/internal/channels"
 	"github.com/assistclaw/assistclaw/internal/channels/adapter"
@@ -125,8 +126,9 @@ func (s *Service) WrapHandler(next channels.MessageHandler) channels.MessageHand
 	}
 }
 
-// Run starts one goroutine per account watching mail.
+// Run starts one goroutine per account watching mail, plus the goal follow-up loop.
 func (s *Service) Run(ctx context.Context) {
+	go s.RunGoalFollowups(ctx, 15*time.Minute)
 	for _, acc := range s.accounts {
 		acc := acc
 		be := s.backends[acc.Name]

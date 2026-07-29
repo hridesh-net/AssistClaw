@@ -1,14 +1,14 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // ─────────────────────────────────────────────
@@ -25,192 +25,213 @@ type StatusInfo struct {
 	PlanoEndpoint string
 	MCPEnabled    bool
 	MCPTransport  string
+	// NoMouse disables mouse capture in the dashboard. Set when the user
+	// is inside tmux/screen or passed --no-mouse.
+	NoMouse bool
 }
 
 // ─────────────────────────────────────────────
-// Tea messages
+// Process stats fetching
 // ─────────────────────────────────────────────
 
-type tickMsg time.Time
-
-type psResult struct {
-	cpu   string
-	rssKB int64
-	vsz   string
-	etime string
-	alive bool
+// procStats is the cross-platform process snapshot consumed by the status
+// dashboard. An `err` value means the dashboard should display an error
+// banner rather than a misleading "0.0% CPU" row.
+type procStats struct {
+	cpuPct float64
+	rssMB  float64
+	etime  string
+	alive  bool
+	err    string
 }
 
-// ─────────────────────────────────────────────
-// Model
-// ─────────────────────────────────────────────
-
-type StatusModel struct {
-	info  StatusInfo
-	ps    psResult
-	width int
-	err   string
-}
-
-func NewStatusModel(info StatusInfo) StatusModel {
-	return StatusModel{info: info}
-}
-
-func (m StatusModel) Init() tea.Cmd {
-	return tea.Batch(
-		fetchPS(m.info.PID), // immediate first fetch
-		tickEvery(),
-	)
-}
-
-func (m StatusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "Q", "ctrl+c", "esc":
-			return m, tea.Quit
+// fetchStats returns a live snapshot of the running daemon. On Linux it
+// prefers /proc/<pid>/stat + /proc/<pid>/status (machine-readable, no
+// platform-dependent column parsing). On every other OS it falls back to
+// `ps -p PID -o %cpu,rss,etime` with strict parsing.
+func fetchStats(pid int) procStats {
+	if pid <= 0 {
+		return procStats{err: "no daemon pid"}
+	}
+	if runtime.GOOS == "linux" {
+		if s, ok := fetchStatsLinux(pid); ok {
+			return s
 		}
-
-	case tickMsg:
-		return m, tea.Batch(fetchPS(m.info.PID), tickEvery())
-
-	case psResult:
-		m.ps = msg
 	}
-	return m, nil
+	return fetchStatsPS(pid)
 }
 
-func (m StatusModel) View() string {
-	bold := lipgloss.NewStyle().Bold(true).Foreground(ColorNeon)
-	dim := lipgloss.NewStyle().Foreground(ColorMuted)
-	prim := lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
-
-	// ── Status indicator ──
-	var statusLine string
-	if m.ps.alive {
-		statusLine = StatusOK + " " + prim.Render("RUNNING") +
-			dim.Render(fmt.Sprintf("   PID %d   %s", m.info.PID, m.ps.etime))
-	} else {
-		statusLine = StatusErr + " " + lipgloss.NewStyle().Foreground(ColorError).Bold(true).Render("STOPPED")
+// fetchStatsLinux reads /proc/<pid>/{stat,statm,uptime} — fields are
+// stable across Linux kernels and don't depend on the busybox/coreutils
+// flavour of `ps`.
+func fetchStatsLinux(pid int) (procStats, bool) {
+	statPath := fmt.Sprintf("/proc/%d/stat", pid)
+	stat, err := os.ReadFile(statPath)
+	if err != nil {
+		return procStats{err: "process not running"}, true
 	}
 
-	// ── CPU & RAM bars ──
-	cpuPct := 0.0
-	fmt.Sscanf(m.ps.cpu, "%f", &cpuPct)
-	ramMB := float64(m.ps.rssKB) / 1024.0
-	ramPct := (ramMB / 1024.0) * 100.0
-	if ramPct > 100 {
-		ramPct = 100
+	// `stat` format puts comm in parentheses; everything after the closing
+	// ')' is space-separated and stable. Split off the prefix safely so a
+	// command name containing spaces or ')' does not corrupt parsing.
+	close := strings.LastIndexByte(string(stat), ')')
+	if close < 0 || close+2 > len(stat) {
+		return procStats{err: "unreadable /proc stat"}, true
 	}
-
-	cpuLine := dim.Render("CPU ") + ProgressBar(cpuPct, 14) + dim.Render(fmt.Sprintf("  %.1f%%", cpuPct))
-	ramLine := dim.Render("RAM ") + ProgressBar(ramPct, 14) + dim.Render(fmt.Sprintf("  %.1f MB", ramMB))
-
-	// ── Channels ──
-	channelStr := dim.Render("none")
-	if len(m.info.Channels) > 0 {
-		colored := make([]string, len(m.info.Channels))
-		for i, ch := range m.info.Channels {
-			colored[i] = prim.Render(ch)
-		}
-		channelStr = strings.Join(colored, dim.Render(" · "))
+	fields := strings.Fields(string(stat)[close+2:])
+	// After the trimmed prefix, fields are 0-indexed as documented in
+	// proc(5). We need utime (11), stime (12), starttime (19), rss (21).
+	if len(fields) < 22 {
+		return procStats{err: "unexpected /proc stat shape"}, true
 	}
+	utime, _ := strconv.ParseInt(fields[11], 10, 64)
+	stime, _ := strconv.ParseInt(fields[12], 10, 64)
+	starttime, _ := strconv.ParseInt(fields[19], 10, 64)
+	rssPages, _ := strconv.ParseInt(fields[21], 10, 64)
 
-	// ── Plano ──
-	planoStr := dim.Render("disabled")
-	if m.info.PlanoEnabled {
-		planoStr = prim.Render("✓ ") + dim.Render(m.info.PlanoEndpoint)
+	uptime, err := readUptimeSeconds()
+	if err != nil {
+		return procStats{err: "cannot read /proc/uptime"}, true
 	}
-
-	// ── MCP ──
-	mcpStr := dim.Render("disabled")
-	if m.info.MCPEnabled {
-		t := m.info.MCPTransport
-		if t == "" {
-			t = "stdio"
-		}
-		mcpStr = prim.Render("✓ ") + dim.Render(t)
+	clkTck := float64(clockTicksPerSec())
+	procStart := float64(starttime) / clkTck
+	procSec := uptime - procStart
+	if procSec <= 0 {
+		procSec = 1
 	}
+	cpuPct := 100.0 * (float64(utime+stime) / clkTck) / procSec
 
-	// ── Assemble body ──
-	rows := []string{
-		statusLine,
-		"",
-		dim.Render("  version     ") + prim.Render(m.info.Version),
-		dim.Render("  skills      ") + prim.Render(m.info.SkillSummary),
-		"",
-		"  " + cpuLine,
-		"  " + ramLine,
-		"",
-		dim.Render("  channels    ") + channelStr,
-		dim.Render("  plano       ") + planoStr,
-		dim.Render("  mcp         ") + mcpStr,
-		"",
-		dim.Render("  press q to quit"),
-	}
+	pageSize := os.Getpagesize() // bytes per page; Linux normally 4096
+	rssBytes := rssPages * int64(pageSize)
+	rssMB := float64(rssBytes) / (1024.0 * 1024.0)
 
-	body := strings.Join(rows, "\n")
-
-	return "\n" + lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorPrimary).
-		Background(ColorSurface).
-		Padding(1, 3).
-		Render(bold.Render("  AssistClaw Status")+"\n\n"+body) + "\n"
+	return procStats{
+		cpuPct: cpuPct,
+		rssMB:  rssMB,
+		etime:  formatDuration(procSec),
+		alive:  true,
+	}, true
 }
 
-// ─────────────────────────────────────────────
-// Commands
-// ─────────────────────────────────────────────
-
-func tickEvery() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return tickMsg(t)
-	})
+func readUptimeSeconds() (float64, error) {
+	b, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0, err
+	}
+	fields := strings.Fields(string(b))
+	if len(fields) == 0 {
+		return 0, fmt.Errorf("empty /proc/uptime")
+	}
+	return strconv.ParseFloat(fields[0], 64)
 }
 
-func fetchPS(pid int) tea.Cmd {
-	return func() tea.Msg {
-		r := psResult{cpu: "0.0", rssKB: 0, vsz: "0", etime: "--:--", alive: false}
+// clockTicksPerSec is the kernel jiffy rate. On glibc this is reachable via
+// sysconf(_SC_CLK_TCK), but for portability across libc we just hard-code
+// the value that every mainstream Linux kernel uses (100 Hz). If the
+// user has rebuilt the kernel with HZ=250, the CPU% will be off by a
+// constant factor — acceptable for a dashboard.
+func clockTicksPerSec() int64 { return 100 }
 
-		out, err := exec.Command("ps", "-p", fmt.Sprint(pid), "-o", "%cpu,rss,vsz,etime", "--no-headers").Output()
-		if err != nil {
-			// macOS retry without --no-headers
-			out, _ = exec.Command("ps", "-p", fmt.Sprint(pid), "-o", "%cpu,rss,vsz,etime").Output()
-		}
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		for _, line := range lines {
-			fields := strings.Fields(line)
-			// Skip header line that ps sometimes outputs on macOS
-			if len(fields) >= 4 && fields[0] != "%CPU" {
-				r.cpu = fields[0]
-				if kb, e := strconv.ParseInt(fields[1], 10, 64); e == nil {
-					r.rssKB = kb
-				}
-				r.vsz = fields[2]
-				r.etime = fields[3]
-				r.alive = true
-				break
-			}
-		}
-		return r
+// fetchStatsPS is the macOS / BSD / fallback path. It calls `ps` with an
+// explicit column list and validates the result; any parse failure
+// surfaces as a populated `err` string instead of silently-zero stats.
+func fetchStatsPS(pid int) procStats {
+	cmd := exec.Command("ps", "-p", fmt.Sprint(pid), "-o", "%cpu=,rss=,etime=")
+	out, err := cmd.Output()
+	if err != nil {
+		return procStats{err: "process not running"}
+	}
+	line := strings.TrimSpace(string(out))
+	if line == "" {
+		return procStats{err: "process not running"}
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 3 {
+		return procStats{err: "unparseable ps output"}
+	}
+	cpu, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return procStats{err: "ps cpu field not numeric"}
+	}
+	rssKB, err := strconv.ParseInt(fields[1], 10, 64)
+	if err != nil {
+		return procStats{err: "ps rss field not numeric"}
+	}
+	return procStats{
+		cpuPct: cpu,
+		rssMB:  float64(rssKB) / 1024.0,
+		etime:  fields[2],
+		alive:  true,
 	}
 }
+
+func formatDuration(secs float64) string {
+	d := time.Duration(secs * float64(time.Second))
+	h := int(d / time.Hour)
+	m := int(d/time.Minute) % 60
+	s := int(d/time.Second) % 60
+	if h > 0 {
+		return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%02d:%02d", m, s)
+}
+
+func tickEvery() *time.Ticker { return time.NewTicker(time.Second) }
 
 // ─────────────────────────────────────────────
 // Entry point
 // ─────────────────────────────────────────────
 
-// RunStatus launches the live-updating status dashboard.
+// RunStatus launches the live-updating status dashboard via the Rust TUI.
 // Exits when the user presses q, Esc, or Ctrl+C.
 func RunStatus(info StatusInfo) error {
-	p := tea.NewProgram(
-		NewStatusModel(info),
-		tea.WithAltScreen(),
-	)
-	_, err := p.Run()
-	return err
+	infoMap := map[string]any{
+		"pid":            info.PID,
+		"version":        info.Version,
+		"skill_summary":  info.SkillSummary,
+		"channels":       info.Channels,
+		"plano_enabled":  info.PlanoEnabled,
+		"plano_endpoint": info.PlanoEndpoint,
+		"mcp_enabled":    info.MCPEnabled,
+		"mcp_transport":  info.MCPTransport,
+	}
+	if info.NoMouse {
+		infoMap["enable_mouse"] = false
+	}
+	infoJSON, _ := json.Marshal(infoMap)
+
+	if err := Init(); err != nil {
+		return fmt.Errorf("init tui: %w", err)
+	}
+	defer Shutdown()
+
+	done := make(chan error, 1)
+	go func() { done <- StatusRun(string(infoJSON)) }()
+
+	ticker := tickEvery()
+	defer ticker.Stop()
+
+	go func() {
+		for range ticker.C {
+			stats := fetchStats(info.PID)
+			ramPct := (stats.rssMB / 1024.0) * 100.0
+			if ramPct > 100 {
+				ramPct = 100
+			}
+			payload := map[string]any{
+				"cpu_pct": stats.cpuPct,
+				"ram_mb":  stats.rssMB,
+				"ram_pct": ramPct,
+				"alive":   stats.alive,
+				"etime":   stats.etime,
+			}
+			if stats.err != "" {
+				payload["error"] = stats.err
+			}
+			statusJSON, _ := json.Marshal(payload)
+			StatusUpdate(string(statusJSON))
+		}
+	}()
+
+	return <-done
 }

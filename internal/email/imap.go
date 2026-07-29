@@ -2,7 +2,9 @@ package email
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -247,6 +249,37 @@ func (b *imapBackend) Reply(ctx context.Context, m *MailMessage, body string) er
 	if err != nil {
 		addr = &mail.Address{Address: strings.Trim(m.From, "<>")}
 	}
+	subj := m.Subject
+	if !strings.HasPrefix(strings.ToLower(subj), "re:") {
+		subj = "Re: " + subj
+	}
+	inReplyTo := strings.TrimSpace(m.MessageID)
+	ref := strings.TrimSpace(m.References)
+	if inReplyTo != "" {
+		if ref == "" {
+			ref = inReplyTo
+		} else {
+			ref = ref + " " + inReplyTo
+		}
+	}
+	_, err = b.sendSMTP(addr, subj, body, inReplyTo, ref)
+	return err
+}
+
+// SendNew composes and sends a brand-new mail (no inbound message required).
+// Implements NewMailSender for goal-driven threads.
+func (b *imapBackend) SendNew(ctx context.Context, to, subject, body, inReplyTo, references string) (string, error) {
+	_ = ctx
+	addr, err := mail.ParseAddress(to)
+	if err != nil {
+		addr = &mail.Address{Address: strings.Trim(to, "<>")}
+	}
+	return b.sendSMTP(addr, subject, body, strings.TrimSpace(inReplyTo), strings.TrimSpace(references))
+}
+
+// sendSMTP is the shared compose+send path. It always stamps a generated
+// Message-ID so future replies can be threaded back to us, and returns it.
+func (b *imapBackend) sendSMTP(to *mail.Address, subject, body, inReplyTo, references string) (string, error) {
 	port := b.smtp.Port
 	if port == 0 {
 		port = 587
@@ -255,23 +288,20 @@ func (b *imapBackend) Reply(ctx context.Context, m *MailMessage, body string) er
 	user := b.smtp.Username
 	pass := b.smtp.Password
 	from := user
-	subj := m.Subject
-	if !strings.HasPrefix(strings.ToLower(subj), "re:") {
-		subj = "Re: " + subj
+	msgID, err := generateMessageID(hostOnly(host))
+	if err != nil {
+		return "", err
 	}
 	var hdr strings.Builder
 	fmt.Fprintf(&hdr, "From: %s\r\n", from)
-	fmt.Fprintf(&hdr, "To: %s\r\n", addr.String())
-	fmt.Fprintf(&hdr, "Subject: %s\r\n", subj)
-	if m.MessageID != "" {
-		fmt.Fprintf(&hdr, "In-Reply-To: %s\r\n", strings.TrimSpace(m.MessageID))
-		ref := m.References
-		if ref == "" {
-			ref = m.MessageID
-		} else {
-			ref = strings.TrimSpace(ref) + " " + strings.TrimSpace(m.MessageID)
-		}
-		fmt.Fprintf(&hdr, "References: %s\r\n", ref)
+	fmt.Fprintf(&hdr, "To: %s\r\n", to.String())
+	fmt.Fprintf(&hdr, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&hdr, "Message-ID: %s\r\n", msgID)
+	if inReplyTo != "" {
+		fmt.Fprintf(&hdr, "In-Reply-To: %s\r\n", inReplyTo)
+	}
+	if references != "" {
+		fmt.Fprintf(&hdr, "References: %s\r\n", references)
 	}
 	fmt.Fprintf(&hdr, "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s", body)
 	addrStr := host
@@ -279,5 +309,20 @@ func (b *imapBackend) Reply(ctx context.Context, m *MailMessage, body string) er
 		addrStr = fmt.Sprintf("%s:%d", host, port)
 	}
 	auth := smtp.PlainAuth("", user, pass, hostOnly(host))
-	return smtp.SendMail(addrStr, auth, from, []string{addr.Address}, []byte(hdr.String()))
+	if err := smtp.SendMail(addrStr, auth, from, []string{to.Address}, []byte(hdr.String())); err != nil {
+		return "", err
+	}
+	return msgID, nil
+}
+
+// generateMessageID builds an RFC 5322 Message-ID under our control.
+func generateMessageID(domain string) (string, error) {
+	var b [9]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	if domain == "" {
+		domain = "assistclaw.local"
+	}
+	return fmt.Sprintf("<ac-%d-%s@%s>", time.Now().Unix(), hex.EncodeToString(b[:]), domain), nil
 }

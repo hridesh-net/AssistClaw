@@ -4,26 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+	"net/http/pprof"
 	"tailscale.com/tsnet"
 
 	"github.com/assistclaw/assistclaw/internal/agent"
 	"github.com/assistclaw/assistclaw/internal/automation"
+	"github.com/assistclaw/assistclaw/internal/awareness"
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/memory"
 	"github.com/assistclaw/assistclaw/internal/observability/correlation"
 	"github.com/assistclaw/assistclaw/internal/observability/metrics"
 	obstracing "github.com/assistclaw/assistclaw/internal/observability/tracing"
+	"github.com/assistclaw/assistclaw/internal/provider"
 	"github.com/assistclaw/assistclaw/internal/voice"
 	"github.com/assistclaw/assistclaw/internal/webui"
 )
@@ -48,17 +51,26 @@ type Server struct {
 	Tailscale  struct {
 		Mode string
 	}
-	TS *tsnet.Server
-	Config     *config.Config
-	Gmail      *automation.GmailWatcher
-	Voice      *voice.Daemon
-	Logger     *zap.Logger
+	TS     *tsnet.Server
+	Config *config.Config
+	Gmail  *automation.GmailWatcher
+	Voice  *voice.Daemon
+	Logger *zap.Logger
+
+	// Health check dependencies (optional).
+	MemMgr     *memory.Manager
+	Provider   provider.Provider
+	Proactive  interface{ IsRunning() bool }
+
+	// Awareness receives external context signals (phone, sensors) via
+	// POST /api/context/signal. Optional.
+	Awareness *awareness.Store
 }
 
 // NewServer initializes a new Gateway server on the specified port.
 func NewServer(port int) *Server {
 	return &Server{
-		Hub:  NewHub(),
+		Hub:  NewHub(nil),
 		Port: port,
 	}
 }
@@ -88,18 +100,18 @@ func (s *Server) withCorrelation(h http.HandlerFunc) http.HandlerFunc {
 }
 
 // Start begins listening on the configured port.
-func (s *Server) Start() error {
-	go s.Hub.Run()
+func (s *Server) Start(ctx context.Context) error {
+	if s.Hub != nil {
+		s.Hub.log = s.logger()
+		go s.Hub.Run()
+	}
 	metrics.Default().SetGatewayUp(true)
 
 	// Start automation workers if configured
 	if s.Config != nil && s.Config.Gmail.Enabled {
-		// NewGmailWatcher expects (config, logger) - we might need to pass the logger to Server
-		// For now, let's assume we can use a basic logger or pass it in later.
-		// Actually, let's just initialize it in main.go and set it on the Server.
 		if s.Gmail != nil {
-			if err := s.Gmail.Start(context.Background()); err != nil {
-				log.Printf("gmail: failed to start watcher: %v", err)
+			if err := s.Gmail.Start(ctx); err != nil {
+				s.logger().Warn("gmail: failed to start watcher", zap.Error(err))
 			}
 		}
 	}
@@ -112,7 +124,7 @@ func (s *Server) Start() error {
 	if s.Config != nil {
 		publicDir := filepath.Join(s.Config.StateDir, "workspace", "public")
 		if err := os.MkdirAll(publicDir, 0o755); err != nil {
-			log.Printf("gateway: workspace/public: %v", err)
+			s.logger().Warn("gateway: workspace/public", zap.Error(err))
 		} else {
 			mux.Handle("/workspace/", http.StripPrefix("/workspace/", http.FileServer(http.Dir(publicDir))))
 		}
@@ -133,18 +145,26 @@ func (s *Server) Start() error {
 		}
 	}
 
-
 	// ── Static web UI ─────────────────────────────────────────────────────────
-	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(webui.Assets()))))
+	assetsFS, err := webui.Assets()
+	if err != nil {
+		s.logger().Error("failed to load embedded assets", zap.Error(err))
+	} else {
+		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
 		// Serve index.html from embedded FS
-		data, err := webui.Assets().Open("index.html")
+		if assetsFS == nil {
+			http.Error(w, "assets unavailable", http.StatusInternalServerError)
+			return
+		}
+		data, err := assetsFS.Open("index.html")
 		if err != nil {
-			http.Error(w, "not found", 404)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		defer data.Close()
@@ -154,11 +174,8 @@ func (s *Server) Start() error {
 	})
 
 	// ── Health ────────────────────────────────────────────────────────────────
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	mux.HandleFunc("/livez", s.handleLivez)
+	mux.HandleFunc("/readyz", s.handleReadyz)
 
 	// ── API: Status ───────────────────────────────────────────────────────────
 	mux.HandleFunc("/api/status", auth(s.withCorrelation(s.handleStatus)))
@@ -167,11 +184,14 @@ func (s *Server) Start() error {
 	// ── API: Chat (SSE streaming) ─────────────────────────────────────────────
 	mux.HandleFunc("/api/chat", auth(s.withCorrelation(s.handleChat)))
 
+	// ── API: Context signals (phone/sensor → awareness store) ────────────────
+	mux.HandleFunc("/api/context/signal", auth(s.withCorrelation(s.handleContextSignal)))
+
 	// ── WebSocket (legacy / channel use) ─────────────────────────────────────
 	mux.HandleFunc("/ws", s.withCorrelation(func(w http.ResponseWriter, r *http.Request) {
 		serveWs(s.Hub, s.logger(), w, r)
 	}))
-	
+
 	// ── A2A Protocol ──────────────────────────────────────────────────────────
 	mux.HandleFunc("/.well-known/agent.json", s.handleAgentCard)
 	mux.HandleFunc("/api/a2a", s.handleA2A)
@@ -179,15 +199,24 @@ func (s *Server) Start() error {
 	// ── Webhooks ──────────────────────────────────────────────────────────────
 	mux.HandleFunc("/api/webhook/", auth(s.withCorrelation(s.handleWebhook)))
 
+	// ── Debug pprof ───────────────────────────────────────────────────────────
+	if s.Config != nil && s.Config.Gateway.Debug {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
+
 	if s.Gmail != nil {
-		if err := s.Gmail.Start(context.Background()); err != nil {
-			log.Printf("Error starting Gmail watcher: %v", err)
+		if err := s.Gmail.Start(ctx); err != nil {
+			s.logger().Warn("error starting Gmail watcher", zap.Error(err))
 		}
 	}
 
 	if s.Voice != nil {
-		if err := s.Voice.Start(context.Background()); err != nil {
-			log.Printf("Error starting Voice daemon: %v", err)
+		if err := s.Voice.Start(ctx); err != nil {
+			s.logger().Warn("error starting Voice daemon", zap.Error(err))
 		}
 	}
 
@@ -210,8 +239,14 @@ func (s *Server) Start() error {
 			return fmt.Errorf("tailscale listen error: %w", err)
 		}
 
-		s.HTTPServer = &http.Server{Handler: mux}
-		log.Printf("AssistClaw gateway + web UI listening via Tailscale (%s) on %s", s.Tailscale.Mode, addr)
+		s.HTTPServer = &http.Server{
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      0, // WebSocket connections manage their own write deadlines
+			IdleTimeout:       120 * time.Second,
+		}
+		s.logger().Info("gateway listening via Tailscale", zap.String("mode", s.Tailscale.Mode), zap.String("addr", addr))
 		return s.HTTPServer.Serve(ln)
 	}
 
@@ -223,37 +258,98 @@ func (s *Server) Start() error {
 	fullAddr := fmt.Sprintf("%s%s", bindAddr, addr)
 
 	s.HTTPServer = &http.Server{
-		Addr:    fullAddr,
-		Handler: mux,
+		Addr:              fullAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      0, // WebSocket connections manage their own write deadlines
+		IdleTimeout:       120 * time.Second,
 	}
 
-	log.Printf("AssistClaw gateway + web UI listening on http://%s", fullAddr)
+	s.logger().Info("gateway listening", zap.String("addr", fullAddr))
 	return s.HTTPServer.ListenAndServe()
 }
 
 // Stop safely shuts down the server.
 func (s *Server) Stop(ctx context.Context) error {
-	log.Printf("Stopping gateway...")
+	s.logger().Info("stopping gateway")
 	metrics.Default().SetGatewayUp(false)
+	if s.Hub != nil {
+		s.Hub.Stop()
+	}
 	if s.TS != nil {
 		s.TS.Close()
 	}
+	var err error
 	if s.HTTPServer != nil {
-		err := s.HTTPServer.Shutdown(ctx)
-		if s.Gmail != nil {
-			s.Gmail.Stop()
-		}
-		if s.Voice != nil {
-			s.Voice.Stop()
-		}
-		return err
+		err = s.HTTPServer.Shutdown(ctx)
 	}
-	return nil
+	if s.Gmail != nil {
+		s.Gmail.Stop()
+	}
+	if s.Voice != nil {
+		s.Voice.Stop()
+	}
+	return err
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	_, _ = w.Write([]byte(metrics.Default().RenderPrometheus()))
+}
+
+func (s *Server) handleLivez(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
+	checks := make(map[string]string)
+	ready := true
+
+	if s.MemMgr != nil {
+		if err := s.MemMgr.Episodic.Ping(); err != nil {
+			checks["memory"] = "error: " + err.Error()
+			ready = false
+		} else {
+			checks["memory"] = "ok"
+		}
+	} else {
+		checks["memory"] = "not configured"
+	}
+
+	if s.Provider != nil {
+		pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.Provider.HealthCheck(pingCtx); err != nil {
+			checks["provider"] = "error: " + err.Error()
+			ready = false
+		} else {
+			checks["provider"] = "ok"
+		}
+	} else {
+		checks["provider"] = "not configured"
+	}
+
+	if s.Proactive != nil {
+		if s.Proactive.IsRunning() {
+			checks["proactive"] = "ok"
+		} else {
+			checks["proactive"] = "stopped"
+			ready = false
+		}
+	} else {
+		checks["proactive"] = "not configured"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if !ready {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": checks})
 }
 
 // ── API Handlers ──────────────────────────────────────────────────────────────
@@ -322,28 +418,25 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	done := make(chan struct{})
-
 	handler := &sseStreamHandler{
 		w:       w,
 		flusher: flusher,
-		done:    done,
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		sessionRunner.RunStream(spanCtx, memory.Message{
 			ID:        uuid.New().String(),
 			SessionID: sessionID,
 			Role:      memory.RoleUser,
 			Content:   req.Message,
-				CreatedAt: time.Now(),
+			CreatedAt: time.Now(),
 		}, handler)
 	}()
 
-	select {
-	case <-done:
-	case <-ctx.Done():
-	}
+	wg.Wait()
 }
 
 // handleStatus handles GET /api/status.
@@ -457,7 +550,7 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// The implementation of 'deliver: true' usually involves the agent itself calling
 	// a message tool, but if we want it automatic, we'd trigger it here.
 	// For now, we return 200 OK.
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -467,7 +560,6 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 type sseStreamHandler struct {
 	w       http.ResponseWriter
 	flusher http.Flusher
-	done    chan struct{}
 }
 
 func (h *sseStreamHandler) write(b []byte) {
@@ -489,17 +581,11 @@ func (h *sseStreamHandler) OnToolResult(name string, _ string) {
 
 func (h *sseStreamHandler) OnDone(_ *agent.RunResult) {
 	h.write(sseDone())
-	close(h.done)
 }
 
 func (h *sseStreamHandler) OnError(err error) {
 	h.write(sseEvent("error", err.Error()))
 	h.write(sseDone())
-	select {
-	case <-h.done:
-	default:
-		close(h.done)
-	}
 }
 
 // ── WebSocket (unchanged from original) ──────────────────────────────────────
@@ -507,16 +593,19 @@ func (h *sseStreamHandler) OnError(err error) {
 func serveWs(hub *Hub, logger *zap.Logger, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("gateway/server upgrade error:", err)
+		if logger != nil {
+			logger.Warn("gateway websocket upgrade error", zap.Error(err))
+		}
 		return
 	}
 
 	clientID := uuid.New().String()
 	client := &Client{
-		ID:   clientID,
-		Hub:  hub,
-		Conn: conn,
-		Send: make(chan []byte, 256),
+		ID:     clientID,
+		Hub:    hub,
+		Conn:   conn,
+		Send:   make(chan []byte, 256),
+		logger: logger,
 	}
 
 	if logger != nil {

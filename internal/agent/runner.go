@@ -29,6 +29,10 @@ import (
 	"github.com/assistclaw/assistclaw/internal/system"
 )
 
+var (
+	markdownBashRe = regexp.MustCompile(`(?s)\x60\x60\x60(?:bash|sh)\n(.*?)\x60\x60\x60`)
+)
+
 // ─────────────────────────────────────────────
 // Tool interface
 // ─────────────────────────────────────────────
@@ -177,6 +181,36 @@ type Runner struct {
 	localIntelEng     localintel.Engine
 	localIntelOpenErr error
 	localIntelScratch string // advisory text merged into buildSystemPrompt for the current Run/RunStream
+
+	// awareness renders the live-context block (time, calendar, presence)
+	// injected into every system prompt. Optional.
+	awareness AwarenessProvider
+
+	// promptCache avoids re-reading persona files from disk on every iteration.
+	promptCache struct {
+		mu      sync.RWMutex
+		content string
+		builtAt time.Time
+	}
+
+	// inflight tracks active agent invocations for graceful shutdown.
+	inflight sync.WaitGroup
+}
+
+// WaitForInflight blocks until all active Run/RunStream/RunAutonomous calls finish
+// or the timeout expires. Returns true if all finished, false on timeout.
+func (r *Runner) WaitForInflight(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		r.inflight.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // NewRunner creates a new agent runner.
@@ -210,6 +244,19 @@ func NewRunner(
 		hardware:      &system.HardwareReport{},
 		palaceRouter:  memory.NewHeuristicPalaceRouter(),
 	}
+}
+
+// AwarenessProvider supplies the live-context system prompt section
+// (point-of-consumption interface; implemented by *awareness.Store).
+type AwarenessProvider interface {
+	PromptBlock() string
+}
+
+// WithAwareness attaches a live-context provider whose PromptBlock is appended
+// to every system prompt, giving the agent knowledge of the present moment.
+func (r *Runner) WithAwareness(a AwarenessProvider) *Runner {
+	r.awareness = a
+	return r
 }
 
 // WithCatalog sets the graph-based tool catalog on an existing runner.
@@ -372,9 +419,25 @@ type RunResult struct {
 	Usage      provider.TokenUsage
 }
 
+// modeIndicator returns a prefix when the provider is in degraded/offline mode.
+func (r *Runner) modeIndicator() string {
+	type modeProvider interface{ Mode() string }
+	if mp, ok := r.provider.(modeProvider); ok {
+		switch mp.Mode() {
+		case "degraded":
+			return "⚠️  degraded mode — using fallback model.\n\n"
+		case "offline":
+			return "⚠️  offline mode — using local model.\n\n"
+		}
+	}
+	return ""
+}
+
 // Run processes a user message and returns the assistant's final response.
 // It handles the complete tool-use loop: LLM → tool calls → tool results → LLM.
 func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error) {
+	r.inflight.Add(1)
+	defer r.inflight.Done()
 	ctx, _ = correlation.EnsureRequestID(ctx)
 	ctx = correlation.WithSessionID(ctx, r.sessionID)
 	ctx = correlation.WithChannel(ctx, r.channelID)
@@ -491,7 +554,7 @@ func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error
 
 			return &RunResult{
 				SessionID:  r.sessionID,
-				Response:   assistantContent,
+				Response:   r.modeIndicator() + assistantContent,
 				Iterations: iterations,
 				Usage:      totalUsage,
 			}, nil
@@ -499,7 +562,7 @@ func (r *Runner) Run(ctx context.Context, msg memory.Message) (*RunResult, error
 
 		// Execute tool calls and collect results.
 		for _, tc := range toolCalls {
-			result := r.executeTool(ctx, tc)
+			result := r.executeTool(ctx, tc, nil)
 
 			toolResultMsg := memory.Message{
 				ID:        uuid.New().String(),
@@ -567,8 +630,7 @@ func extractTag(text, tag string) string {
 // and wraps them into synthetic tool calls if the model failed to use the JSON schema.
 func extractMarkdownBash(text string) []provider.ContentPart {
 	var results []provider.ContentPart
-	re := regexp.MustCompile(`(?s)\x60\x60\x60(?:bash|sh)\n(.*?)\x60\x60\x60`)
-	matches := re.FindAllStringSubmatch(text, -1)
+	matches := markdownBashRe.FindAllStringSubmatch(text, -1)
 	for _, m := range matches {
 		code := strings.TrimSpace(m[1])
 		if code == "" {
@@ -586,16 +648,19 @@ func extractMarkdownBash(text string) []provider.ContentPart {
 }
 
 // executeTool runs a single tool call and returns the result string.
-func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart) string {
+func (r *Runner) executeTool(ctx context.Context, tc provider.ContentPart, inputJSON []byte) string {
 	tool, ok := r.tools.Get(tc.ToolName)
 	if !ok {
 		r.log.Warn("tool not found", zap.String("tool", tc.ToolName))
 		return fmt.Sprintf("Error: tool %q not found", tc.ToolName)
 	}
 
-	inputJSON, err := json.Marshal(tc.ToolInput)
-	if err != nil {
-		return fmt.Sprintf("Error marshalling tool input: %v", err)
+	if len(inputJSON) == 0 {
+		var err error
+		inputJSON, err = json.Marshal(tc.ToolInput)
+		if err != nil {
+			return fmt.Sprintf("Error marshalling tool input: %v", err)
+		}
 	}
 
 	// ── Guardrail: pre-execution tool check ──────────────────────────────
@@ -772,6 +837,14 @@ func (r *Runner) buildSystemPrompt(ctx context.Context, query string) string {
 	today := time.Now().Format("2006-01-02")
 	ws := r.workspaceDir
 
+	// Return cached prompt if fresh (< 5s) to avoid disk I/O on every iteration.
+	r.promptCache.mu.RLock()
+	if time.Since(r.promptCache.builtAt) < 5*time.Second && r.promptCache.content != "" {
+		r.promptCache.mu.RUnlock()
+		return r.promptCache.content
+	}
+	r.promptCache.mu.RUnlock()
+
 	// ── Hardware Environment ────────────────────────────────────────────────
 	hwStr := ""
 	if r.hardware != nil {
@@ -927,6 +1000,13 @@ When the user asks for a **dashboard**, **status page**, or **live monitor**:
 		parts = append(parts, r.cfg.SystemPrompt)
 	}
 
+	// Live context: time of day, calendar, user presence, external signals.
+	if r.awareness != nil {
+		if blk := r.awareness.PromptBlock(); blk != "" {
+			parts = append(parts, blk)
+		}
+	}
+
 	// Corrective Memory (Lessons Learned from past tasks)
 	if query != "" && r.cfg.EmbeddingModel != "" {
 		emb, err := r.provider.Embed(ctx, r.cfg.EmbeddingModel, query)
@@ -974,7 +1054,12 @@ When the user asks for a **dashboard**, **status page**, or **live monitor**:
 		parts = append(parts, "## On-device advisory (local Gemma)\n"+strings.TrimSpace(r.localIntelScratch))
 	}
 
-	return strings.Join(parts, "\n\n")
+	result := strings.Join(parts, "\n\n")
+	r.promptCache.mu.Lock()
+	r.promptCache.content = result
+	r.promptCache.builtAt = time.Now()
+	r.promptCache.mu.Unlock()
+	return result
 }
 
 // looksLikeTemplate detects untouched template markdown so we don't inject
@@ -1068,6 +1153,8 @@ type StreamHandler interface {
 // RunStream runs the agent loop and calls handler methods as events occur.
 // RunStream processes a user message and streams the assistant's response.
 func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler StreamHandler) {
+	r.inflight.Add(1)
+	defer r.inflight.Done()
 	ctx, _ = correlation.EnsureRequestID(ctx)
 	ctx = correlation.WithSessionID(ctx, r.sessionID)
 	ctx = correlation.WithChannel(ctx, r.channelID)
@@ -1173,7 +1260,7 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 
 		if len(toolCalls) == 0 || finishReason == provider.FinishReasonStop {
 			handler.OnDone(&RunResult{
-				SessionID: r.sessionID, Response: fullResponse.String(),
+				SessionID: r.sessionID, Response: r.modeIndicator() + fullResponse.String(),
 				Iterations: iterations, Usage: totalUsage,
 			})
 			return
@@ -1182,7 +1269,7 @@ func (r *Runner) RunStream(ctx context.Context, msg memory.Message, handler Stre
 		for _, tc := range toolCalls {
 			inputJSON, _ := json.Marshal(tc.ToolInput)
 			handler.OnToolCall(tc.ToolName, inputJSON)
-			result := r.executeTool(ctx, tc)
+			result := r.executeTool(ctx, tc, inputJSON)
 			handler.OnToolResult(tc.ToolName, result)
 
 			toolMsg := memory.Message{
@@ -1796,25 +1883,49 @@ func summarizeIdentity(content string) string {
 }
 
 func getIdentityField(content, field string) string {
-	re := regexp.MustCompile(`(?m)^- \*\*` + regexp.QuoteMeta(field) + `:\*\*\s*(.*)$`)
-	m := re.FindStringSubmatch(content)
-	if len(m) < 2 {
-		return ""
+	prefix := "- **" + field + ":**"
+	idx := 0
+	for {
+		i := strings.Index(content[idx:], prefix)
+		if i == -1 {
+			return ""
+		}
+		i += idx
+		// ensure line start
+		if i == 0 || content[i-1] == '\n' {
+			start := i + len(prefix)
+			if end := strings.IndexByte(content[start:], '\n'); end != -1 {
+				return strings.TrimSpace(content[start : start+end])
+			}
+			return strings.TrimSpace(content[start:])
+		}
+		idx = i + 1
 	}
-	return strings.TrimSpace(m[1])
 }
 
 func setIdentityField(content, field, value string) (string, bool) {
-	re := regexp.MustCompile(`(?m)^- \*\*` + regexp.QuoteMeta(field) + `:\*\*.*$`)
-	line := fmt.Sprintf("- **%s:** %s", field, value)
-	if re.MatchString(content) {
-		return re.ReplaceAllString(content, line), true
+	prefix := "- **" + field + ":**"
+	idx := 0
+	for {
+		i := strings.Index(content[idx:], prefix)
+		if i == -1 {
+			break
+		}
+		i += idx
+		if i == 0 || content[i-1] == '\n' {
+			start := i + len(prefix)
+			if end := strings.IndexByte(content[start:], '\n'); end != -1 {
+				return content[:start] + " " + value + content[start+end:], true
+			}
+			return content[:start] + " " + value, true
+		}
+		idx = i + 1
 	}
 	// Append if the field is missing.
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	return content + line + "\n", true
+	return content + prefix + " " + value + "\n", true
 }
 
 func (r *Runner) shouldFlush() bool {
@@ -1866,7 +1977,7 @@ func (r *Runner) doFlush(ctx context.Context, usage *provider.TokenUsage) {
 
 	// Execute any tools (like write_file) requested during flush.
 	for _, tc := range resp.ToolCalls() {
-		result := r.executeTool(ctx, tc)
+		result := r.executeTool(ctx, tc, nil)
 		toolMsg := memory.Message{
 			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleTool,
 			Content: result,
@@ -1939,7 +2050,7 @@ func (r *Runner) doFlushStream(ctx context.Context, handler StreamHandler, usage
 	for _, tc := range toolCalls {
 		inputJSON, _ := json.Marshal(tc.ToolInput)
 		handler.OnToolCall(tc.ToolName, inputJSON)
-		result := r.executeTool(ctx, tc)
+		result := r.executeTool(ctx, tc, inputJSON)
 		handler.OnToolResult(tc.ToolName, result)
 
 		toolMsg := memory.Message{

@@ -35,6 +35,10 @@ type Channel struct {
 
 	legacyMu      sync.RWMutex
 	legacyHandler channels.MessageHandler // used by voice path (!join) until refactored to InboundEvent
+	// sem bounds concurrent inbound handler goroutines to prevent bursts from
+	// ballooning goroutine count.
+	sem      chan struct{}
+	voiceSem chan struct{}
 }
 
 func New(token string, dmMode string, allowFrom []string, requireMention bool, voiceClient *voice.Client) (*Channel, error) {
@@ -55,6 +59,8 @@ func New(token string, dmMode string, allowFrom []string, requireMention bool, v
 		requireMention:   requireMention,
 		voiceClient:      voiceClient,
 		voiceConnections: make(map[string]*discordgo.VoiceConnection),
+		sem:              make(chan struct{}, 50),
+		voiceSem:         make(chan struct{}, 5),
 	}, nil
 }
 
@@ -75,7 +81,7 @@ func (c *Channel) AdapterVersion() int {
 func (c *Channel) Capabilities() adapter.ChannelCapabilities {
 	caps, ok := adapter.BuiltinCaps(c.Name())
 	if !ok {
-		panic("internal/channels/adapter: missing capability_registry entry for " + c.Name())
+		return adapter.ChannelCapabilities{}
 	}
 	return caps
 }
@@ -210,22 +216,28 @@ func (c *Channel) listenVoice(ctx context.Context, vc *discordgo.VoiceConnection
 				data := audioBuffer.Bytes()
 				audioBuffer.Reset()
 
-				go func(d []byte) {
-					text, err := c.voiceClient.STT(d, "opus")
-					if err == nil && text != "" {
-						msg := channels.Message{
-							ChannelID: c.Name(),
-							SessionID: fmt.Sprintf("discord:voice:%s:%s", guildID, channelID),
-							Text:      text,
-						}
+				select {
+				case c.voiceSem <- struct{}{}:
+					go func(d []byte) {
+						defer func() { <-c.voiceSem }()
+						text, err := c.voiceClient.STT(d, "opus")
+						if err == nil && text != "" {
+							msg := channels.Message{
+								ChannelID: c.Name(),
+								SessionID: "discord:voice:" + guildID + ":" + channelID,
+								Text:      text,
+							}
 
-						replyFn := func(chunk string) error {
-							return c.speakVoice(vc, chunk)
-						}
+							replyFn := func(chunk string) error {
+								return c.speakVoice(vc, chunk)
+							}
 
-						handler(ctx, msg, replyFn, nil, nil)
-					}
-				}(data)
+							handler(ctx, msg, replyFn, nil, nil)
+						}
+					}(data)
+				default:
+					// Drop audio chunk if voice pipeline is saturated.
+				}
 			}
 		}
 	}
@@ -263,7 +275,7 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 			return
 		}
 
-		sessionID := fmt.Sprintf("discord:%s:%s", m.GuildID, m.ChannelID)
+		sessionID := "discord:" + m.GuildID + ":" + m.ChannelID
 		authorID := m.Author.ID
 
 		if c.dmMode == "disabled" {
@@ -343,7 +355,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 			},
 		}
 
+		c.sem <- struct{}{}
 		go func() {
+			defer func() { <-c.sem }()
 			if err := h(ctx, ev); err != nil {
 				log.Printf("Discord: inbound handler error: %v", err)
 			}
@@ -398,7 +412,7 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 			log.Printf("Discord: interaction respond: %v", err)
 			return
 		}
-		sessionID := fmt.Sprintf("discord:%s:%s", i.GuildID, i.ChannelID)
+		sessionID := "discord:" + i.GuildID + ":" + i.ChannelID
 		ev := adapter.InboundEvent{
 			ID:         i.ID,
 			ChannelID:  c.Name(),
@@ -423,7 +437,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 				channels.MetaDiscordGuildID:   i.GuildID,
 			},
 		}
+		c.sem <- struct{}{}
 		go func(ev adapter.InboundEvent) {
+			defer func() { <-c.sem }()
 			if err := h(ctx, ev); err != nil {
 				log.Printf("Discord: inbound handler error: %v", err)
 			}
@@ -496,7 +512,9 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 			return buf.Push(chunk)
 		}
 
+		c.sem <- struct{}{}
 		go func() {
+			defer func() { <-c.sem }()
 			handler(ctx, msg, replyFn, nil, nil)
 			if err := buf.Done(); err != nil {
 				log.Printf("Discord: flush send: %v", err)

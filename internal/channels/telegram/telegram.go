@@ -31,6 +31,9 @@ type Channel struct {
 	allowFrom      []string
 	requireMention bool
 	reliableSend   *adapter.ReliableSender
+	// sem bounds concurrent inbound handler goroutines to prevent bursts from
+	// ballooning goroutine count.
+	sem chan struct{}
 }
 
 func New(apiKey string, dmMode string, allowFrom []string, requireMention bool) (*Channel, error) {
@@ -47,6 +50,7 @@ func New(apiKey string, dmMode string, allowFrom []string, requireMention bool) 
 		dmMode:         dmMode,
 		allowFrom:      allowFrom,
 		requireMention: requireMention,
+		sem:            make(chan struct{}, 50),
 	}, nil
 }
 
@@ -71,7 +75,7 @@ func (c *Channel) AdapterVersion() int {
 func (c *Channel) Capabilities() adapter.ChannelCapabilities {
 	caps, ok := adapter.BuiltinCaps(c.Name())
 	if !ok {
-		panic("internal/channels/adapter: missing capability_registry entry for " + c.Name())
+		return adapter.ChannelCapabilities{}
 	}
 	return caps
 }
@@ -79,7 +83,13 @@ func (c *Channel) Capabilities() adapter.ChannelCapabilities {
 // Ping implements [adapter.Health] (Bot API GetMe).
 func (c *Channel) Ping(ctx context.Context) error {
 	done := make(chan error, 1)
-	go func() { _, err := c.bot.GetMe(); done <- err }()
+	go func() {
+		_, err := c.bot.GetMe()
+		select {
+		case done <- err:
+		case <-ctx.Done():
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		return adapter.NewChannelError(adapter.ErrorKindRetryable, "telegram ping cancelled", ctx.Err())
@@ -232,8 +242,8 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 						continue
 					}
 					chatID := cq.Message.Chat.ID
-					sessionID := fmt.Sprintf("tg:%d", chatID)
-					senderID := fmt.Sprintf("%d", cq.From.ID)
+					sessionID := "tg:" + strconv.FormatInt(chatID, 10)
+					senderID := strconv.FormatInt(cq.From.ID, 10)
 					username := cq.From.UserName
 					kind := "dm"
 					if cq.Message.Chat.Type == "group" || cq.Message.Chat.Type == "supergroup" {
@@ -250,7 +260,7 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 							Username:    username,
 						},
 						Recipient: adapter.RecipientRef{
-							ID:   fmt.Sprintf("%d", chatID),
+							ID:   strconv.FormatInt(chatID, 10),
 							Kind: kind,
 						},
 						Text: data,
@@ -263,7 +273,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 							channels.MetaTelegramMessageID: strconv.Itoa(cq.Message.MessageID),
 						},
 					}
+					c.sem <- struct{}{}
 					go func(ev adapter.InboundEvent) {
+						defer func() { <-c.sem }()
 						if err := h(ctx, ev); err != nil {
 							log.Printf("Telegram: inbound handler error: %v", err)
 						}
@@ -278,8 +290,8 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 				}
 
 				chatID := update.Message.Chat.ID
-				sessionID := fmt.Sprintf("tg:%d", chatID)
-				senderID := fmt.Sprintf("%d", update.Message.From.ID)
+				sessionID := "tg:" + strconv.FormatInt(chatID, 10)
+				senderID := strconv.FormatInt(update.Message.From.ID, 10)
 				username := update.Message.From.UserName
 
 				if c.dmMode == "disabled" {
@@ -329,7 +341,9 @@ func (c *Channel) StartInbound(ctx context.Context, h adapter.InboundHandler) er
 						channels.MetaTelegramMessageID: strconv.Itoa(update.Message.MessageID),
 					},
 				}
+				c.sem <- struct{}{}
 				go func(ev adapter.InboundEvent) {
+					defer func() { <-c.sem }()
 					if err := h(ctx, ev); err != nil {
 						log.Printf("Telegram: inbound handler error: %v", err)
 					}
@@ -382,7 +396,9 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 			return buf.Push(chunk)
 		}
 
+		c.sem <- struct{}{}
 		go func() {
+			defer func() { <-c.sem }()
 			handler(ctx, msg, replyFn, nil, nil)
 			if err := buf.Done(); err != nil {
 				log.Printf("Telegram: flush send: %v", err)
@@ -395,7 +411,7 @@ func (c *Channel) legacyInboundHandler(handler channels.MessageHandler) adapter.
 func (c *Channel) sendLegacyReplyText(ctx context.Context, chatID int64, replyToID int, text string) error {
 	for i, part := range splitTelegramMessage(text) {
 		out := adapter.OutboundMessage{
-			SessionID: fmt.Sprintf("tg:%d", chatID),
+			SessionID: "tg:" + strconv.FormatInt(chatID, 10),
 			Text:      part,
 		}
 		if i == 0 && replyToID > 0 {

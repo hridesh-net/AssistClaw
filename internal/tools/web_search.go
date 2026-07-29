@@ -116,6 +116,15 @@ var searxngInstances = []string{
 	"https://search.nerdvpn.de",
 }
 
+var searxngHTTPClient = &http.Client{
+	Timeout: 5 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        20,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     30 * time.Second,
+	},
+}
+
 func searxngSearch(ctx context.Context, query string, limit int) []searchResult {
 	for _, instance := range searxngInstances {
 		results := trySearXNG(ctx, instance, query, limit)
@@ -136,12 +145,14 @@ func trySearXNG(ctx context.Context, baseURL, query string, limit int) []searchR
 	req.Header.Set("User-Agent", "AssistClaw/3.5 (AI Agent; +https://github.com/hridesh-net/AssistClaw)")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
+	resp, err := searxngHTTPClient.Do(req)
+	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 

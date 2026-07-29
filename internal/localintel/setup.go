@@ -76,7 +76,7 @@ func BootstrapGGUF(ctx context.Context, opt BootstrapOptions) (BootstrapResult, 
 
 	client := opt.HTTPClient
 	if client == nil {
-		client = &http.Client{}
+		client = &http.Client{Timeout: 120 * time.Second}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

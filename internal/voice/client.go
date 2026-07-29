@@ -56,7 +56,10 @@ func (c *Client) STT(audioData []byte, format string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
+		b, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("stt failed with status %d (body unreadable: %v)", resp.StatusCode, readErr)
+		}
 		return "", fmt.Errorf("stt failed with status %d: %s", resp.StatusCode, string(b))
 	}
 
@@ -97,7 +100,10 @@ func (c *Client) TTS(text string, voiceRefPath string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
+		b, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("tts failed with status %d (body unreadable: %v)", resp.StatusCode, readErr)
+		}
 		return nil, fmt.Errorf("tts failed with status %d: %s", resp.StatusCode, string(b))
 	}
 
@@ -126,7 +132,10 @@ func (c *Client) TTSDiscord(text string) ([][]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
+		b, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("tts-discord failed with status %d (body unreadable: %v)", resp.StatusCode, readErr)
+		}
 		return nil, fmt.Errorf("tts-discord failed with status %d: %s", resp.StatusCode, string(b))
 	}
 
