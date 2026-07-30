@@ -2,7 +2,7 @@
 # Industry-standard build targets for the polyglot project.
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-go build-ts build-sensing clean test load-test lint vet fmt install uninstall help
+.PHONY: all build build-go build-sensing clean test load-test lint vet fmt install uninstall help
 
 # ─────────────────────────────────────────────
 # Variables
@@ -27,8 +27,8 @@ INSTALL_DIR?= /usr/local/bin
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS    := -X main.version=$(VERSION) -s -w
 SENSING_DIR:= sensing
-NODE_CMD   := node
-PNPM       := pnpm
+RUST_DIR   := cmd/assistclaw/tui_rs
+RUST_LIB   := $(RUST_DIR)/target/release/libassistclaw_tui.a
 
 # Colors
 RED    := \033[0;31m
@@ -41,24 +41,24 @@ NC     := \033[0m
 # Top-level targets
 # ─────────────────────────────────────────────
 
-## all: Build everything (Go binary + TypeScript layer)
-all: build-go build-ts
+## all: Build everything (Go binary + C++ sensing)
+all: build build-sensing
 
-## build: Build the Go binary
-build: build-go
+## build: Build the Go binary (includes Rust TUI)
+build: build-tui-rs build-go
+
+## build-tui-rs: Build the Rust TUI static library
+build-tui-rs:
+	@echo "$(BLUE)Building Rust TUI library...$(NC)"
+	cd $(RUST_DIR) && cargo build --release
+	@echo "$(GREEN)✓ Rust TUI library built$(NC)"
 
 ## build-go: Build the Go orchestrator binary
-build-go:
+build-go: $(RUST_LIB)
 	@echo "$(BLUE)Building Go binary...$(NC)"
 	@mkdir -p $(BIN_DIR)
 	$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/assistclaw
 	@echo "$(GREEN)✓ Binary: $(BIN_DIR)/$(BINARY)$(NC)"
-
-## build-ts: Build the TypeScript agent layer
-build-ts:
-	@echo "$(BLUE)Building TypeScript layer...$(NC)"
-	$(PNPM) build
-	@echo "$(GREEN)✓ TypeScript build complete$(NC)"
 
 ## build-sensing: Build the C++ sensing binaries
 build-sensing:
@@ -68,16 +68,29 @@ build-sensing:
 	cmake --build $(SENSING_DIR)/build --parallel
 	@echo "$(GREEN)✓ Sensing binaries built$(NC)"
 
-## cross: Build release binaries for multiple platforms
+## cross: Build portable release binaries for darwin and linux (arm64 + amd64)
+## Requires zig + rustup targets (see scripts/build_cross.sh). Run `make cross-deps` once.
+## Note: cross builds intentionally omit the assistclaw_localgemma tag — the
+## gollama runtime loader does not survive a portable static build. Use
+## `make build` on the host to get a binary with local Gemma support.
 cross:
-	@echo "$(BLUE)Cross-compiling release binaries...$(NC)"
-	@mkdir -p dist
-	GOOS=darwin  GOARCH=arm64 $(GOBUILD) -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-darwin-arm64 ./cmd/assistclaw
-	GOOS=darwin  GOARCH=amd64 $(GOBUILD) -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-darwin-amd64 ./cmd/assistclaw
-	GOOS=linux   GOARCH=amd64 $(GOBUILD) -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-linux-amd64  ./cmd/assistclaw
-	GOOS=linux   GOARCH=arm64 $(GOBUILD) -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-linux-arm64  ./cmd/assistclaw
-	GOOS=windows GOARCH=amd64 $(GOBUILD) -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-windows-amd64.exe ./cmd/assistclaw
+	@echo "$(BLUE)Cross-compiling release binaries (darwin+linux × arm64+amd64)...$(NC)"
+	@./scripts/build_cross.sh
 	@echo "$(GREEN)✓ Cross-compiled binaries in dist/$(NC)"
+
+## pi: Build only the Raspberry Pi 5 binary (linux/arm64, portable static)
+pi:
+	@echo "$(BLUE)Cross-compiling for Raspberry Pi 5 (linux/arm64)...$(NC)"
+	@ONLY=linux-arm64 ./scripts/build_cross.sh
+	@echo "$(GREEN)✓ dist/assistclaw-linux-arm64 ready — see doc/RASPBERRY_PI.md$(NC)"
+
+## cross-deps: Install one-time dependencies for cross-compilation
+cross-deps:
+	@echo "$(BLUE)Checking cross-compile prerequisites...$(NC)"
+	@command -v zig >/dev/null 2>&1 || { echo "$(RED)zig missing — brew install zig (or apt install zig)$(NC)"; exit 1; }
+	@rustup target add aarch64-apple-darwin x86_64-apple-darwin \
+	    x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+	@echo "$(GREEN)✓ Cross-compile toolchain ready$(NC)"
 
 # ─────────────────────────────────────────────
 # Testing
@@ -94,10 +107,6 @@ load-test:
 	@echo "$(BLUE)Running load test harness...$(NC)"
 	$(GOTEST) ./internal/channels/adapter -run TestLoadHarness_Report -count=1 -v
 	@echo "$(GREEN)✓ Load test harness completed$(NC)"
-
-## test-ts: Run TypeScript/Node tests
-test-ts:
-	$(PNPM) test
 
 ## coverage: Run tests and show coverage report
 coverage: test
@@ -148,7 +157,6 @@ uninstall:
 deps:
 	$(GOCMD) mod download
 	$(GOCMD) mod tidy
-	$(PNPM) install
 
 # ─────────────────────────────────────────────
 # Cleanup
@@ -158,7 +166,7 @@ deps:
 clean:
 	rm -rf $(BIN_DIR) dist coverage.out
 	rm -rf $(SENSING_DIR)/build
-	$(PNPM) exec rimraf dist 2>/dev/null || true
+	cd $(RUST_DIR) && cargo clean
 
 ## help: Show this help message
 help:

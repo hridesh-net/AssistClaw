@@ -41,6 +41,10 @@ func (s *Service) runLLM(ctx context.Context, system, user string) (string, erro
 
 // ProcessNewMail runs rules, optional LLM, persists draft, posts to channel.
 func (s *Service) ProcessNewMail(ctx context.Context, acc config.EmailAccountConfig, m *MailMessage) error {
+	// Goal threads take precedence over generic triage rules.
+	if handled, err := s.maybeHandleGoalInbound(ctx, acc, m); handled || err != nil {
+		return err
+	}
 	act := ActionFor(acc.Rules, m)
 	if act == ActionIgnore {
 		return nil

@@ -97,11 +97,12 @@ int main(int argc, char* argv[]) {
     std::vector<uchar> buf;
     std::vector<int> encParams = {cv::IMWRITE_JPEG_QUALITY, quality};
 
+    int flushCounter = 0;
     while (g_running) {
         auto t0 = std::chrono::steady_clock::now();
         if (!cap.read(frame) || frame.empty()) {
             json err = {{"type", "error"}, {"message", "failed to read frame"}};
-            std::cout << err.dump() << "\n" << std::flush;
+            std::cout << err.dump() << "\n";
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
@@ -116,7 +117,10 @@ int main(int argc, char* argv[]) {
             {"height", frame.rows},
             {"data",   base64Encode(buf)},
         };
-        std::cout << f.dump() << "\n" << std::flush;
+        std::cout << f.dump() << "\n";
+        if (++flushCounter % 5 == 0) {
+            std::cout << std::flush;
+        }
 
         // Rate-limit to target FPS
         auto elapsed = std::chrono::steady_clock::now() - t0;

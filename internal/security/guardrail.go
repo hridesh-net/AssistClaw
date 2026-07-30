@@ -6,9 +6,14 @@ package security
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 )
+
+// osUserHomeDir is an indirection point so tests can stub home resolution
+// without touching the process environment.
+var osUserHomeDir = os.UserHomeDir
 
 // Severity classifies how dangerous a finding is.
 type Severity int
@@ -73,6 +78,25 @@ type Guardrail struct {
 	// ownerOnlyRel are paths relative to the AssistClaw state directory that the agent
 	// must never modify via tools (human operator edits on disk only). Empty = disabled.
 	ownerOnlyRel []string
+	// userDenyPaths is a user-configured list of absolute paths (or path
+	// prefixes) that the agent must never write to. Defaults to nothing
+	// — users opt in via Guardrail.WithUserDenyPaths.
+	userDenyPaths []string
+}
+
+// WithUserDenyPaths adds absolute-path prefixes that the agent is forbidden
+// from writing, editing, patching, or targeting via bash. Returns the same
+// Guardrail for chaining. Empty paths are ignored. Trailing slashes are
+// preserved so callers can pin a directory exactly (e.g. "/etc/" vs "/etc").
+func (g *Guardrail) WithUserDenyPaths(paths []string) *Guardrail {
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		g.userDenyPaths = append(g.userDenyPaths, p)
+	}
+	return g
 }
 
 // NewGuardrail creates a Guardrail with the given mode and optional extra patterns.
@@ -166,9 +190,100 @@ func (g *Guardrail) CheckToolCall(toolName, inputJSON, stateDir, workspaceDir st
 	case "env":
 		findings = append(findings, checkDangerousFilePath(inputJSON)...)
 	}
+	// User-configured absolute path denylist — applies to every tool because
+	// any tool could in principle touch a denied path (bash, write_file,
+	// edit, apply_patch, env, custom skill tools that shell out).
+	findings = append(findings, g.checkUserDenyPaths(toolName, inputJSON, stateDir, workspaceDir)...)
 	// Also check for injected instructions in any tool input
 	findings = append(findings, checkPromptInjection(inputJSON)...)
 	return g.decide(findings, fmt.Sprintf("Tool call '%s' blocked by security guardrail.", toolName))
+}
+
+// checkUserDenyPaths consults Guardrail.userDenyPaths against every path
+// the call would touch (resolved via PathsTouchedByTool plus a best-effort
+// scan of the raw bash command). Match = High finding.
+func (g *Guardrail) checkUserDenyPaths(toolName, inputJSON, stateDir, workspaceDir string) []Finding {
+	if len(g.userDenyPaths) == 0 {
+		return nil
+	}
+	touched := PathsTouchedByTool(toolName, inputJSON, stateDir, workspaceDir)
+	if toolName == "bash" {
+		var m struct {
+			Command string `json:"command"`
+		}
+		if json.Unmarshal([]byte(inputJSON), &m) == nil {
+			// Heuristic: any whitespace-delimited token that looks like a
+			// path (starts with /, ~, or contains /) is a candidate.
+			for _, tok := range strings.Fields(m.Command) {
+				if strings.HasPrefix(tok, "/") || strings.HasPrefix(tok, "~") || strings.Contains(tok, "/") {
+					touched = append(touched, tok)
+				}
+			}
+		}
+	}
+	home, _ := osHomeDir()
+	seen := map[string]bool{}
+	var findings []Finding
+	for _, p := range touched {
+		if p == "" {
+			continue
+		}
+		exp := expandHome(p, home)
+		if seen[exp] {
+			continue
+		}
+		seen[exp] = true
+		for _, deny := range g.userDenyPaths {
+			denyExp := expandHome(deny, home)
+			if pathMatchesDeny(exp, denyExp) {
+				findings = append(findings, Finding{
+					Rule:     "user_deny_path",
+					Severity: SeverityHigh,
+					Detail:   fmt.Sprintf("Path %q matches user denylist entry %q", exp, deny),
+				})
+				break
+			}
+		}
+	}
+	return findings
+}
+
+func expandHome(p, home string) string {
+	if home == "" || !strings.HasPrefix(p, "~") {
+		return p
+	}
+	if p == "~" {
+		return home
+	}
+	if strings.HasPrefix(p, "~/") {
+		return home + p[1:]
+	}
+	return p
+}
+
+// pathMatchesDeny is a prefix match with a trailing-slash convention:
+// "/etc/" matches /etc/foo but not "/etcd"; "/etc" matches both /etc and
+// /etcd (rare in practice but explicit so callers can be strict).
+func pathMatchesDeny(p, deny string) bool {
+	if deny == "" {
+		return false
+	}
+	if strings.HasSuffix(deny, "/") {
+		return p == strings.TrimRight(deny, "/") || strings.HasPrefix(p, deny)
+	}
+	if p == deny {
+		return true
+	}
+	return strings.HasPrefix(p, deny+"/")
+}
+
+// osHomeDir is overridable from tests; we don't want a test environment
+// without HOME set to make every check no-op silently.
+var osHomeDir = func() (string, error) {
+	if h, err := osUserHomeDir(); err == nil {
+		return h, nil
+	}
+	return "", fmt.Errorf("home directory unknown")
 }
 
 // decide converts findings into an action based on mode.
@@ -283,6 +398,21 @@ var dangerousBashPatterns = []struct {
 	{regexp.MustCompile(`chmod\s+777\s+/`), "World-write on system path"},
 	{regexp.MustCompile(`chown\s+.*\s+/etc`), "Ownership change on /etc"},
 	{regexp.MustCompile(`>\s*/dev/sd[a-z]`), "Raw disk write"},
+	// Destructive package-manager / VCS / container patterns surfaced as
+	// real-world failure cases in the gap audit (Section 13.2). These look
+	// benign syntactically but irrecoverably destroy work.
+	{regexp.MustCompile(`(?i)\bbrew\s+uninstall\s+--?force\b`), "Forced brew uninstall"},
+	{regexp.MustCompile(`(?i)\bgit\s+reset\s+--hard\b`), "git reset --hard destroys uncommitted work"},
+	{regexp.MustCompile(`(?i)\bgit\s+clean\s+-[a-z]*f[a-z]*d`), "git clean -fd discards untracked files"},
+	{regexp.MustCompile(`(?i)\bgit\s+push\s+(--force|-f)\b`), "Force-push overwrites remote history"},
+	{regexp.MustCompile(`(?i)docker\s+rm\s+-f\s+\$\(docker\s+ps\s+-aq\)`), "Removes all docker containers"},
+	{regexp.MustCompile(`(?i)docker\s+volume\s+prune\s+-f`), "Wipes all docker volumes"},
+	{regexp.MustCompile(`(?i)\bnpm\s+uninstall\s+-g\b`), "Global npm uninstall"},
+	{regexp.MustCompile(`(?i)\bpnpm\s+uninstall\s+-g\b`), "Global pnpm uninstall"},
+	{regexp.MustCompile(`(?i)\byarn\s+global\s+remove\b`), "Global yarn remove"},
+	{regexp.MustCompile(`(?i)rm\s+-[a-z]*r[a-z]*f?\s+(~|\$HOME)\b`), "Recursive forced delete of home"},
+	{regexp.MustCompile(`(?i)find\s+(~|\$HOME|/)\s+.*-delete\b`), "find -delete starting from a wide root"},
+	{regexp.MustCompile(`(?i)sudo\s+(rm|chmod|chown|dd|mkfs)`), "sudo with destructive command"},
 }
 
 func checkDangerousBash(inputJSON string) []Finding {

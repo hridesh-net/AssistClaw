@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -58,7 +59,7 @@ func NewClient(cfg ClientConfig, log *zap.Logger) *Client {
 	return &Client{
 		cfg:        cfg,
 		log:        log,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

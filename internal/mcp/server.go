@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/assistclaw/assistclaw/internal/skills"
 	"go.uber.org/zap"
@@ -119,12 +120,21 @@ func (s *Server) serveHTTP(ctx context.Context) error {
 	mux.HandleFunc("/mcp/tools/list", s.httpListTools)
 	mux.HandleFunc("/mcp/tools/call", s.httpCallTool)
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           http.MaxBytesHandler(mux, 1<<20),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	s.log.Info("MCP server listening on HTTP", zap.String("addr", addr))
 
 	go func() {
 		<-ctx.Done()
-		_ = srv.Close()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
 	}()
 	return srv.ListenAndServe()
 }
@@ -331,7 +341,7 @@ func (s *Server) handleReadSkillNode(ctx context.Context, args map[string]any) (
 
 	// Handle "mcp:" prefix for external MCP tools
 	if strings.HasPrefix(skillName, "mcp:") {
-		return s.readMCPSkillNode(skillName, nodeName), nil
+		return s.readMCPSkillNode(ctx, skillName, nodeName), nil
 	}
 
 	sk, ok := s.skillReg.Get(skillName)
@@ -364,7 +374,7 @@ func (s *Server) handleReadSkillNode(ctx context.Context, args map[string]any) (
 	return textResult(content), nil
 }
 
-func (s *Server) readMCPSkillNode(skillName, nodeName string) CallToolResult {
+func (s *Server) readMCPSkillNode(ctx context.Context, skillName, nodeName string) CallToolResult {
 	// Delegate to any registered external-tool handler
 	serverName := strings.TrimPrefix(skillName, "mcp:")
 	toolName := serverName
@@ -375,7 +385,7 @@ func (s *Server) readMCPSkillNode(skillName, nodeName string) CallToolResult {
 	handler, ok := s.toolHandlers["mcp:node:"+toolName]
 	s.mu.RUnlock()
 	if ok {
-		if result, err := handler(context.Background(), nil); err == nil {
+		if result, err := handler(ctx, nil); err == nil {
 			return result
 		}
 	}

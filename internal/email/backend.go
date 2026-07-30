@@ -38,6 +38,14 @@ type Backend interface {
 	Reply(ctx context.Context, m *MailMessage, body string) error
 }
 
+// NewMailSender is an optional Backend capability: composing a brand-new outbound
+// mail (used by email goals to open threads and send follow-ups). The returned
+// messageID is the generated Message-ID header, used to match future replies
+// back to the originating thread.
+type NewMailSender interface {
+	SendNew(ctx context.Context, to, subject, body, inReplyTo, references string) (messageID string, err error)
+}
+
 type BackendBuilder func(cfg *config.Config, acc config.EmailAccountConfig, store *Store) (Backend, error)
 
 var (

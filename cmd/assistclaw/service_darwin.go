@@ -31,7 +31,10 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
     <true/>
 
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
 
     <key>StandardOutPath</key>
     <string>{{.LogDir}}/assistclaw.log</string>
@@ -40,7 +43,7 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
     <string>{{.LogDir}}/assistclaw.log</string>
 
     <key>ThrottleInterval</key>
-    <integer>10</integer>
+    <integer>5</integer>
 {{- if .StateDir}}
     <key>EnvironmentVariables</key>
     <dict>

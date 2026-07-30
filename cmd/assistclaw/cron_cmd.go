@@ -10,9 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/assistclaw/assistclaw/internal/cron"
 	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/assistclaw/assistclaw/internal/cron"
 )
 
 func cronCmd(gf *globalFlags) *cobra.Command {
@@ -72,32 +71,32 @@ func cronListCmd(gf *globalFlags) *cobra.Command {
 				return fmt.Errorf("failed to read cron jobs: %w", err)
 			}
 
-			prim := lipgloss.NewStyle().Foreground(tui.ColorPrimary).Bold(true)
-			dim := lipgloss.NewStyle().Foreground(tui.ColorMuted)
-			header := lipgloss.NewStyle().Foreground(tui.ColorNeon).Bold(true)
+			prim := func(s string) string { return tui.Style(tui.ColorPrimary, true, s) }
+			dim := func(s string) string { return tui.Style(tui.ColorMuted, false, s) }
+			header := func(s string) string { return tui.Style(tui.ColorNeon, true, s) }
 
-			fmt.Println(header.Render("\n🕒 Persistent Cron Jobs") + dim.Render(fmt.Sprintf("  (%d jobs)", len(jobs))))
-			fmt.Println(dim.Render("─────────────────────────────────────────────────────────────"))
-			
+			fmt.Println(header("\n🕒 Persistent Cron Jobs") + dim(fmt.Sprintf("  (%d jobs)", len(jobs))))
+			fmt.Println(dim("─────────────────────────────────────────────────────────────"))
+
 			if len(jobs) == 0 {
-				fmt.Println(dim.Render("  No persistent jobs scheduled."))
-				fmt.Println(dim.Render("  Run: assistclaw cron add \"@hourly\" \"Review the system logs\""))
+				fmt.Println(dim("  No persistent jobs scheduled."))
+				fmt.Println(dim("  Run: assistclaw cron add \"@hourly\" \"Review the system logs\""))
 			} else {
 				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-				fmt.Fprintf(w, "  %s\t%s\t%s\n", dim.Render("ID"), dim.Render("SCHEDULE"), dim.Render("PROMPT"))
+				fmt.Fprintf(w, "  %s\t%s\t%s\n", dim("ID"), dim("SCHEDULE"), dim("PROMPT"))
 				for _, j := range jobs {
-					fmt.Fprintf(w, "  %s\t%s\t%s\n", prim.Render(j.ID), j.Schedule, j.Prompt)
+					fmt.Fprintf(w, "  %s\t%s\t%s\n", prim(j.ID), j.Schedule, j.Prompt)
 				}
 				w.Flush()
 			}
-			
+
 			if len(cfg.Cron) > 0 {
-				fmt.Println(header.Render("\n⚙️  Static Jobs") + dim.Render(fmt.Sprintf("  (%d jobs from assistclaw.yaml)", len(cfg.Cron))))
-				fmt.Println(dim.Render("─────────────────────────────────────────────────────────────"))
+				fmt.Println(header("\n⚙️  Static Jobs") + dim(fmt.Sprintf("  (%d jobs from assistclaw.yaml)", len(cfg.Cron))))
+				fmt.Println(dim("─────────────────────────────────────────────────────────────"))
 				w2 := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-				fmt.Fprintf(w2, "  %s\t%s\t%s\n", dim.Render("ID"), dim.Render("SCHEDULE"), dim.Render("PROMPT"))
+				fmt.Fprintf(w2, "  %s\t%s\t%s\n", dim("ID"), dim("SCHEDULE"), dim("PROMPT"))
 				for _, j := range cfg.Cron {
-					fmt.Fprintf(w2, "  %s\t%s\t%s\n", prim.Render(j.ID), j.Schedule, j.Prompt)
+					fmt.Fprintf(w2, "  %s\t%s\t%s\n", prim(j.ID), j.Schedule, j.Prompt)
 				}
 				w2.Flush()
 			}

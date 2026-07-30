@@ -50,19 +50,19 @@ type Message struct {
 
 // Document is a chunk of content stored in semantic memory.
 type Document struct {
-	ID        string    `json:"id"`
-	Source    string    `json:"source"` // file path, URL, session ID, etc.
-	Content   string    `json:"content"`
-	Hash      string    `json:"hash,omitempty"`
-	SourceType string   `json:"source_type,omitempty"`
-	Palace    string    `json:"palace,omitempty"`
-	Wing      string    `json:"wing,omitempty"`
-	Room      string    `json:"room,omitempty"`
-	Tags      []string  `json:"tags,omitempty"`
-	Model     string    `json:"model,omitempty"` // embedding model that generated this vector
-	Embedding []float32 `json:"embedding,omitempty"`
-	Score     float32   `json:"score,omitempty"` // similarity score (populated on search)
-	CreatedAt time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	Source     string    `json:"source"` // file path, URL, session ID, etc.
+	Content    string    `json:"content"`
+	Hash       string    `json:"hash,omitempty"`
+	SourceType string    `json:"source_type,omitempty"`
+	Palace     string    `json:"palace,omitempty"`
+	Wing       string    `json:"wing,omitempty"`
+	Room       string    `json:"room,omitempty"`
+	Tags       []string  `json:"tags,omitempty"`
+	Model      string    `json:"model,omitempty"` // embedding model that generated this vector
+	Embedding  []float32 `json:"embedding,omitempty"`
+	Score      float32   `json:"score,omitempty"` // similarity score (populated on search)
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Lesson represents a "corrective memory" entry.
@@ -135,19 +135,31 @@ func (w *WorkingMemory) Compact(budget int) []Message {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	var dropped []Message
-	for w.tokenCount() > budget && len(w.messages) > 1 {
-		// Skip system message at index 0 — always keep it.
-		dropIdx := 0
-		if len(w.messages) > 0 && w.messages[0].Role == RoleSystem {
-			dropIdx = 1
-		}
-		if dropIdx >= len(w.messages) {
-			break
-		}
-		dropped = append(dropped, w.messages[dropIdx])
-		w.messages = append(w.messages[:dropIdx], w.messages[dropIdx+1:]...)
+	if w.tokenCount() <= budget || len(w.messages) <= 1 {
+		return nil
 	}
+
+	// Find the first index to keep. Skip system message at index 0.
+	start := 0
+	if len(w.messages) > 0 && w.messages[0].Role == RoleSystem {
+		start = 1
+	}
+	if start >= len(w.messages) {
+		return nil
+	}
+
+	// Walk forward to find how many messages to drop.
+	dropUntil := start
+	tokens := w.tokenCount()
+	for dropUntil < len(w.messages) && tokens > budget {
+		tokens -= w.messages[dropUntil].Tokens
+		dropUntil++
+	}
+
+	dropped := make([]Message, dropUntil-start)
+	copy(dropped, w.messages[start:dropUntil])
+	// Re-slice once instead of O(n²) repeated appends.
+	w.messages = append(w.messages[:start], w.messages[dropUntil:]...)
 	return dropped
 }
 
@@ -172,7 +184,18 @@ func (w *WorkingMemory) tokenCount() int {
 
 // EpisodicMemory stores conversation history in SQLite with full-text search.
 type EpisodicMemory struct {
-	db *sql.DB
+	db        *sql.DB
+	writeCh   chan *Message
+	batchStop chan struct{}
+	batchWG   sync.WaitGroup
+}
+
+// Ping verifies the episodic DB connection is alive.
+func (m *EpisodicMemory) Ping() error {
+	if m.db == nil {
+		return fmt.Errorf("episodic memory not initialized")
+	}
+	return m.db.Ping()
 }
 
 // NewEpisodicMemory opens (or creates) the episodic memory database.
@@ -181,11 +204,17 @@ func NewEpisodicMemory(dbPath string) (*EpisodicMemory, error) {
 	if err != nil {
 		return nil, fmt.Errorf("episodic memory open: %w", err)
 	}
-	m := &EpisodicMemory{db: db}
+	m := &EpisodicMemory{
+		db:        db,
+		writeCh:   make(chan *Message, 256),
+		batchStop: make(chan struct{}),
+	}
 	if err := m.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("episodic memory migrate: %w", err)
 	}
+	m.batchWG.Add(1)
+	go m.batchWriter()
 	return m, nil
 }
 
@@ -225,13 +254,14 @@ func (m *EpisodicMemory) migrate() error {
 	return err
 }
 
-// Save persists a message to episodic memory.
+// Save enqueues a message for batched persistence to episodic memory.
 func (m *EpisodicMemory) Save(ctx context.Context, msg Message) error {
-	_, err := m.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO messages (id, session_id, role, content, model, tokens, created_at) VALUES (?,?,?,?,?,?,?)`,
-		msg.ID, msg.SessionID, string(msg.Role), msg.Content, msg.Model, msg.Tokens, msg.CreatedAt,
-	)
-	return err
+	select {
+	case m.writeCh <- &msg:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // GetSession returns all messages for a session in chronological order.
@@ -298,7 +328,90 @@ func (m *EpisodicMemory) DeleteSession(ctx context.Context, sessionID string) er
 }
 
 // Close closes the database.
-func (m *EpisodicMemory) Close() error { return m.db.Close() }
+func (m *EpisodicMemory) Close() error {
+	close(m.batchStop)
+	m.batchWG.Wait()
+	return m.db.Close()
+}
+
+// batchWriter collects messages and flushes them in batches to reduce disk I/O.
+func (m *EpisodicMemory) batchWriter() {
+	defer m.batchWG.Done()
+	const batchSize = 100
+	const flushInterval = 250 * time.Millisecond
+	batch := make([]*Message, 0, batchSize)
+	timer := time.NewTimer(flushInterval)
+	defer timer.Stop()
+	resetTimer := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(flushInterval)
+	}
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		tx, err := m.db.Begin()
+		if err != nil {
+			fmt.Printf("[memory] batch begin error: %v\n", err)
+			batch = batch[:0]
+			return
+		}
+		stmt, err := tx.Prepare(`INSERT OR REPLACE INTO messages (id, session_id, role, content, model, tokens, created_at) VALUES (?,?,?,?,?,?,?)`)
+		if err != nil {
+			fmt.Printf("[memory] batch prepare error: %v\n", err)
+			tx.Rollback() //nolint:errcheck
+			batch = batch[:0]
+			return
+		}
+		for _, msg := range batch {
+			_, err := stmt.Exec(msg.ID, msg.SessionID, string(msg.Role), msg.Content, msg.Model, msg.Tokens, msg.CreatedAt)
+			if err != nil {
+				fmt.Printf("[memory] batch exec error: %v\n", err)
+			}
+		}
+		stmt.Close()
+		if err := tx.Commit(); err != nil {
+			fmt.Printf("[memory] batch commit error: %v\n", err)
+		}
+		batch = batch[:0]
+	}
+
+	for {
+		select {
+		case msg, ok := <-m.writeCh:
+			if !ok {
+				flush()
+				return
+			}
+			batch = append(batch, msg)
+			if len(batch) >= batchSize {
+				flush()
+				resetTimer()
+			}
+		case <-timer.C:
+			flush()
+			resetTimer()
+		case <-m.batchStop:
+			flush()
+			// Drain remaining writes
+			close(m.writeCh)
+			for msg := range m.writeCh {
+				batch = append(batch, msg)
+				if len(batch) >= batchSize {
+					flush()
+				}
+			}
+			flush()
+			return
+		}
+	}
+}
 
 func scanMessages(rows *sql.Rows) ([]Message, error) {
 	var msgs []Message
@@ -437,11 +550,10 @@ func (m *SemanticMemory) Index(ctx context.Context, doc Document) error {
 	}
 
 	if len(doc.Embedding) == m.dimensions {
-		vecJSON, _ := json.Marshal(doc.Embedding)
 		_, err = tx.ExecContext(ctx,
 			`INSERT OR REPLACE INTO vec_documents (rowid, embedding)
 			 SELECT rowid, ? FROM documents WHERE id = ?`,
-			vecJSON, doc.ID,
+			embJSON, doc.ID,
 		)
 		if err != nil {
 			return err
@@ -654,9 +766,9 @@ func (m *SemanticMemory) ListSources(ctx context.Context) ([]string, error) {
 
 // Manager provides a single interface over all memory tiers.
 type Manager struct {
-	mu       sync.RWMutex
-	sessions map[string]*WorkingMemory
-	budget   int
+	mu           sync.RWMutex
+	sessions     map[string]*WorkingMemory
+	budget       int
 	chunkSize    int
 	chunkOverlap int
 
@@ -731,12 +843,12 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	}
 
 	return &Manager{
-		sessions: make(map[string]*WorkingMemory),
-		budget:   cfg.WorkingTokenBudget,
-		chunkSize: cfg.ChunkSize,
+		sessions:     make(map[string]*WorkingMemory),
+		budget:       cfg.WorkingTokenBudget,
+		chunkSize:    cfg.ChunkSize,
 		chunkOverlap: cfg.ChunkOverlap,
-		Episodic: episodic,
-		Semantic: semantic,
+		Episodic:     episodic,
+		Semantic:     semantic,
 	}, nil
 }
 

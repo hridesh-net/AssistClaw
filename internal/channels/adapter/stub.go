@@ -52,10 +52,14 @@ func (s *Stub) StartInbound(ctx context.Context, _ InboundHandler) error {
 		return NewChannelError(ErrorKindPermanent, "stub already started", nil)
 	}
 	s.stopCh = make(chan struct{})
+	// Capture the channel locally: Stop() may set s.stopCh = nil concurrently,
+	// so the goroutine must not read the field. Closing the same underlying
+	// channel still unblocks this select.
+	stop := s.stopCh
 	go func() {
 		select {
 		case <-ctx.Done():
-		case <-s.stopCh:
+		case <-stop:
 		}
 	}()
 	return nil

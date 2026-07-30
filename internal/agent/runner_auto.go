@@ -16,11 +16,13 @@ import (
 // RunAutonomous executes the agent loop continuously until the LLM explicitly calls the
 // `finish_task` tool, signaling that the high-level goal has been reached.
 func (r *Runner) RunAutonomous(ctx context.Context, goal string) (*RunResult, error) {
+	r.inflight.Add(1)
+	defer r.inflight.Done()
 	if goal != "" {
 		// Append overarching goal to working memory.
 		goalMsg := memory.Message{
 			ID: uuid.New().String(), SessionID: r.sessionID, Role: memory.RoleSystem,
-			Content: "AUTONOMOUS GOAL: " + goal + "\n\nWork continuously to achieve this goal. When you are completely finished, call the `finish_task` tool.",
+			Content:   "AUTONOMOUS GOAL: " + goal + "\n\nWork continuously to achieve this goal. When you are completely finished, call the `finish_task` tool.",
 			CreatedAt: time.Now(),
 		}
 		r.working.Append(goalMsg)
@@ -143,7 +145,7 @@ func (r *Runner) RunAutonomous(ctx context.Context, goal string) (*RunResult, er
 				finished = true
 			}
 
-			result := r.executeTool(ctx, tc)
+			result := r.executeTool(ctx, tc, nil)
 
 			toolResultMsg := memory.Message{
 				ID:        uuid.New().String(),
@@ -180,7 +182,7 @@ func (r *Runner) RunAutonomous(ctx context.Context, goal string) (*RunResult, er
 		if r.shouldFlush() {
 			r.doFlush(ctx, &totalUsage)
 		}
-		
+
 		time.Sleep(loopDelay)
 	}
 

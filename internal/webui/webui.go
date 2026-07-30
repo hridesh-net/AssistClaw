@@ -12,18 +12,17 @@ import (
 var embeddedAssets embed.FS
 
 // Assets returns the embedded asset filesystem (rooted at the assets/ subdirectory).
-func Assets() fs.FS {
-	sub, err := fs.Sub(embeddedAssets, "assets")
-	if err != nil {
-		panic("webui: failed to sub embedded assets: " + err.Error())
-	}
-	return sub
+func Assets() (fs.FS, error) {
+	return fs.Sub(embeddedAssets, "assets")
 }
 
 // Handler returns an http.Handler that serves the embedded web UI.
 // It mounts the assets at /assets/ and serves index.html for the root path.
-func Handler() http.Handler {
-	assets := Assets()
+func Handler() (http.Handler, error) {
+	assets, err := Assets()
+	if err != nil {
+		return nil, err
+	}
 	fsHandler := http.FileServer(http.FS(assets))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,5 +34,5 @@ func Handler() http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		fsHandler.ServeHTTP(w, r)
-	})
+	}), nil
 }

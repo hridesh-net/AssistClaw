@@ -80,6 +80,11 @@ func (s *Service) HandleInboundCommand(ctx context.Context, channelID, sessionID
 	case "reject":
 		_ = s.store.SetDraftStatus(ctx, token, DraftRejected)
 		_ = s.store.AppendAudit(ctx, "reject", token, msg.Subject)
+		if goalID, _ := s.store.GoalIDForDraft(ctx, token); goalID > 0 {
+			// Reset the silence timer so the follow-up loop doesn't immediately re-draft.
+			_ = s.store.TouchGoal(ctx, goalID)
+			return fmt.Sprintf("Rejected goal draft %s. Goal #%d stays open — edit the next draft, handle the thread manually, or cancel with: assistclaw goal cancel %d", token, goalID, goalID), true, nil
+		}
 		return fmt.Sprintf("Rejected draft %s. You can handle the thread manually.", token), true, nil
 
 	case "edit":
@@ -103,6 +108,13 @@ func (s *Service) HandleInboundCommand(ctx context.Context, channelID, sessionID
 
 	case "approve":
 		_ = s.store.AppendAudit(ctx, "approve_intent", token, msg.Subject)
+		if goalID, gerr := s.store.GoalIDForDraft(ctx, token); gerr == nil && goalID > 0 {
+			replyText, err := s.approveGoalDraft(ctx, goalID, token, d, msg, headers)
+			if err != nil {
+				return "", true, err
+			}
+			return replyText, true, nil
+		}
 		be := s.backends[msg.AccountName]
 		if be == nil {
 			return "Internal error: no backend for account " + msg.AccountName, true, nil

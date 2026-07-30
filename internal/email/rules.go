@@ -73,14 +73,18 @@ func ruleMatches(match *config.EmailRuleMatch, m *MailMessage) bool {
 		}
 	}
 	if rx := strings.TrimSpace(match.FromRegex); rx != "" {
-		re, err := regexp.Compile("(?i)" + rx)
-		if err != nil || !re.MatchString(m.From) {
+		if match.FromRegexCompiled == nil {
+			match.FromRegexCompiled = regexp.MustCompile("(?i)" + rx)
+		}
+		if !match.FromRegexCompiled.MatchString(m.From) {
 			return false
 		}
 	}
 	if rx := strings.TrimSpace(match.Subject); rx != "" {
-		re, err := regexp.Compile("(?i)" + rx)
-		if err != nil || !re.MatchString(subj) {
+		if match.SubjectRegexCompiled == nil {
+			match.SubjectRegexCompiled = regexp.MustCompile("(?i)" + rx)
+		}
+		if !match.SubjectRegexCompiled.MatchString(subj) {
 			return false
 		}
 	}

@@ -23,11 +23,26 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust TUI static lib
+        run: cd cmd/assistclaw/tui_rs && cargo build --release
+
       - name: Run tests
-        run: go test ./... -count=1
+        run: go test ./... -race -count=1 -tags fts5
 
       - name: Build CLI binary
-        run: go build -mod=vendor -tags fts5,assistclaw_localgemma ./cmd/assistclaw
+        run: go build -tags fts5 -ldflags "-s -w" -o assistclaw ./cmd/assistclaw
+
+      - name: Binary size check
+        run: |
+          SIZE=$(stat -f%z assistclaw 2>/dev/null || stat -c%s assistclaw)
+          echo "Binary size: $SIZE bytes"
+          if [ "$SIZE" -gt 60000000 ]; then
+            echo "Binary exceeds 60MB threshold"
+            exit 1
+          fi
 
       - name: Doctor (sample config)
         run: ./assistclaw doctor --config .assistclaw.yaml.example --skip-network
@@ -37,6 +52,101 @@ jobs:
           ./assistclaw doctor --config .assistclaw.yaml.example --skip-network --no-input --json | tee /tmp/doctor.json
           jq -e '.schema_version >= 1 and (.checks | type == "array") and (.exit_code | type == "number")' /tmp/doctor.json
           jq -e '[.checks[] | select(.id == "") or (.severity == "") or (.message == "")] | length == 0' /tmp/doctor.json
+
+  audit-gates:
+    name: audit-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.59.1
+
+      - name: bodyclose lint
+        run: golangci-lint run --disable-all --enable=bodyclose ./...
+
+      - name: No panic in production code
+        run: |
+          if grep -rn 'panic(' internal/ cmd/ | grep -v _test.go | grep -v 'recover()'; then
+            echo "Found panic() in production code. Replace with error returns."
+            exit 1
+          fi
+
+      - name: No stray context.Background() in gateway/onboard
+        run: |
+          # These two files were specifically flagged in the audit; gate them.
+          if grep -n 'context.Background()' internal/gateway/server.go cmd/assistclaw/onboard.go; then
+            echo "Found context.Background() in gateway/server.go or onboard.go. Pass context from caller."
+            exit 1
+          fi
+
+  cross-build:
+    name: cross-build (${{ matrix.target.goos }}-${{ matrix.target.goarch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { goos: darwin, goarch: arm64, rust: aarch64-apple-darwin,        zig: aarch64-macos-none }
+          - { goos: darwin, goarch: amd64, rust: x86_64-apple-darwin,         zig: x86_64-macos-none }
+          - { goos: linux,  goarch: amd64, rust: x86_64-unknown-linux-musl,   zig: x86_64-linux-musl }
+          - { goos: linux,  goarch: arm64, rust: aarch64-unknown-linux-musl,  zig: aarch64-linux-musl }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target.rust }}
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Cross build
+        run: |
+          cd cmd/assistclaw/tui_rs && cargo build --release --target=${{ matrix.target.rust }} && cd -
+          install -m644 cmd/assistclaw/tui_rs/target/${{ matrix.target.rust }}/release/libassistclaw_tui.a \
+                        cmd/assistclaw/tui_rs/target/release/libassistclaw_tui.a
+          # Rust staticlib references _Unwind_* on musl targets; link Rust's
+          # self-contained libunwind.a (same fix as scripts/build_cross.sh).
+          EXTRA_CGO_LDFLAGS=""
+          if [ "${{ matrix.target.goos }}" = "linux" ]; then
+            SC="$(rustc --print target-libdir --target ${{ matrix.target.rust }})/self-contained"
+            [ -f "$SC/libunwind.a" ] && EXTRA_CGO_LDFLAGS="$SC/libunwind.a"
+          fi
+          CC="zig cc -target ${{ matrix.target.zig }}" \
+          CXX="zig c++ -target ${{ matrix.target.zig }}" \
+          CGO_ENABLED=1 \
+          CGO_LDFLAGS="$EXTRA_CGO_LDFLAGS" \
+          GOOS=${{ matrix.target.goos }} \
+          GOARCH=${{ matrix.target.goarch }} \
+          go build -tags fts5 -ldflags "-s -w" \
+            -o assistclaw-${{ matrix.target.goos }}-${{ matrix.target.goarch }} \
+            ./cmd/assistclaw
+
+      - name: Inspect binary
+        run: |
+          file assistclaw-${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+          ls -la assistclaw-${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assistclaw-${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+          path: assistclaw-${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+          if-no-files-found: error
 
   fresh-install:
     name: fresh-install (${{ matrix.os }})

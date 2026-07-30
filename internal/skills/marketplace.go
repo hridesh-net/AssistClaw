@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // DefaultMarketplaceURL is the canonical index for AssistClaw skills.
@@ -50,7 +51,7 @@ func NewMarketplace(bundledDir, customDir string) *Marketplace {
 		IndexURL:   DefaultMarketplaceURL,
 		BundledDir: bundledDir,
 		CustomDir:  customDir,
-		client:     &http.Client{},
+		client:     &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

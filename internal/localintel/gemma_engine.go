@@ -9,17 +9,26 @@ import (
 	"sync"
 
 	"github.com/dianlight/gollama.cpp"
-	"github.com/jupiterrider/ffi"
 )
 
-var backendOnce sync.Once
+var (
+	backendOnce sync.Once
+	backendErr  error
+)
 
-func backendStart() error {
-	var err error
+// backendStart initializes the llama.cpp backend exactly once.
+// Wraps the call in a panic recover because the underlying libffi/dlopen
+// can abort on platforms where dynamic FFI loading is unsupported.
+func backendStart() (err error) {
 	backendOnce.Do(func() {
-		err = gollama.Backend_init()
+		defer func() {
+			if r := recover(); r != nil {
+				backendErr = fmt.Errorf("localintel: llama backend init panicked (unsupported ffi platform?): %v", r)
+			}
+		}()
+		backendErr = gollama.Backend_init()
 	})
-	return err
+	return backendErr
 }
 
 type gemmaEngine struct {
@@ -30,9 +39,6 @@ type gemmaEngine struct {
 }
 
 func newGemmaEngine(path string) (*gemmaEngine, error) {
-	if !ffi.Available() {
-		return nil, fmt.Errorf("localintel: ffi unavailable: %w", ffi.InitError())
-	}
 	if err := backendStart(); err != nil {
 		return nil, err
 	}

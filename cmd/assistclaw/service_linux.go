@@ -24,10 +24,15 @@ Type=simple
 Environment="ASSISTCLAW_STATE_DIR={{.StateDir}}"
 {{- end}}
 ExecStart={{.BinaryPath}} start
-Restart=always
+Restart=on-failure
 RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=300
 StandardOutput=append:{{.LogDir}}/assistclaw.log
 StandardError=append:{{.LogDir}}/assistclaw.log
+NoNewPrivileges=true
+ProtectHome=read-only
+ReadWritePaths={{.StateDir}}
 
 [Install]
 WantedBy=default.target

@@ -446,6 +446,7 @@ email:
 | [CHANGELOG.md](CHANGELOG.md) | What's new in each release |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Developer guide and architecture overview |
 | [Adapter Contributor Checklist](CONTRIBUTING.md#new-channel-adapter-checklist) | Merge checklist for new/updated channel adapters (Sprint-01 Stories 001-006) |
+| [Raspberry Pi 5 deployment](doc/RASPBERRY_PI.md) | Build (`make pi`), systemd install, and phone/laptop access via Tailscale |
 | [Channel Capability Matrix](doc/channels/capability-registry.md) | Source-of-truth capability table for channel behavior |
 | [DLQ Runbook](doc/runbooks/dlq-inspection.md) | How to inspect and triage outbound delivery failures |
 | [Internal SLOs & error budgets](doc/observability/internal-slo-error-budgets.md) | Reliability targets, metrics mapping, error-budget policy (internal) |

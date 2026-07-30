@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -71,6 +72,9 @@ type Config struct {
 	// Voice configures internal STT/TTS and continuous conversation.
 	Voice VoiceConfig `yaml:"voice"`
 
+	// Calendar configures proactive calendar event triggers.
+	Calendar CalendarConfig `yaml:"calendar"`
+
 	// Extensions configures optional hooks available in AssistClaw (prompt
 	// fragments only; there is no Node plugin loader). See `assistclaw extensions list`.
 	Extensions ExtensionsConfig `yaml:"extensions"`
@@ -107,6 +111,9 @@ type CronJobConfig struct {
 	ID       string `yaml:"id"`
 	Schedule string `yaml:"schedule"`
 	Prompt   string `yaml:"prompt"`
+	// MaxRetries is the number of additional attempts after a failure
+	// (default 0 = no retry). Retries use exponential backoff capped at 60s.
+	MaxRetries int `yaml:"max_retries,omitempty"`
 }
 
 // WebhookConfig configures the incoming webhook endpoint.
@@ -136,6 +143,15 @@ type GmailConfig struct {
 	PushEndpoint string `yaml:"push_endpoint"` // Public URL for Pub/Sub push (if not using Tailscale)
 }
 
+// CalendarConfig configures proactive calendar event triggers.
+type CalendarConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	TokenFile    string `yaml:"token_file"`  // OAuth token JSON (reuse Gmail login flow)
+	CalendarID   string `yaml:"calendar_id"` // e.g. "primary" or a specific calendar ID
+	PollInterval string `yaml:"poll_interval"` // default "60s"
+	WarnBefore   string `yaml:"warn_before"`   // default "10m"
+}
+
 // EmailConfig configures the autonomous email assistant (summaries + draft replies with approval).
 type EmailConfig struct {
 	Enabled bool `yaml:"enabled"`
@@ -159,12 +175,12 @@ type EmailNotifyConfig struct {
 
 // EmailAccountConfig is one watched mailbox.
 type EmailAccountConfig struct {
-	Name    string `yaml:"name"`
-	Backend string `yaml:"backend"` // imap | gmail | graph
-	IMAP    *EmailIMAPConfig       `yaml:"imap"`
-	SMTP    *EmailSMTPConfig       `yaml:"smtp"`
-	Gmail   *EmailGmailAPIConfig  `yaml:"gmail"`
-	Graph   *EmailGraphAPIConfig  `yaml:"graph"`
+	Name    string               `yaml:"name"`
+	Backend string               `yaml:"backend"` // imap | gmail | graph
+	IMAP    *EmailIMAPConfig     `yaml:"imap"`
+	SMTP    *EmailSMTPConfig     `yaml:"smtp"`
+	Gmail   *EmailGmailAPIConfig `yaml:"gmail"`
+	Graph   *EmailGraphAPIConfig `yaml:"graph"`
 	// Notify overrides root email.notify for this account when set.
 	Notify *EmailNotifyConfig `yaml:"notify"`
 	Rules  []EmailRuleConfig  `yaml:"rules"`
@@ -172,11 +188,11 @@ type EmailAccountConfig struct {
 
 // EmailIMAPConfig is used when backend: imap.
 type EmailIMAPConfig struct {
-	Host     string `yaml:"host"`      // e.g. imap.gmail.com:993
+	Host     string `yaml:"host"` // e.g. imap.gmail.com:993
 	Username string `yaml:"username"`
 	Password string `yaml:"password"` // app password; prefer ${ENV}
-	Mailbox  string `yaml:"mailbox"` // default INBOX
-	UseTLS   *bool  `yaml:"use_tls"` // default true for :993
+	Mailbox  string `yaml:"mailbox"`  // default INBOX
+	UseTLS   *bool  `yaml:"use_tls"`  // default true for :993
 }
 
 // EmailSMTPConfig is used for sending approved replies when backend: imap.
@@ -206,14 +222,18 @@ type EmailRuleConfig struct {
 
 // EmailRuleMatch is evaluated in order; first match wins.
 type EmailRuleMatch struct {
-	From        string `yaml:"from"`         // exact address
-	FromDomain  string `yaml:"from_domain"`  // suffix match @domain
+	From        string `yaml:"from"`        // exact address
+	FromDomain  string `yaml:"from_domain"` // suffix match @domain
 	FromRegex   string `yaml:"from_regex"`
 	Subject     string `yaml:"subject"` // regex on subject
 	HeaderName  string `yaml:"header_name"`
 	HeaderRegex string `yaml:"header_regex"`
 	GmailLabel  string `yaml:"gmail_label"` // contains this label id or name
 	GraphCat    string `yaml:"graph_category"`
+
+	// Compiled caches (populated lazily by the email package).
+	FromRegexCompiled    *regexp.Regexp `yaml:"-" json:"-"`
+	SubjectRegexCompiled *regexp.Regexp `yaml:"-" json:"-"`
 }
 
 // VoiceConfig configures internal voice processing (STT/TTS).
@@ -277,6 +297,7 @@ type GatewayConfig struct {
 	} `yaml:"tls"`
 	Bind      string          `yaml:"bind"` // loopback, lan, tailnet, custom
 	Tailscale TailscaleConfig `yaml:"tailscale"`
+	Debug     bool            `yaml:"debug"` // enables /debug/pprof endpoints
 }
 
 type TailscaleConfig struct {
@@ -482,6 +503,13 @@ type AgentConfig struct {
 	ToolsDir        string   `yaml:"tools_dir"`
 	SkillsDir       string   `yaml:"skills_dir"`
 	EnabledSkills   []string `yaml:"enabled_skills"`
+	// EnabledSensitiveSkills is the explicit allow-list for skills whose
+	// frontmatter has `sensitive: true`. A sensitive skill in
+	// enabled_skills but NOT in enabled_sensitive_skills is loaded but
+	// its tools refuse to run. The CLI flag --allow-sensitive-skills can
+	// extend this list for a single invocation; --allow-all-sensitive-skills
+	// bypasses the check entirely.
+	EnabledSensitiveSkills []string `yaml:"enabled_sensitive_skills"`
 	// Heartbeat schedules periodic synthetic prompts (proactive ticks on a dedicated session).
 	Heartbeat HeartbeatConfig `yaml:"heartbeat"`
 	// Planning adds an upfront milestone breakdown (extra LLM call). Nil = enabled (default on).
@@ -549,6 +577,15 @@ type SecurityConfig struct {
 	// YAML key omitted → defaults to POLICIES.md, RULES.md, and the policies/ directory.
 	// Set explicitly to an empty list (owner_only_paths: []) to disable.
 	OwnerOnlyPaths *[]string `yaml:"owner_only_paths"`
+
+	// UserDenyPaths is a list of absolute paths or path prefixes (with
+	// optional leading `~`) that the agent must never write to or shell
+	// against. Trailing `/` makes the prefix strict ("/etc/" matches
+	// /etc/foo but not /etcd). Typical entries:
+	//   - ~/Documents/important-project
+	//   - /etc
+	//   - /var/lib/postgresql
+	UserDenyPaths []string `yaml:"user_deny_paths"`
 }
 
 // ChannelsConfig configures messaging channels.

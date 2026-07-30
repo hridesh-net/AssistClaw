@@ -111,6 +111,7 @@ int main(int argc, char* argv[]) {
               << ",\"channels\":"    << channels
               << ",\"format\":\"pcm_s16le\"}\n" << std::flush;
 
+    int flushCounter = 0;
     while (g_running) {
         Pa_Sleep(10); // 10ms poll
         if (!state.ready) continue;
@@ -120,7 +121,10 @@ int main(int argc, char* argv[]) {
         std::cout << "{\"type\":\"audio\""
                   << ",\"timestamp\":" << nowMs()
                   << ",\"samples\":"   << state.buffer.size()
-                  << ",\"data\":\""    << encoded << "\"}\n" << std::flush;
+                  << ",\"data\":\""    << encoded << "\"}\n";
+        if (++flushCounter % 10 == 0) {
+            std::cout << std::flush;
+        }
     }
 
     Pa_StopStream(stream);

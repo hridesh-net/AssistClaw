@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/assistclaw/assistclaw/cmd/assistclaw/tui"
 	"github.com/assistclaw/assistclaw/internal/config"
 	"github.com/assistclaw/assistclaw/internal/mcp"
 	"github.com/assistclaw/assistclaw/internal/skills"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -91,11 +91,11 @@ func mcpStatusCmd(gf *globalFlags) *cobra.Command {
 				return err
 			}
 
-			bold := lipgloss.NewStyle().Bold(true)
-			green := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-			dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+			bold := func(s string) string { return tui.Bold(s) }
+			green := func(s string) string { return tui.Style256("42", false, s) }
+			dim := func(s string) string { return tui.Style256("241", false, s) }
 
-			fmt.Println(bold.Render("\n  MCP Integration Status"))
+			fmt.Println(bold("\n  MCP Integration Status"))
 			fmt.Println()
 
 			// Server
@@ -109,20 +109,20 @@ func mcpStatusCmd(gf *globalFlags) *cobra.Command {
 				if port == 0 {
 					port = 5173
 				}
-				fmt.Printf("  %s MCP Server   transport=%s", green.Render("●"), t)
+				fmt.Printf("  %s MCP Server   transport=%s", green("●"), t)
 				if t == "http" {
 					fmt.Printf("  port=%d", port)
 				}
 				fmt.Println()
 			} else {
-				fmt.Printf("  %s MCP Server   (disabled)\n", dim.Render("○"))
-				fmt.Println(dim.Render("  Enable with: assistclaw mcp serve"))
+				fmt.Printf("  %s MCP Server   (disabled)\n", dim("○"))
+				fmt.Println(dim("  Enable with: assistclaw mcp serve"))
 			}
 
 			fmt.Println()
-			fmt.Println(bold.Render("  External MCP Servers:"))
+			fmt.Println(bold("  External MCP Servers:"))
 			if len(cfg.MCP.Clients) == 0 {
-				fmt.Println(dim.Render("  None configured. Add with: assistclaw mcp add"))
+				fmt.Println(dim("  None configured. Add with: assistclaw mcp add"))
 			}
 			for _, c := range cfg.MCP.Clients {
 				t := c.Transport
@@ -134,17 +134,17 @@ func mcpStatusCmd(gf *globalFlags) *cobra.Command {
 					addr = c.URL
 				}
 				fmt.Printf("  %s %-20s %s %s\n",
-					green.Render("→"),
+					green("→"),
 					c.Name,
-					dim.Render(t),
-					dim.Render(addr),
+					dim(t),
+					dim(addr),
 				)
 			}
 
 			// Claude Desktop config hint
 			fmt.Println()
-			fmt.Println(bold.Render("  Claude Desktop / Cursor config:"))
-			fmt.Println(dim.Render(`  {
+			fmt.Println(bold("  Claude Desktop / Cursor config:"))
+			fmt.Println(dim(`  {
     "mcpServers": {
       "assistclaw": {
         "command": "assistclaw",
@@ -197,26 +197,26 @@ func mcpListToolsCmd(gf *globalFlags) *cobra.Command {
 			}
 
 			_ = srv
-			bold := lipgloss.NewStyle().Bold(true)
-			dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-			green := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+			bold := func(s string) string { return tui.Bold(s) }
+			dim := func(s string) string { return tui.Style256("241", false, s) }
+			green := func(s string) string { return tui.Style256("42", false, s) }
 
-			fmt.Println(bold.Render("\n  MCP Tool Index (what clients see)"))
-			fmt.Println(dim.Render("  Full specs are fetched lazily via read_skill_node\n"))
+			fmt.Println(bold("\n  MCP Tool Index (what clients see)"))
+			fmt.Println(dim("  Full specs are fetched lazily via read_skill_node\n"))
 
 			fmt.Printf("  %s read_skill_node  %s\n",
-				green.Render("🔍"),
-				dim.Render("Navigate skill graph nodes on demand"),
+				green("🔍"),
+				dim("Navigate skill graph nodes on demand"),
 			)
 			for _, sk := range skillReg.List() {
 				emoji := sk.Metadata.AssistClaw.Emoji
 				if emoji == "" {
 					emoji = "🔧"
 				}
-				fmt.Printf("  %s %-20s %s\n", emoji, sk.Name, dim.Render(sk.Description))
+				fmt.Printf("  %s %-20s %s\n", emoji, sk.Name, dim(sk.Description))
 			}
 			for _, c := range cfg.MCP.Clients {
-				fmt.Printf("  %s mcp:%-16s %s\n", "🌐", c.Name, dim.Render("(external MCP server)"))
+				fmt.Printf("  %s mcp:%-16s %s\n", "🌐", c.Name, dim("(external MCP server)"))
 			}
 			fmt.Println()
 			return nil
@@ -278,9 +278,9 @@ func mcpAddCmd(gf *globalFlags) *cobra.Command {
 				return err
 			}
 
-			green := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+			green := func(s string) string { return tui.Style256("42", false, s) }
 			fmt.Printf("%s MCP server %q registered. Restart the agent to load its tools.\n",
-				green.Render("✔"), name)
+				green("✔"), name)
 			return nil
 		},
 	}
@@ -373,11 +373,11 @@ func mcpTestCmd(gf *globalFlags) *cobra.Command {
 			}
 			_ = srv
 
-			green := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-			fmt.Printf("%s Calling tool: %s\n", green.Render("▶"), toolName)
+			green := func(s string) string { return tui.Style256("42", false, s) }
+			fmt.Printf("%s Calling tool: %s\n", green("▶"), toolName)
 			b, _ := json.MarshalIndent(testArgs, "  ", "  ")
 			fmt.Printf("  Args: %s\n\n", b)
-			fmt.Println(green.Render("✔ MCP server is operational"))
+			fmt.Println(green("✔ MCP server is operational"))
 			return nil
 		},
 	}

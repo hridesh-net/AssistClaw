@@ -1,7 +1,9 @@
 package gateway
 
 import (
-	"log"
+	"sync"
+
+	"go.uber.org/zap"
 )
 
 // Hub maintains the set of active clients and broadcasts messages to the clients.
@@ -17,14 +19,26 @@ type Hub struct {
 
 	// Unregister requests from clients.
 	unregister chan *Client
+
+	// shutdown signals Run() to exit.
+	shutdown chan struct{}
+	// wg tracks active client goroutines for clean drain.
+	wg sync.WaitGroup
+
+	log *zap.Logger
 }
 
-func NewHub() *Hub {
+func NewHub(log *zap.Logger) *Hub {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	return &Hub{
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		broadcast:  make(chan []byte, 256),
+		register:   make(chan *Client, 16),
+		unregister: make(chan *Client, 16),
 		clients:    make(map[*Client]bool),
+		shutdown:   make(chan struct{}),
+		log:        log,
 	}
 }
 
@@ -33,22 +47,38 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
-			log.Printf("gateway/hub: client %s registered. Total active: %d", client.ID, len(h.clients))
+			h.wg.Add(1)
+			h.log.Info("gateway/hub: client registered", zap.String("client_id", client.ID), zap.Int("total_active", len(h.clients)))
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				close(client.Send)
-				log.Printf("gateway/hub: client %s unregistered. Total active: %d", client.ID, len(h.clients))
+				client.SafeCloseSend()
+				h.wg.Done()
+				h.log.Info("gateway/hub: client unregistered", zap.String("client_id", client.ID), zap.Int("total_active", len(h.clients)))
 			}
 		case message := <-h.broadcast:
 			for client := range h.clients {
 				select {
 				case client.Send <- message:
 				default:
-					close(client.Send)
+					client.SafeCloseSend()
 					delete(h.clients, client)
+					h.wg.Done()
 				}
 			}
+		case <-h.shutdown:
+			for client := range h.clients {
+				client.SafeCloseSend()
+				h.wg.Done()
+			}
+			h.clients = make(map[*Client]bool)
+			return
 		}
 	}
+}
+
+// Stop signals the hub to shut down and waits for client goroutines to drain.
+func (h *Hub) Stop() {
+	close(h.shutdown)
+	h.wg.Wait()
 }

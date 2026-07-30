@@ -39,7 +39,7 @@ You can also add custom skills from a local path or URL.`,
 			if err != nil {
 				return err
 			}
-			return RunSkillsConfigure(cfg, gf.configPath, tag)
+			return RunSkillsConfigure(cmd.Context(), cfg, gf.configPath, tag)
 		},
 	}
 	cmd.Flags().StringVarP(&tag, "tag", "t", "", "Pre-filter skills by tag (e.g. productivity, ai, macos)")
@@ -53,14 +53,20 @@ You can also add custom skills from a local path or URL.`,
 // RunSkillsConfigure runs the interactive skill selection TUI.
 // It returns when the user confirms their selection.
 // cfgPath is the path to the config file to update (can be "" to skip config update).
-func RunSkillsConfigure(cfg *config.Config, cfgPath string, tagFilter string) error {
-	ctx := context.Background()
+func RunSkillsConfigure(ctx context.Context, cfg *config.Config, cfgPath string, tagFilter string) error {
 
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("could not determine home directory: %w", err)
+	}
 	bundledDir := filepath.Join(home, ".assistclaw", "skills", "bundled")
 	customDir := filepath.Join(home, ".assistclaw", "skills", "custom")
-	_ = os.MkdirAll(bundledDir, 0o755)
-	_ = os.MkdirAll(customDir, 0o755)
+	if err := os.MkdirAll(bundledDir, 0o755); err != nil {
+		return fmt.Errorf("could not create bundled skills directory: %w", err)
+	}
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
+		return fmt.Errorf("could not create custom skills directory: %w", err)
+	}
 
 	mp := skills.NewMarketplace(bundledDir, customDir)
 
@@ -73,7 +79,10 @@ func RunSkillsConfigure(cfg *config.Config, cfgPath string, tagFilter string) er
 
 	// Build currently installed set
 	installedReg := skills.NewRegistry()
-	_ = installedReg.LoadAll(ctx, customDir)
+	if err := installedReg.LoadAll(ctx, customDir); err != nil {
+		// Non-fatal: no installed skills yet
+		_ = err
+	}
 	enabledSet := make(map[string]bool)
 	for _, s := range cfg.Agent.EnabledSkills {
 		enabledSet[s] = true

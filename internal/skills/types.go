@@ -15,6 +15,15 @@ type Skill struct {
 	// Homepage/Documentation URL
 	Homepage string `yaml:"homepage,omitempty"`
 
+	// Sensitive marks the skill as requiring explicit user approval before
+	// activation in autonomous flows. The runner refuses to invoke a
+	// sensitive skill unless the user has opted in (see EnabledSensitive
+	// in AgentConfig or --allow-sensitive-skills on the CLI).
+	//
+	// Use for skills that can read secrets (1password, vault, ssh keys),
+	// send messages (email-reply, slack-send), or modify shared systems.
+	Sensitive bool `yaml:"sensitive,omitempty"`
+
 	// Metadata contains additional skill information like emojis or hardware requirements.
 	Metadata struct {
 		AssistClaw struct {
@@ -67,6 +76,7 @@ type SkillInfo struct {
 	Emoji       string
 	Eligible    bool
 	Missing     []string
+	Sensitive   bool
 }
 
 // Registry manages loaded skills.

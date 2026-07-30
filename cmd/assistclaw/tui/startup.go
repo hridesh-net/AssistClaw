@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 )
 
-// ArgsWantNoColor returns true if the process args include a no-color flag (parsed before Cobra runs).
+// ArgsWantNoColor returns true if the process args include a no-color flag
+// (parsed before Cobra runs so the startup banner can honour it).
 func ArgsWantNoColor() bool {
 	for _, a := range os.Args[1:] {
 		switch a {
@@ -20,7 +20,8 @@ func ArgsWantNoColor() bool {
 	return false
 }
 
-// ShouldPrintStartupBanner is false for version/help invocations so stderr stays quiet.
+// ShouldPrintStartupBanner is false for version/help invocations so stderr
+// stays quiet when the user is just probing the binary.
 func ShouldPrintStartupBanner() bool {
 	args := os.Args[1:]
 	for _, a := range args {
@@ -38,38 +39,23 @@ func ShouldPrintStartupBanner() bool {
 	return true
 }
 
-// RenderCLIHeader is a one-shot stderr banner when the binary starts (TTY only).
-func RenderCLIHeader(version string) string {
-	line := GradientWord("ASSISTCLAW")
-	sub := lipgloss.NewStyle().Foreground(ColorMuted).Render(
-		"  edge neural shell  ·  " + strings.TrimSpace(version),
-	)
-	barW := 48
-	if fd := int(os.Stderr.Fd()); term.IsTerminal(fd) {
-		if tw, _, err := term.GetSize(fd); err == nil && tw > 12 {
-			barW = tw - 4
-			if barW > 72 {
-				barW = 72
-			}
-		}
-	}
-	bar := lipgloss.NewStyle().Foreground(ColorBorder).Render(
-		"  " + strings.Repeat("─", barW) + "▸",
-	)
-	return "\n" + line + "\n" + sub + "\n" + bar + "\n"
-}
-
-// MaybePrintCLIHeader prints a compact branded line to stderr when appropriate.
+// MaybePrintCLIHeader prints a compact branded line to stderr when the user
+// has a colour-capable TTY; otherwise emits a plain text fallback.
 func MaybePrintCLIHeader(version string) {
 	if ArgsWantNoColor() || os.Getenv("NO_COLOR") != "" {
 		fmt.Fprintf(os.Stderr, "assistclaw %s\n", version)
 		return
 	}
-	if !term.IsTerminal(int(os.Stderr.Fd())) {
+	fd := int(os.Stderr.Fd())
+	if !term.IsTerminal(fd) {
 		fmt.Fprintf(os.Stderr, "[assistclaw] version %s startup\n", version)
 		return
 	}
-	fmt.Fprint(os.Stderr, RenderCLIHeader(version))
+	tw := 0
+	if w, _, err := term.GetSize(fd); err == nil {
+		tw = w
+	}
+	fmt.Fprint(os.Stderr, RenderCLIHeader(version, tw))
 }
 
 // MaybePrintVersion prints styled version info on a TTY, plain text otherwise.

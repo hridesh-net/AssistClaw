@@ -3,10 +3,10 @@ package gateway
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 const (
@@ -36,7 +36,9 @@ func (c *Client) readPump() {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				if c.logger != nil {
+					c.logger.Warn("websocket unexpected close", zap.Error(err))
+				}
 			}
 			break
 		}
@@ -44,12 +46,19 @@ func (c *Client) readPump() {
 
 		var payload MessagePayload
 		if err := json.Unmarshal(message, &payload); err != nil {
-			log.Printf("gateway/client: invalid message format: %v", err)
+			if c.logger != nil {
+				c.logger.Warn("gateway/client: invalid message format", zap.Error(err))
+			}
 			continue
 		}
 
 		// In a real implementation, we would route `payload` via the Hub to the Agent
-		log.Printf("gateway/client: received message type: %s for session: %s", payload.Type, payload.Session)
+		if c.logger != nil {
+			c.logger.Info("gateway/client: received message",
+				zap.String("type", payload.Type),
+				zap.String("session", payload.Session),
+			)
+		}
 
 		if payload.Type == "ping" {
 			continue // Handled implicitly by websocket layer, or we can echo pong
