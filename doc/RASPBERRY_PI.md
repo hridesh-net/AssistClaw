@@ -99,6 +99,58 @@ assistclaw goal list         # open email goals
 journalctl --user -u assistclaw -f
 ```
 
+## Testing local Gemma on the Pi
+
+Local Gemma (on-device inference, no cloud) is the edge fallback. To test it:
+
+```bash
+# One-shot helper (native build + GGUF + inference test):
+bash scripts/pi_gemma_test.sh
+# or a custom prompt:
+PROMPT="What is the capital of France?" MAX_TOKENS=32 bash scripts/pi_gemma_test.sh
+```
+
+What it does and the two things to know:
+
+1. **Must be a native build.** `make pi` / `make cross` deliberately OMIT local
+   Gemma (the gollama.cpp runtime loads llama.cpp via libffi/dlopen at runtime,
+   which does not survive a portable static musl build). Local Gemma needs
+   `make build` on the Pi (tags `fts5,assistclaw_localgemma`, CGO on) — which
+   the helper script runs. Requires Go ≥1.21 (GOTOOLCHAIN=auto fetches the pinned
+   version), Rust/cargo (for the TUI staticlib), and `build-essential`.
+
+2. **First run downloads the aarch64 llama.cpp runtime.** No `linux_arm64`
+   llama.cpp libs are vendored, so on first inference gollama downloads the
+   aarch64 runtime from GitHub releases into `~/.cache/gollama/`. Internet is
+   required for that first run only; afterwards it is cached and offline. (This
+   is why local Gemma is not yet fully offline on a fresh Pi — to pre-stage it,
+   copy a `libllama.so` + `libggml*.so` set into `libs/linux_arm64/` next to the
+   binary, which the loader searches.)
+
+Manual equivalent:
+
+```bash
+# copy your GGUF over (smaller gemma-2-2b is ideal for a Pi), or let setup fetch one:
+scp models/gemma-2-2b-it-Q4_K_M.gguf pi@<host>:~/AssistClaw/models/
+./bin/assistclaw localgemma info
+./bin/assistclaw localgemma run --user "Say hi in one sentence." \
+    --gguf ~/AssistClaw/models/gemma-2-2b-it-Q4_K_M.gguf --max-tokens 64
+```
+
+Then wire it into the agent (used as the offline fallback provider):
+
+```yaml
+agent:
+  local_intel:
+    enabled: true
+    gguf_path: "/home/pi/AssistClaw/models/gemma-2-2b-it-Q4_K_M.gguf"
+    max_tokens: 256
+```
+
+Model choice: **gemma-2-2b Q4_K_M (~1.6 GB)** is the sweet spot for a Pi 5;
+gemma-4-e2b Q4 (~3 GB) needs 8 GB+. A Pi Zero 2W / ≤1 GB board cannot run either.
+The engine is CPU-only (greedy decode) — expect modest tokens/sec.
+
 ## Known limits on the Pi
 
 - The awareness idle-presence probe is macOS-only today; the Pi daemon still
