@@ -68,7 +68,6 @@ yarn-error.log*
 # Legacy / Reference
 sqlite3.h
 sqlite3ext.h
-dist/
 
 # graphify knowledge-graph output (regenerable from research/)
 graphify-out/
@@ -78,3 +77,12 @@ target/
 **/target/
 # C++ sensing cmake build output
 sensing/build/
+
+# Large model blobs (GGUF) — never committed; dropped in at install/build time
+*.gguf
+
+# Logs and scratch/temp artifacts
+*.log
+*.tmp
+/scratch/
+/tmp/
