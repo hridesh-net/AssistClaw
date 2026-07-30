@@ -26,6 +26,16 @@ func backendStart() (err error) {
 				backendErr = fmt.Errorf("localintel: llama backend init panicked (unsupported ffi platform?): %v", r)
 			}
 		}()
+		// Resolve and load the llama.cpp runtime via gollama's full loader
+		// (embedded → local ./libs → cache → download) BEFORE Backend_init.
+		// Backend_init's own simple loader only searches fixed paths and cannot
+		// fetch the runtime, so on hosts without a system libllama (notably a
+		// Raspberry Pi, where no linux_arm64 lib is vendored) this is what makes
+		// local Gemma work — it downloads the aarch64 runtime on first use.
+		if err := gollama.LoadLibraryWithVersion(""); err != nil {
+			backendErr = fmt.Errorf("localintel: load llama.cpp runtime: %w", err)
+			return
+		}
 		backendErr = gollama.Backend_init()
 	})
 	return backendErr
@@ -93,9 +103,11 @@ func (e *gemmaEngine) Complete(ctx context.Context, req Request) (string, error)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if !gollama.Memory_clear(e.lctx, true) {
-		return "", fmt.Errorf("localintel: failed to reset KV cache")
-	}
+	// Reset the KV cache so each Complete starts clean on the reused context.
+	// llama_memory_clear is void in llama.cpp; gollama binds it as returning
+	// bool, so the return value is undefined (spuriously false) and must NOT be
+	// treated as a failure signal.
+	gollama.Memory_clear(e.lctx, true)
 
 	prompt := buildGemmaTurnPrompt(req.System, req.User)
 	tokens, err := gollama.Tokenize(e.model, prompt, true, true)
@@ -131,6 +143,9 @@ func (e *gemmaEngine) Complete(ctx context.Context, req Request) (string, error)
 		}
 
 		piece := gollama.Token_to_piece(e.model, tok, true)
+		// SentencePiece marks word boundaries with U+2581 (▁); gollama's
+		// Token_to_piece returns it raw, so convert to a normal space.
+		piece = strings.ReplaceAll(piece, "▁", " ")
 		if strings.Contains(piece, "<end_of_turn>") {
 			break
 		}
